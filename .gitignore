@@ -1,0 +1,6 @@
+.engineering-os/index/
+.engineering-os/live.log
+.engineering-os/dashboard.html
+
+# macOS
+.DS_Store
