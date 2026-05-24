@@ -12,6 +12,10 @@
 
 ## 0. How to use this document
 
+> **⚠️ Token discipline — do NOT load this file whole.** It is ~23K tokens; loading all of it on every agent turn is the single largest avoidable cost in the build pipeline. Treat it as a **targeted index**: read this §0 map, then open **only** the one section you need (by line range / `grep`). Each `§` is self-contained and cites its canon home. The condensed primers (`business-context.md`, `technical-context.md`) remain your default context — come here only for a specific build domain, and take only that domain.
+>
+> **Section map** (open exactly one): §1 Vision & business · §2 System architecture · §3 Ingestion · §4 Data platform/storage · §5 Analytics & intelligence · §6 Memory · §7 Agentic AI · §8 Users/orgs/permissions · §9 Engineering standards · §10 Observability · §11 Security · §12 Workflow validation · §13 Deliverables (stack/infra quick-ref) · App A roadmap · App B graduation triggers · App C day-one non-negotiables · App D anti-patterns · App E Definition of Done.
+
 ### 0.1 The canon map (where authoritative detail lives)
 
 | Doc | Owns |
