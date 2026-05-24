@@ -1,0 +1,67 @@
+version: "3.9"
+# LOCAL test infrastructure for CF-C1-POOL-1.a pgbouncer integration test.
+# Used by Stage-5 QA (Tanvi) -- do NOT run against production.
+#
+# F2 fix: replaced bitnami/pgbouncer:1.23.1 (gone from Docker Hub + ARM64 issues)
+# with edoburu/pgbouncer which is ARM64-compatible (multi-arch manifest).
+#
+# Auth: postgres 16 default is scram-sha-256. pgbouncer's AUTH_TYPE must match
+# the backend auth method. We set AUTH_TYPE=scram-sha-256 so pgbouncer can
+# authenticate to postgres using SCRAM.
+#
+# Usage:
+#   docker-compose -f docker-compose.test.yml up -d
+#   # Wait for both services to be healthy (~15s), then:
+#   TEST_SUPER_URL=postgresql://postgres:postgres@localhost:5433/brain_test \
+#   TEST_SESSION_URL=postgresql://rls_app:rls_app_pw@localhost:5433/brain_test \
+#   TEST_POOLED_URL=postgresql://rls_app:rls_app_pw@localhost:6544/brain_test \
+#   INTEGRATION_TEST=true pnpm test src/__tests__/integration/pool-isolation.test.ts
+#   docker-compose -f docker-compose.test.yml down -v
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: brain_test
+    ports:
+      - "5433:5432"
+    command:
+      - postgres
+      - -c
+      - row_security=on
+    volumes:
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "6544:5432"
+    environment:
+      # edoburu/pgbouncer reads these env vars to configure pgbouncer.ini.
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: rls_app
+      DB_PASSWORD: rls_app_pw
+      DB_NAME: brain_test
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 100
+      DEFAULT_POOL_SIZE: 10
+      # Use scram-sha-256 to match postgres 16 default password_encryption.
+      AUTH_TYPE: scram-sha-256
+      # Ignore startup parameters sent by pg client (e.g. extra_float_digits).
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 -U rls_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 15

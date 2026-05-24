@@ -46,4 +46,9 @@ pylibs/proto_py/proto_py/_gen/
 build/
 out/
 
+# Test coverage byproducts (never commit)
+coverage/
+.coverage
+*.lcov
+
 legacy project

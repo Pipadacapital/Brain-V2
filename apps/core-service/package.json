@@ -2,10 +2,23 @@
   "name": "@brain/core-service",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "description": "Orgs, workspaces, users, roles, settings, costs, goals, integrations registry, consent, audit, billing/metering. Money = integer minor units (BIGINT + currency_code), never float.",
   "scripts": {
-    "build": "echo 'build stub — implement in service requirement'",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "lint": "echo 'lint stub'",
-    "test": "echo 'test stub'"
+    "test": "vitest run --reporter=verbose",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/pg": "^8.20.0",
+    "@vitest/coverage-v8": "^4.1.7",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
   }
 }
