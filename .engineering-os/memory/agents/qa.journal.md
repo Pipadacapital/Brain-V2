@@ -73,3 +73,17 @@ Full acceptance contract: 14/14 PASS. Traceability chain complete (01→02→02b
 - Acceptance bar: Child 2 and Child 4 can be built without re-deriving the architecture (spot-checked).
 - NON-BLOCKING NB-1 (LOW): TS `roundHalfEven` uses float subtraction for `.5` detection; Child 2 must use Decimal-equivalent precision for correctness on edge cases beyond the 6 test vectors. Design intent sound; implementation concern deferred to Child 2.
 - Parallel review mode: NOT advancing pipeline; returning verdict to orchestrator.
+
+## 2026-05-24T09:15:00Z — Tanvi (qa-agent) — feat-tenancy-auth-rls-hardening
+**Stage:** 5 (PARALLEL REVIEW MODE)
+**Action:** QA BOUNCE
+**Test runs:** 7 unit (brain-claim) / 13 unit (rls-policy-shapes) / 6 unit (cron-scope) / 0 integration (deferred live-DB) / 0 contract / 0 e2e
+**Real-network smoke:** DEFERRED (Stage 8, concrete predicates confirmed)
+**Metric registry parity (TS↔Python):** N/A (sql-ddl-and-connection-handling paradigm, no metrics code)
+**Trace IDs end-to-end:** Code correct; live-network verification deferred to Stage 8
+**Operational-readiness:** PASS
+**Mutation tests on high-stakes:** PARTIAL (banned-pattern static grep passes; set_config true/false param not mutation-tested)
+**Coverage:** ~80% on logic layer (brain-claim/policy-shapes/cron-loop); inner sync writes untested post-FORCE
+**Bounced to:** backend-developer (Vikram)
+**Findings:** 1 BOUNCE / 2 NOTE / 2 INFO
+**Bounce cause:** F1 — inner sync functions write to RLS-protected tables via bare :6543 prisma singleton (no app.workspace_id set). Post-FORCE writes fail. No test, no runbook gate.

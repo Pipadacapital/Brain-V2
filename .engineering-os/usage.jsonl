@@ -20,3 +20,16 @@
 {"ts":"2026-05-24T01:36:22Z","req_id":"spike-legacy-migration-architecture","agent":"qa-agent","stage":5,"total_tokens":88969,"model":"sonnet"}
 {"ts":"2026-05-24T01:41:12Z","req_id":"spike-legacy-migration-architecture","agent":"cto-advisor","stage":6,"total_tokens":145593,"model":"opus"}
 {"ts":"2026-05-24T07:19:02Z","req_id":"spike-legacy-migration-architecture","agent":"platform-devops","stage":8,"total_tokens":60244,"model":"sonnet"}
+{"ts":"2026-05-24T07:29:09Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"cto-advisor","stage":1,"total_tokens":94216,"model":"opus"}
+{"ts":"2026-05-24T07:33:49Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"dynamic-persona-generator","stage":1,"total_tokens":73840,"model":"sonnet"}
+{"ts":"2026-05-24T07:33:49Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"dynamic-persona-generator","stage":1,"total_tokens":68529,"model":"sonnet"}
+{"ts":"2026-05-24T07:37:33Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"cto-advisor","stage":1,"total_tokens":90533,"model":"opus"}
+{"ts":"2026-05-24T07:45:22Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"architect","stage":2,"total_tokens":130715,"model":"opus"}
+{"ts":"2026-05-24T08:34:31Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"backend-developer","stage":3,"total_tokens":28109,"model":"sonnet"}
+{"ts":"2026-05-24T08:40:55Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"security-reviewer","stage":4,"total_tokens":115171,"model":"opus"}
+{"ts":"2026-05-24T08:40:55Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"qa-agent","stage":5,"total_tokens":108958,"model":"sonnet"}
+{"ts":"2026-05-24T08:56:03Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"backend-developer","stage":3,"total_tokens":160009,"model":"sonnet"}
+{"ts":"2026-05-24T09:04:52Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"backend-developer","stage":3,"total_tokens":93028,"model":"sonnet"}
+{"ts":"2026-05-24T09:13:04Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"security-reviewer","stage":4,"total_tokens":113095,"model":"opus"}
+{"ts":"2026-05-24T09:13:04Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"qa-agent","stage":5,"total_tokens":99809,"model":"sonnet"}
+{"ts":"2026-05-24T09:19:20Z","req_id":"feat-tenancy-auth-rls-hardening","agent":"cto-advisor","stage":6,"total_tokens":130615,"model":"opus"}

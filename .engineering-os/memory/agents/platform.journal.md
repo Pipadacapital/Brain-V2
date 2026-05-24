@@ -26,6 +26,21 @@
 **Deploy report:** 13-deploy-report.md
 **Next:** SHIPPED — awaiting Founder commit (product code staged; pending-founder-commit.md has the mechanical command)
 
+## 2026-05-24T13:30:00Z — Jatin (platform-devops) — feat-tenancy-auth-rls-hardening
+**Stage:** 8 (rollout — HOLD AT FORCE)
+**Action:** STAGE-8-PLAN-COMPLETE — static validation GREEN, corrected bare-write grep run, STEP0-STEP4 turnkey operator plan documented, FORCE explicitly held
+**CI:** N/A (no new CI pipeline — legacy monolith; runbook is the deploy artifact)
+**Staging:** N/A (legacy Supabase/Fargate — no ArgoCD Application for this slice; deploy_class = db-ddl-migration, app-layer code ships with Founder commit + Heroku/Supabase deploy)
+**Strategy:** Incremental DDL rollout — STEP0 (region-assert) → STEP1 (quiesce) → STEP2 (context-code verify) → STEP3 (ENABLE+CREATE, additive) → STEP4 (CF-SEC-1 probe GREEN) → HOLD. STEP5 FORCE gated on Child 3.
+**Monitor (so far):** Pre-FORCE state; 48h monitor plan in §6 of report. Key signals: API p95 (no change expected pre-FORCE), cron success rate, RLS probe re-runs at H+2/H+24/H+48.
+**Skills loaded:** operational-readiness, progressive-delivery, verification-before-completion, finishing-a-development-branch, data-residency-enforcement, incident-response
+**Dashboards:** N/A (no new service; probe output is the observability signal)
+**Static validation results:** STEP ordering CORRECT. Migration file separation CORRECT (step-a and step-b independent files). down.sql symmetry COMPLETE (43 tables, all policies dropped). Fail-closed verified (zero IS NULL/COALESCE/USING true in executable SQL). FORCE coverage COMPLETE (no table FORCEd without policy). Runbook STEP5 grep CONFIRMED DEFECTIVE (excludes backfill/discoverChannels per Rohan §4.A).
+**Corrected bare-write grep:** Run READ-ONLY across full src/. ~80+ residual bare-write sites enumerated (priority convert-list in §2.3 of report): shopify/sync.ts (7 sites, Groups B), shopify/webhooks.ts (9 sites, Groups A+B+PII), shiprocket backfill/discoverChannels (8 sites), woocommerce-sync.ts, cron.ts:249 recompute (bare prisma to product_daily_aggregates), meta.ts:192 catch-block, all route-handler connection-management writes across ~12 routes. All fail-CLOSED post-FORCE (outage, not leak).
+**FORCE status:** HELD. Explicit. Non-negotiable until Child 3 convert-list GREEN + corrected grep ZERO hits + probe GREEN re-run.
+**Deploy report:** 11-stage8-rollout-report.md
+**Next:** Founder commits + deploys product code (22 files staged). Human operator runs STEP0-STEP4 against prod Supabase using the turnkey plan in §3. 48h monitor. Child 3 converts residual writers → FORCE unlocked.
+
 ## 2026-05-24T07:13:35Z — Founder approval received — spike-legacy-migration-architecture
 - Founder /approve at 2026-05-24T01:40:00Z. Architecture accepted as BINDING for the 7-child legacy-migration epic; Child 1 greenlit.
 - Residency tripwire RESOLVED: legacy Supabase/Postgres confirmed in ap-south-1 (no DPDP s16 escalation).

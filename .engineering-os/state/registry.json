@@ -16,6 +16,19 @@
       "title": "Deep-audit the legacy platform & produce the binding legacy->Brain migration architecture (strangler-fig sequence)",
       "first_seen": "2026-05-24T00:58:39Z",
       "parent_epic": "chore-migrate-legacy-to-brain"
+    },
+    {
+      "req_id": "feat-tenancy-auth-rls-hardening",
+      "title": "Tenancy / auth / RLS hardening (Child 1 of the legacy->Brain migration)",
+      "first_seen": "2026-05-24T07:23:52Z",
+      "parent_epic": "chore-migrate-legacy-to-brain"
+    },
+    {
+      "req_id": "chore-security-governance-hardening-phase",
+      "title": "Security, Compliance & Data-Governance Hardening Phase (deferred backlog epic)",
+      "first_seen": "2026-05-24T07:55:00Z",
+      "status": "backlog",
+      "backlog_doc": ".engineering-os/backlog/chore-security-governance-hardening-phase.md"
     }
   ]
 }

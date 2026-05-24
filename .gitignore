@@ -5,6 +5,14 @@
 # State backups are local safety copies; git history is the real audit trail
 .engineering-os/state/*.bak.*
 
+# Secrets / env — NEVER commit. Local-dev credentials live only in untracked .env files.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
 # macOS
 .DS_Store
 

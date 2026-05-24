@@ -1,8 +1,336 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-24T01:40:00Z",
-  "updated_by": "founder",
+  "updated_at": "2026-05-24T13:30:00Z",
+  "updated_by": "platform-devops (Jatin) — Stage 8 rollout plan complete",
   "active_requirements": [
+    {
+      "req_id": "feat-tenancy-auth-rls-hardening",
+      "title": "Tenancy / auth / RLS hardening (Child 1 of the legacy->Brain migration)",
+      "status": "awaiting-founder-commit",
+      "stage": 8,
+      "current_owner": "founder",
+      "bounce_fix_status": "complete",
+      "bounce_fix_ts": "2026-05-24T10:05:00Z",
+      "bounce_fix_by": "backend-developer",
+      "bounce_fix_report": "07b-build-fix-report.md",
+      "bounce_fix_summary": "F1 resolved: tx threaded through syncShiprocketForConnection, syncMetaAdsForConnection, syncGoogleAdsForConnection, syncGoogleFunnelStagesForWindow, upsertOrder, upsertShipment, syncTrackingForConnection, mapShiprocketToShopify, cron.ts shopifyConnection.update. 11 new tests (rls-write-scope.test.mjs) — 8 positive+negative coverage for all 4 connectors. M2/L1/L2 addressed. Total tests now 37/37 pass.",
+      "typefix_status": "complete",
+      "typefix_ts": "2026-05-24T11:20:00Z",
+      "typefix_by": "backend-developer",
+      "typefix_summary": "PrismaTx = Prisma.TransactionClient (canonical) in rls-prisma.ts + 3 sync files. PrismaClient unused import removed. Route handlers (ads.ts, google.ts, meta.ts, shiprocket.ts) wrapped sync calls in withWorkspace(). tsc --noEmit: CLEAN. Tests: 37/37. Secret hygiene: CLEAN.",
+      "submitted_by": "rishabhporwal",
+      "submitted_at": "2026-05-24T07:23:52Z",
+      "run_folder": ".engineering-os/runs/2026-05-24T07-23-52Z__654a53__feat-tenancy-auth-rls-hardening__rishabhporwal",
+      "surface_to_founder": false,
+      "surface_to_founder_reason": "Stage 6 PASS (Rohan). Final review complete; 4 independent re-verifications replicated reviewers' PASS. APPROVE recommended. /approve advances to Stage 8 = Jatin runs the live RLS rollout runbook. Deploy-gate ledger (10-cto-final-review.md §4) is BINDING on Stage 8 — esp. §4.A: the runbook STEP-5 prerequisite grep is DEFECTIVE (excludes backfill/discoverChannels); residual no-context writers MUST be converted + a COMPLETE bare-write grep must be GREEN before any FORCE.",
+      "parent_epic": "chore-migrate-legacy-to-brain",
+      "epic_child_id": "child-1-tenancy-auth-rls-hardening",
+      "depends_on": [
+        "spike-legacy-migration-architecture"
+      ],
+      "inherited_carry_forward": [
+        "CF-RES-1",
+        "CF-SEC-1",
+        "CF-SEC-3",
+        "CF-SEC-5",
+        "CF-SEC-SECRETS-1"
+      ],
+      "lane": "high-stakes",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Trigger-surface scan fires on auth + multi-tenancy (workspace_id RLS, the core) + pii (workspace-scoped PII: Invitation.email/ShopifyCustomer/User) + india-compliance (DPDP 8(6) breach window + 16 residency); also schema-proto (RLS DDL / possible workspace_id denormalization) + connectors (cron sync fan-out). Live data, runtime change, migration on existing data => scaffolding carve-out inapplicable; conservative tie-break forbids downgrade.",
+      "trigger_surfaces_touched": [
+        "auth",
+        "multi-tenancy",
+        "pii",
+        "india-compliance",
+        "schema-proto",
+        "connectors"
+      ],
+      "intake_decision": "ADVANCE",
+      "cto_review_artifact": "02-cto-advisor-review.md",
+      "cto_review_ts": "2026-05-24T07:27:27Z",
+      "pre_flight_dependency_check": {
+        "blocks": [
+          "child-0-audit-migration-architecture-spike"
+        ],
+        "blocker_req_id": "spike-legacy-migration-architecture",
+        "blocker_status": "done",
+        "result": "no-violation"
+      },
+      "scope_decision": "ADVANCE with scope split inside one requirement: 1a = data-layer isolation (RLS on all workspace-scoped tables incl. ~24 FK-transitive ones; SET LOCAL session context correct under pgbouncer txn-pool; cron fan-out session-scoped; CF-SEC-1 fail-closed RLS-probe GREEN predicate) = the C5-gate-establishing unit, ships first, additive+reversible; 1b = Brain auth/role-claim contract mapping existing Supabase JWT + WorkspaceRole(5-level, already exists) into Brain claim, ships behind 1a. Aryan plans both; 1a carries the gate.",
+      "first_pass_paradigm": "sql-ddl-and-connection-handling (no ML, no LLM)",
+      "ground_truth_read": {
+        "models": 45,
+        "workspaceid_refs": 66,
+        "direct_workspaceid_models_approx": 21,
+        "fk_transitive_scoped_models_approx": 24,
+        "fk_transitive_examples": [
+          "ShopifyOrder.connectionId",
+          "ShopifyLineItem.connectionId+orderId",
+          "ShiprocketOrder/Shipment",
+          "google_ads_*",
+          "meta_ads_*",
+          "Woocommerce* "
+        ],
+        "cron_cross_workspace_findMany": [
+          "routes/cron.ts:65",
+          "routes/cron.ts:148",
+          "shiprocket-sync.ts:344 syncAllShiprocket",
+          "meta-sync.ts:282 syncAllMetaAds",
+          "google-sync.ts:652 syncAllGoogleAds"
+        ],
+        "prisma_client": "singleton long-lived PrismaClient (lib/prisma.ts) over pgbouncer transaction-mode pool (DATABASE_URL :6543) + DIRECT_URL :5432",
+        "role_enums": "WorkspaceRole{OWNER,ADMIN,MANAGER,ANALYST,VIEWER} (5-level, already exists, schema:936) + SystemRole{SUPERADMIN,USER}",
+        "auth": "Supabase JWT via jose JWKS (middleware/auth.ts); workspace+membership resolved per request (middleware/workspace.ts)",
+        "rls_present": false
+      },
+      "needs_personas": [
+        "live-rls-rollout-safety-realist",
+        "india-data-isolation-compliance-officer"
+      ],
+      "personas_synthesized": true,
+      "persona_synthesis_artifact": "05-stage1-synthesis.md",
+      "persona_synthesis_ts": "2026-05-24T07:34:19Z",
+      "persona_artifacts": [
+        "03-persona-live-rls-rollout-safety-realist.md",
+        "04-persona-india-data-isolation-compliance-officer.md"
+      ],
+      "persona_concerns_carried_to_stage2": 10,
+      "persona_concern_severity_breakdown": {
+        "critical": 2,
+        "high": 6,
+        "medium": 2
+      },
+      "persona_quality_gate": "both personas surfaced >=1 genuine code-grounded concern (5 each); no 'looks good'; both in lane; complementary not overlapping",
+      "stage2_sharpened_constraints": [
+        "CF-C1-POOL-1.a (interleaved-tenant test on :6543 + context-less=ZERO-rows; session-level SET forbidden)",
+        "CF-C1-FK-SCOPE-1.a (live EXPLAIN ANALYZE BUFFERS before JOIN-vs-denorm choice; chunked reversible backfill)",
+        "CF-C1-RLS-DEFAULT-1.a (static USING-clause review forbids IS NULL OR/COALESCE catch-all; G1+G2 GREEN together)",
+        "CF-C1-CRON-SCOPE-1.a (per-connection error isolation + proof-of-attempt logging; Shiprocket no-replay)",
+        "CF-RES-1.a (Postgres-level region assert on BOTH DATABASE_URL :6543 AND DIRECT_URL :5432; non-zero exit + /escalate on fail)",
+        "CF-C1-AUDITLOG-1.a (dual-policy workspace + SUPERADMIN-only null rows + SUPERADMIN erasure path)"
+      ],
+      "stage2_new_constraints": [
+        "CF-C1-ROLLOUT-ORDER-1 (one safe ordering: context-code -> ENABLE+CREATE policy -> probe-verify -> FORCE per table -> smoke; FORCE-rollback is a DDL not a flag)",
+        "CF-C1-QUIESCE-1 (quiesce-crons-FIRST before any RLS DDL, harness-asserted zero cross-workspace findMany)",
+        "CF-C1-PII-REGISTER-1 (A6.2 register: ShopifyCustomer PII processing begins at Child 1, not Child 3)"
+      ],
+      "stage2_binding_rollout_sequence": "STEP0 region-assert(both URLs) -> STEP1 quiesce/session-scope crons -> STEP2 deploy SET-LOCAL context code -> STEP3 ENABLE+CREATE policy (fail-closed) -> STEP4 CF-SEC-1 probe GREEN -> STEP5 FORCE RLS per table -> STEP6 smoke; G1+G2 GREEN together; FK-scope EXPLAIN is a pre-step to STEP3",
+      "co_owner_stage2_maya_needed": false,
+      "co_owner_stage2_maya_rationale": "pure RLS/DDL + connection-handling + JWT-claim mapping; no metric-registry/money-parity/AI-surface/TS-Python-numeric-parity dimension (Maya's lane). Aryan raises a co-owner request only if FK-scope EXPLAIN surfaces a metric-rollup dependency.",
+      "escalation": {
+        "decision": "escalated-now",
+        "subject": "DPDP §4/§7 migration-time PII lawful-basis instrument (DPA or Founder-signed §7 continuity memo) — required before Brain processes live brand-customer PII at Child 1",
+        "escalated_now": true,
+        "escalated_at": "2026-05-24T07:34:19Z",
+        "rubric_trigger": "compliance ambiguity — DPDP Act 2023; AND a missing build-gating prerequisite only the Founder can produce/decide",
+        "differs_from_residency_tripwire": "residency was an UNKNOWN FACT the spike audit could resolve (escalating would fabricate); this is a MISSING LEGAL INSTRUMENT that does not exist on record and cannot be derived from code — no canon answer to supply in good conscience",
+        "why_now_not_stage7": "Child 1 is the first slice writing real code against the live DB; CF-SEC-1 RLS probe reads Invitation.email + any denorm backfill reads ShopifyCustomer PII = DPDP §4 processing acts. Deferring to Stage 7 means building against live-PII reads with no lawful basis on record. Escalating now lets the Founder draft/sign the instrument in parallel with Aryan's Stage-2 design (no live data), ready before Stage 3.",
+        "founder_ask": "Before Stage-3 build authorization, produce/confirm ONE of: (a) executed DPA / brand-contract processor clause covering Brain processor-role + migration-time processing with >= anchor customer Sugandh Lok; OR (b) Founder-signed DPDP §7 legitimate-use continuity memo attesting RLS-policy application + CF-SEC-1 probe queries + any workspace_id denormalization backfill fall within original purpose scope (must name Invitation.email, ShopifyCustomer PII, User).",
+        "founder_heads_up_mirrored": true,
+        "founder_heads_up_target": ".engineering-os/pending-founder-attention.md",
+        "blocks_stage": 3,
+        "does_not_block_stage": 2
+      },
+      "build_gated_on": "CF-SEC-3.HARD: DPA (>= Sugandh Lok) OR Founder-signed DPDP §7 continuity memo naming Invitation.email + ShopifyCustomer PII + User",
+      "cf_sec_3_status": "satisfied-by-founder-decision (Sugandh Lok own-brand data; third-party-brand PII in prod re-arms the gate)",
+      "persona_briefs": {
+        "live-rls-rollout-safety-realist": "Prove the RLS rollout breaks the LIVE legacy app or leaks: SET LOCAL x pgbouncer-transaction-mode interaction under the singleton-client autocommit pattern; FK-transitive scoping of ~24 tables (JOIN-based policy correctness+cost vs workspace_id denormalization+live backfill safety); is rollout truly additive/reversible/toggle-guarded or can a half-applied policy deny the legacy app mid-deploy (downtime); does fail-closed default actually DENY (not leak) when context unset; name the one step most likely to cause a live outage OR a silent leak.",
+        "india-data-isolation-compliance-officer": "Compliance edges of doing the rollout: partial-RLS deploy window DPDP 8(6) leak exposure; CF-SEC-3 migration-time PII lawful basis (DPDP 4/7) for Invitation.email/ShopifyCustomer/User established before touched, or /escalate-ambiguous at build; CF-RES-1 positive-assertion mechanics (how ap-south-1 is asserted at execution); AuditLog null-workspaceId (C9) erasure-scopability under RLS; flag any genuine DPDP ambiguity to /escalate."
+      },
+      "persona_decline_notes": "Declined ai-cost-realist (no compute path in Child 1) and a generic architecture persona (slice-boundary + DDL correctness is Aryan's binding Stage-2 job; the rollout-safety realist supplies the adversarial method read). Auth/role-claim (1b) is low-risk plan-level work, not a 3rd persona.",
+      "child_1_binding_constraints": {
+        "inherited": [
+          "CF-RES-1",
+          "CF-SEC-1",
+          "CF-SEC-3",
+          "CF-SEC-5",
+          "CF-SEC-SECRETS-1"
+        ],
+        "child1_specific": {
+          "CF-C1-POOL-1": "SET LOCAL app.workspace_id correct under pgbouncer transaction-mode; forbid session-level SET; require tx-local (SET LOCAL/set_config(...,true) in same tx as query) OR session-mode/DIRECT_URL routing; Tanvi proves interleaved tenants cannot observe each other's context AND context-less query returns ZERO rows. Stage-4/5 VETO.",
+          "CF-C1-RLS-DEFAULT-1": "RLS default with no app.workspace_id set = fail-closed (deny all rows), never fail-open; no permissive fallback policy.",
+          "CF-C1-FK-SCOPE-1": "~24 FK-transitively-scoped tables (order/line-item/product/ads/refund via connectionId/orderId) get correct+affordable RLS (Aryan: JOIN-policy vs workspace_id denormalization+safe live backfill); zero FK-scoped table left unprotected.",
+          "CF-C1-ZERO-BEHAVIOR-1": "Live API responses byte-identical pre/post-RLS for a fixed per-workspace corpus; zero downtime; additive+toggle-guarded; rollback=disable policies (app-layer scoping still present) per A4.",
+          "CF-C1-CRON-SCOPE-1": "All cross-workspace findMany fan-out converted to per-workspace-session-scoped invocations; no cross-workspace findMany remains; Shiprocket flagged (no replay).",
+          "CF-C1-AUDITLOG-1": "Dispose AuditLog null-workspaceId rows to stay erasure-scopable + not break under RLS (system-workspace attribution or explicit system-event policy)."
+        }
+      },
+      "escalation_at_intake": "none at first-pass intake (residency confirmed ap-south-1 => CF-RES-1 positive-assertion gate-zero). UPGRADED AT SYNTHESIS: compliance persona confirmed CF-SEC-3 PII lawful-basis is a MISSING build-gating prerequisite (no DPA/§7 memo on record) -> escalated-now (see escalation block). CF-RES-1 remains an armed in-pipeline tripwire (/escalate re-fires only if region assertion fails at execution).",
+      "stage2_plan_artifact": "06-architecture-plan.md",
+      "stage2_plan_ts": "2026-05-24T07:43:15Z",
+      "paradigm_confirmed": "sql-ddl-and-connection-handling (no ML, no LLM) — Rohan Stage-1 sign-off",
+      "scope_split": {
+        "1a": "data-layer isolation (RLS all workspace-scoped tables + rlsPrisma/:5432 + withWorkspace tx-local set_config + cron session-scoping + CF-SEC-1 fail-closed probe) = C5-gate-establishing unit, ships first, additive+reversible",
+        "1b": "Brain auth/role-claim contract (map Supabase JWT + WorkspaceRole(5-level)/SystemRole into level-ordered Brain claim feeding withWorkspace); no re-login storm; ships behind 1a"
+      },
+      "build_ready": true,
+      "key_design_decisions": {
+        "pooling_CF-C1-POOL-1.a": "rlsPrisma 2nd client on DIRECT_URL :5432 session-mode + tx-local set_config(app.workspace_id,$1,true) inside explicit $transaction via withWorkspace(); session-level SET banned; injection-safe bind param",
+        "fk_scope_CF-C1-FK-SCOPE-1.a": "default JOIN/subquery policy + live EXPLAIN(ANALYZE,BUFFERS) decision-gate per table; escalate hot tables (shopify_orders/shopify_line_items) to workspace_id denormalization via additive col + chunked(5000) online backfill + CONCURRENTLY index + IS-NULL=0 verify; all 45 models classified (21 direct / ~18 conn-FK / 1 order-FK 2-hop / 4 global)",
+        "fail_closed_CF-C1-RLS-DEFAULT-1.a": "USING/WITH CHECK = (col = current_setting(app.workspace_id,true)::uuid); NULL=>0 rows; banned OR-IS-NULL/COALESCE/USING(true); CF-SEC-1 probe RED-by-default -> GREEN on cross-read=0 & contextless=0, Decision-Log transition",
+        "rollout_sequence": "STEP0 region-assert(both URLs) -> STEP1 quiesce-crons-first -> STEP2 deploy context-code -> STEP3 ENABLE+CREATE policy -> STEP4 probe GREEN -> STEP5 FORCE per table -> STEP6 smoke; G1+G2 GREEN together; rollback = NO FORCE+DISABLE+DROP POLICY (DDL, corrects A4)",
+        "cron_CF-C1-CRON-SCOPE-1.a": "wrap each syncAll* per-connection unit in withWorkspace(c.workspaceId); outer enumeration under withSuperadmin; preserve per-connection try/catch + proof-of-attempt logging; Shiprocket no-replay -> attempted-vs-connected alarm",
+        "auditlog_CF-C1-AUDITLOG-1.a": "dual-policy: ws-scoped + SUPERADMIN-only(app.is_superadmin) for null rows; §12 erasure under withSuperadmin userId-only; compatible with deferred Child-5 sentinel migration",
+        "CF-RES-1.a": "Postgres-level region assert ap-south-1 on BOTH DATABASE_URL:6543 + DIRECT_URL:5432; .env.bak.singapore proves a real ap-southeast-1->ap-south-1 move happened -> must be live-asserted not trusted"
+      },
+      "build_tracks": [
+        "1a-A-rls-session-context",
+        "1a-B-route-migration-withWorkspace",
+        "1a-C-fk-scope-policies-backfill-auditlog-dualpolicy",
+        "1a-D-cf-sec-1-probe",
+        "1a-E-cron-session-scope-refactor",
+        "1a-F-rollout-harness-runbook",
+        "1b-auth-role-claim"
+      ],
+      "no_service_created": true,
+      "no_deploy_pipeline_track_reason": "hardens live legacy backend in place; no new Brain service => no new ArgoCD app; deploy artifact is the ordered runbook (track 1a-F), executed by @jatin at Stage 8",
+      "maya_co_owner": false,
+      "next_stage_recommendation": "STOP after Stage 2 — surface to Founder for the DPDP lawful-basis instrument; do NOT spawn Stage-3 builders until gate lifted",
+      "legacy_db_prior_region": "ap-southeast-1 (Singapore) per .env.bak.singapore — now ap-south-1",
+      "build_gate_lifted": true,
+      "build_gate_basis": "Founder decision 2026-05-24: legal owner/controller of Sugandh Lok (in-scope brand); formal governance deferred to chore-security-governance-hardening-phase",
+      "build_owner": "vikram",
+      "stage3_build_report": "07-build-report.md",
+      "stage3_build_ts": "2026-05-24T08:26:13Z",
+      "stage3_staged_files": 22,
+      "stage3_tracks_complete": [
+        "1a-A",
+        "1a-B",
+        "1a-C",
+        "1a-D",
+        "1a-E",
+        "1a-F",
+        "1b"
+      ],
+      "stage3_tracks_deferred_to_stage8": [
+        "FK-scope-EXPLAIN-gate",
+        "denorm-backfill-if-needed",
+        "CF-SEC-1-probe-live-run",
+        "region-assert-live",
+        "byte-identical-smoke"
+      ],
+      "stage3_verification": {
+        "brain_claim_tests": "PASS (7/7)",
+        "rls_policy_shapes_tests": "PASS (13/13)",
+        "cron_scope_tests": "PASS (6/6)",
+        "rls_write_scope_tests": "PASS (11/11) — added in bounce-fix 07b",
+        "total_tests": "37/37 pass (26 original + 11 new)",
+        "secret_hygiene": "CLEAN",
+        "env_not_staged": "CONFIRMED",
+        "baseline_ts_errors": "CLEAN after typefix — tsc --noEmit exits 0; Prisma client generated; PrismaTx = Prisma.TransactionClient canonical fix applied to rls-prisma.ts + 3 sync files + 4 route handlers wrapped in withWorkspace()",
+        "no_bare_write_grep": "CLEAN — syncShiprocketForConnection, syncMetaAdsForConnection, syncGoogleAdsForConnection, cron.ts all use tx for Group A/B writes"
+      },
+      "parallel_review_mode": "standard",
+      "next_owners": [
+        "security-reviewer",
+        "qa-agent"
+      ],
+      "stage4_security_verdict": "PASS",
+      "stage4_security_findings_ref": "08b-security-rereview.md",
+      "stage4_security_reviewer": "security-reviewer (Shreya)",
+      "stage4_security_ts": "2026-05-24T09:08:00Z",
+      "stage4_security_summary": {
+        "critical": 0,
+        "high": 0,
+        "medium": 2,
+        "low": 2,
+        "info": 2,
+        "compliance_violations": 0,
+        "missing_traceability": 0,
+        "secret_hygiene": "clean",
+        "inner_sync_writes_gap": "safe-to-defer at Child-1 commit (no DDL shipped; pre-FORCE owner bypass = no leak); HARD must-fix-before-FORCE / blocking predecessor on Child-3 + Stage-8 runbook FORCE step"
+      },
+      "stage5_qa_verdict": {
+        "round": 2,
+        "verdict": "PASS",
+        "qa_agent": "tanvi",
+        "timestamp": "2026-05-24T11:55:00Z",
+        "artifact": ".engineering-os/runs/2026-05-24T07-23-52Z__654a53__feat-tenancy-auth-rls-hardening__rishabhporwal/09b-qa-rereview.md",
+        "prior_artifact": ".engineering-os/runs/2026-05-24T07-23-52Z__654a53__feat-tenancy-auth-rls-hardening__rishabhporwal/09-qa-review.md",
+        "tests_run": "37/37 pass (7 brain-claim + 13 rls-policy-shapes + 6 cron-scope + 11 rls-write-scope)",
+        "typecheck": "PASS (tsc --noEmit exit 0)",
+        "real_network_smoke": "deferred-to-stage-8 (concrete predicates specified — unchanged from round 1)",
+        "metric_registry_parity": "N/A (no metrics code in sql-ddl-and-connection-handling paradigm)",
+        "trace_ids_end_to_end": "code-correct-deferred-live-verification-stage-8",
+        "operational_readiness": "PASS",
+        "mutation_tests_high_stakes": "PARTIAL (static SQL grep covers banned patterns; set_config true/false mutation gap acceptable — live-DB smoke at Stage 8 is the system-level detector)",
+        "f1_closed": "CONFIRMED — cron-path functions (syncShiprocketForConnection/helpers, syncMetaAdsForConnection, syncGoogleAdsForConnection/syncGoogleFunnelStagesForWindow, cron.ts Shopify lastSyncAt) all use tx for Group A/B writes. Grep CLEAN. Remaining bare prisma writes in discoverChannels/backfillShiprocketCourierNames/backfillShiprocketPincodes are non-cron route functions, outside F1 scope, carry-forward for Track 1a-B.",
+        "five_route_handler_fixes": "CONFIRMED — all 5 wraps verified in ads.ts (meta+google backfill), google.ts (sync), meta.ts (sync), shiprocket.ts (sync step). Typecheck enforces tx arg.",
+        "founder_bar": "MET — clean code (rls-prisma.ts, sync files, brain-claim.ts all well-documented and debuggable); positive+negative coverage per connector (4 pairs); tests clearly named",
+        "new_findings": {
+          "CF-F1-ROUTE-B": "NOTE (carry-forward to Track 1a-B): discoverChannels, backfillShiprocketCourierNames, backfillShiprocketPincodes, /connect POST/PATCH, /select-channels POST in shiprocket route still use bare prisma writes. Non-cron, user-triggered. Will break post-FORCE. Runbook STEP 5 prerequisite gate already directs Jatin to grep for bare writes before FORCE.",
+          "F2_F3_F5": "Unchanged from round 1 — all acceptable carry-forward items"
+        },
+        "parallel_review_mode": true,
+        "note": "PASS (parallel mode — returned to orchestrator, did NOT advance). F1 resolved. TypeScript typecheck clean. 37/37 tests pass. Founder bar met. Secrets hygiene clean."
+      },
+      "stage4_security_rereview": {
+        "round": 2,
+        "scope": "delta re-review of bounce-fix 07b (F1/M1 tx-threading) + 07c (PrismaTx type fix + 5 route-handler withWorkspace wraps)",
+        "verdict": "PASS",
+        "f1_m1_resolution": "CONFIRMED — cron.ts, meta-sync.ts, google-sync.ts: zero bare-prisma writes (grep clean). shiprocket-sync.ts cron path (syncShiprocketForConnection/upsertOrder/upsertShipment/syncTrackingForConnection/mapShiprocketToShopify) fully tx-threaded.",
+        "five_route_handlers": "SAFE — all 5 wraps use withWorkspace(<validated workspaceId>, (tx)=>sync(...,tx)); workspaceId is the same id requireWorkspaceAdmin authorized; no withSuperadmin misuse; no wrong-workspaceId source; UUID guard (L1) active.",
+        "fail_closed_rls": "intact — no NULL-trap in executable policy (only comments at up.sql:18-20,410)",
+        "secret_hygiene": "clean — zero secret values in full staged diff; .env not staged",
+        "tests": "37/37 pass",
+        "new_findings": {
+          "M3_traceability_integrations_routes": "MEDIUM (tracked, non-blocking, not a regression): /api/integrations/* routes use requireAuth only and do NOT pass requireWorkspace middleware that seeds the correlation ALS; on these paths withWorkspace binds workspaceId but requestId/traceId degrade to sentinel 'unset'. Pre-existing in the ported routes (added to my review surface in 07c), NOT introduced by the tx-wrap delta; workspaceId (tenancy-critical element) IS present; no production log line drops an ID that was set. Pin: route-migration phase must mount correlation seeding (or requireWorkspace) on /api/integrations/* before any FORCE-era production traffic."
+        },
+        "carried_findings": {
+          "M1": "RESOLVED at code level for cron + 5 route handlers. Residual: backfillShiprocketCourierNames/backfillShiprocketPincodes/discoverChannels (shiprocket-sync.ts) + cron recompute (cron.ts:249, _tx) + Shopify inner sync libs (unstaged) still write via bare prisma — but run with NO workspace context at all (outside withWorkspace), so post-FORCE they fail-CLOSED (enrichment/recompute outage), NOT fail-open. Same hard-gate-before-FORCE applies; pin on Child-3 + Stage-8 runbook STEP-5.",
+          "M2": "disposition holds (probe contextless ordering — Tanvi deploy gate)",
+          "L1": "resolved (UUID guard added)",
+          "L2": "resolved (doc corrected)"
+        },
+        "summary": {
+          "critical": 0,
+          "high": 0,
+          "medium": 3,
+          "low": 0,
+          "compliance_violations": 0,
+          "missing_traceability": 0,
+          "secret_hygiene": "clean"
+        }
+      },
+      "stage6_final_review": {
+        "verdict": "PASS",
+        "reviewer": "cto-advisor (Rohan)",
+        "artifact": "10-cto-final-review.md",
+        "timestamp": "2026-05-24T07:48:00Z",
+        "plan_binding_ok": true,
+        "independent_reverifications": {
+          "fail_open_null_trap": "ABSENT — zero IS NULL/COALESCE/USING(true) in executable SQL; all 90 current_setting use missing_ok=true => NULL => 0 rows (fail-closed). 43 distinct tables ENABLE+CREATE POLICY+FORCE reconciled; no table FORCEd without a policy; down.sql full symmetry.",
+          "secrets_env_clean": "CONFIRMED — .env not staged; zero credential values in staged product diff; only env-var name refs.",
+          "f1_fix_tx_not_bare_prisma": "CONFIRMED — cron.ts/meta-sync/google-sync 0 bare writes; syncShiprocketForConnection clean; 8 residual bare writes confined to discoverChannels/backfill* (non-cron, fail-CLOSED post-FORCE).",
+          "replicated_qa_gates": "node --test 37/37 exit 0; tsc --noEmit exit 0 — both replicated with captured output."
+        },
+        "over_engineering_audit": "CLEAN — no out-of-plan files; notifications dual-policy accepted as within-authority correctness (not gold-plating); no new deps; no speculative abstractions; no Child 2-6 scope pulled forward.",
+        "doc_discrepancy_logged": "Reports/commit say '44 tables'; executable count is 43 distinct tables. Cosmetic; runbook asserts POLICY_COUNT>=43 (correct). Flagged for retro.",
+        "deploy_gate_critical": "Runbook STEP-5 prerequisite grep is DEFECTIVE — it grep -v excludes 'backfill' and 'discoverChannels', giving a false all-clear on the exact residual writes that must convert before FORCE. BINDING corrected gate handed to Stage 8 (§4.A): convert residual no-context writers (discoverChannels, backfillShiprocketCourierNames/Pincodes, shiprocket /connect+/select-channels, cron.ts:249 recompute, meta.ts:192 catch, unstaged Shopify sync libs) in Child 3 + run a COMPLETE bare-write grep GREEN before any FORCE.",
+        "recommendation": "APPROVE"
+      },
+      "stage7_founder_approval": {
+        "verdict": "APPROVE",
+        "by": "founder (in-session, direct)",
+        "delegation": "founder present and decided directly; consistent with standing delegation to Rohan for Founder gates",
+        "ts": "2026-05-24T09:25:07Z",
+        "binding_directive": "HOLD at STEP-5 FORCE: run STEP0-STEP4 (additive/reversible) only; do NOT run step-b-force.sql until Child 3 converts residual no-context writers AND the corrected complete bare-write grep is GREEN (deploy-gate ledger 4.A)",
+        "next_owner": "platform-devops (Jatin)",
+        "next_stage": 8
+      },
+      "stage8_rollout": {
+        "report_artifact": "11-stage8-rollout-report.md",
+        "ts": "2026-05-24T13:30:00Z",
+        "static_validation": "GREEN — step ordering correct, migration file separation correct, down.sql symmetric (43 tables), fail-closed verified (zero banned patterns), FORCE coverage complete",
+        "corrected_grep": "COMPLETE — ~80+ residual bare-write sites enumerated; priority convert-list in §2.3 of report",
+        "force_hold": "EXPLICIT — gated on Child 3 convert-list + corrected grep ZERO hits + probe GREEN re-run",
+        "live_db_steps": "STEP0-STEP4 turnkey operator plan in §3 of report — includes FK EXPLAIN gate, region-assert predicates, quiesce predicate, probe non-owner requirement, HALT conditions",
+        "48h_monitor_plan": "§6 of report — p95/error/cron-success/probe re-runs at H+2/H+24/H+48",
+        "rollback": "psql DIRECT_URL --file down.sql (idempotent)"
+      },
+      "last_journal_at": "2026-05-24T13:30:00Z"
+    },
     {
       "req_id": "spike-legacy-migration-architecture",
       "title": "Deep-audit the legacy platform & produce the binding legacy->Brain migration architecture (strangler-fig sequence)",
@@ -10,6 +338,8 @@
       "stage": 8,
       "current_owner": "none",
       "completed_at": "2026-05-24T07:14:41Z",
+      "committed_sha": "4321288",
+      "committed_branch": "feature/spike-legacy-migration-architecture",
       "founder_decision": "approved",
       "founder_decision_ts": "2026-05-24T01:40:00Z",
       "founder_decision_artifact": "12-founder-decision.json",
@@ -41,7 +371,18 @@
         "secret_hygiene_detail": "zero credential values found in .engineering-os/ tree; project-ref + pooler-host in 12-founder-decision.json + pending-founder-attention.md are region-fact identifiers only (no auth capability); all credential patterns sk-ant-/shpss_/GOCSPX-/postgres-url/JWT returned zero hits",
         "residency_resolution": "ap-south-1 confirmed by Founder at 2026-05-24T01:40:00Z; CF-RES-1 now runs as positive-assertion gate-zero in Child 1, not blocker-or-escalate fork",
         "carry_forward_constraints": 11,
-        "child_1_binding_inputs": ["CF-SEC-1","CF-SEC-2","CF-SEC-3","CF-SEC-4","CF-SEC-5","CF-QA-1","CF-MAYA-1","CF-MAYA-2","CF-RES-1","CF-SEC-SECRETS-1"]
+        "child_1_binding_inputs": [
+          "CF-SEC-1",
+          "CF-SEC-2",
+          "CF-SEC-3",
+          "CF-SEC-4",
+          "CF-SEC-5",
+          "CF-QA-1",
+          "CF-MAYA-1",
+          "CF-MAYA-2",
+          "CF-RES-1",
+          "CF-SEC-SECRETS-1"
+        ]
       },
       "co_owner_stage4": "qa-agent",
       "submitted_by": "rishabhporwal",
@@ -72,10 +413,10 @@
         "result": "no-violation"
       },
       "gate_applicability_no_code_spike": {
-        "architect_stage2": "full \u2014 co-owned Aryan + Maya; the A1-A6 artifacts ARE the Stage-2 deliverable",
-        "security_stage4": "full \u2014 adversarial review of RLS/isolation design + residency/PII sequencing + dual-run data-handling (design-level VETO)",
-        "qa_stage5": "adapted \u2014 verify artifacts exist, complete, internally consistent vs acceptance contract; mutation-tests N/A (no code), real-network-smoke N/A",
-        "final_review_stage6": "full \u2014 drift vs contract + phased-not-bigbang check + over-engineering audit",
+        "architect_stage2": "full — co-owned Aryan + Maya; the A1-A6 artifacts ARE the Stage-2 deliverable",
+        "security_stage4": "full — adversarial review of RLS/isolation design + residency/PII sequencing + dual-run data-handling (design-level VETO)",
+        "qa_stage5": "adapted — verify artifacts exist, complete, internally consistent vs acceptance contract; mutation-tests N/A (no code), real-network-smoke N/A",
+        "final_review_stage6": "full — drift vs contract + phased-not-bigbang check + over-engineering audit",
         "deploy_stage8": "no-op readiness analogue (runtime_deployed:false); 'deploy' == accepting architecture as binding to spawn children"
       },
       "needs_personas": [
@@ -166,7 +507,7 @@
       },
       "escalation": {
         "decision": "spike-investigation-item-with-pre-wired-tripwire",
-        "subject": "DPDP cross-border data transfer (compliance Concern 2) \u2014 PII migrating legacy Postgres -> Brain ap-south-1",
+        "subject": "DPDP cross-border data transfer (compliance Concern 2) — PII migrating legacy Postgres -> Brain ap-south-1",
         "escalated_now": false,
         "rationale": "Escalation predicate is an unconfirmed FACT (current Supabase/Postgres region), not a canon interpretation ambiguity; confirming it IS the spike's audit job. Escalating now would fabricate an escalation. Burying it would drift a real breach-risk. Resolution: spike MUST confirm region FIRST (before A2 finalized); if ap-south-1 -> record in A6, no escalation; if NOT ap-south-1 -> immediate /escalate to Founder + a data-residency-migration step inserted before Child 1, and A2 cannot finalize until Founder rules. Tripwire named in A6 so it cannot be silently skipped.",
         "founder_heads_up_mirrored": true,
@@ -201,8 +542,8 @@
       "maya_deepening_pending": false,
       "maya_deepening_completed_at": "2026-05-24T01:18:46Z",
       "maya_deepen_sections": {
-        "A1.5": "COMPLETED \u2014 rollup->metric-registry column-by-column map (8 tables; all SQL @paradigm; no ML required \u2014 M-A1-Q1); ROAS->CM2 inversion definitional-parity ruling (M-A1-Q2: parity vs Brain corrected formula; definitional-delta register required); AI-surface full map (13 context-adapters, 13 page-prompts, 2 signal tiers, filtersHash cache-purge gate CACHE-PURGE-C4C5); M-A1-Q3 answered (Tier A=sql/Tier B=haiku/sonnet; ~80% surface is deterministic SQL)",
-        "A5.2": "COMPLETED \u2014 M-A5-1 exact-equality harness (ROUND_HALF_EVEN byte-identity proof + 6 test vectors + TS/Python impl skeletons); M-A5-2 ClickHouse shadow table DDL + compare query (no Postgres dual-write confirmed); M-A5-3 FX-exclusion 4-mechanic design; M-A5-4 mismatch triage 4-category taxonomy + cutover decision rule; M-A5-5 AI-input shadow + CACHE-PURGE-C4C5 gate implementation spec; M-A5-Q1 (ratio->scaled-int FLOOR rule); M-A5-Q2 (paise canonical, 4-decimal sources rounded once at ACL); M-A5-Q3 (connector parity=count-based not numeric-shadow; rollback windows per connector)"
+        "A1.5": "COMPLETED — rollup->metric-registry column-by-column map (8 tables; all SQL @paradigm; no ML required — M-A1-Q1); ROAS->CM2 inversion definitional-parity ruling (M-A1-Q2: parity vs Brain corrected formula; definitional-delta register required); AI-surface full map (13 context-adapters, 13 page-prompts, 2 signal tiers, filtersHash cache-purge gate CACHE-PURGE-C4C5); M-A1-Q3 answered (Tier A=sql/Tier B=haiku/sonnet; ~80% surface is deterministic SQL)",
+        "A5.2": "COMPLETED — M-A5-1 exact-equality harness (ROUND_HALF_EVEN byte-identity proof + 6 test vectors + TS/Python impl skeletons); M-A5-2 ClickHouse shadow table DDL + compare query (no Postgres dual-write confirmed); M-A5-3 FX-exclusion 4-mechanic design; M-A5-4 mismatch triage 4-category taxonomy + cutover decision rule; M-A5-5 AI-input shadow + CACHE-PURGE-C4C5 gate implementation spec; M-A5-Q1 (ratio->scaled-int FLOOR rule); M-A5-Q2 (paise canonical, 4-decimal sources rounded once at ACL); M-A5-Q3 (connector parity=count-based not numeric-shadow; rollback windows per connector)"
       },
       "maya_constraints": "must NOT change A1.1-A1.4 dispositions or the six A5.1 binding rules without a plan-amendment back to architect",
       "maya_plan_amendment_needed": false,
@@ -255,7 +596,7 @@
         "non_blocking": 1,
         "informational": 2
       },
-      "stage5_qa_nb1": "LOW: TS roundHalfEven uses float arithmetic; Child 2 must use Decimal-equivalent precision (not Math.round or float subtraction) \u2014 design intent sound, implementation concern for Child 2",
+      "stage5_qa_nb1": "LOW: TS roundHalfEven uses float arithmetic; Child 2 must use Decimal-equivalent precision (not Math.round or float subtraction) — design intent sound, implementation concern for Child 2",
       "stage6_final_review": {
         "verdict": "PASS",
         "recommendation": "APPROVE",
@@ -287,55 +628,81 @@
           "note": "Binding on the named future children; each child's Stage-1 intake + Stage-4 security MUST inherit the relevant rows. These are ADDITIONAL hardening/pre-conditions beyond the 9 concern-bindings C1-C9 already embedded in A1-A6.",
           "CF-SEC-1": {
             "source": "Shreya MED-1",
-            "binds": ["child-1-tenancy-auth-rls-hardening"],
+            "binds": [
+              "child-1-tenancy-auth-rls-hardening"
+            ],
             "constraint": "facade RLS+session gate must be a fail-closed auditable predicate (GREEN from live RLS-probe + cron-session-scope assertion, NOT a manual boolean; RED-by-default; flip events to immutable Decision Log)",
             "veto_surface": "Stage-4 @ Child 1"
           },
           "CF-SEC-2": {
             "source": "Shreya MED-2",
-            "binds": ["child-2-money-minor-units-migration", "child-4-metric-engine-oltp-olap-split"],
+            "binds": [
+              "child-2-money-minor-units-migration",
+              "child-4-metric-engine-oltp-olap-split"
+            ],
             "constraint": "shadow-compare read path must be a physically-separate replica/PITR snapshot AND analytics read connection RLS-session-scoped per workspace (read-only role alone is insufficient); G1+G2 gate applies to the read connection too",
             "veto_surface": "Stage-4 @ Child 2/4"
           },
           "CF-SEC-3": {
             "source": "Shreya MED-3",
-            "binds": ["child-1-tenancy-auth-rls-hardening", "child-3-connector-framework-migration"],
+            "binds": [
+              "child-1-tenancy-auth-rls-hardening",
+              "child-3-connector-framework-migration"
+            ],
             "constraint": "establish lawful basis for migration-time PII processing (DPDP s4) before consent primitive exists (likely s7 legitimate-use/existing-consent continuity); document fresh-notice-at-cutover need; if ambiguous at child-time -> /escalate to Founder",
             "veto_surface": "Stage-4 @ Child 1/3; /escalate candidate"
           },
           "CF-SEC-4": {
             "source": "Shreya LOW-1",
-            "binds": ["child-3-connector-framework-migration"],
+            "binds": [
+              "child-3-connector-framework-migration"
+            ],
             "constraint": "oauth_states (schema:843) reuse must be confirmed short-TTL + single-use + tamper-evident at connector cutover",
             "veto_surface": "Stage-4 @ Child 3"
           },
           "CF-SEC-5": {
             "source": "Shreya LOW-2",
-            "binds": ["child-1-tenancy-auth-rls-hardening", "child-2-money-minor-units-migration", "child-3-connector-framework-migration", "child-4-metric-engine-oltp-olap-split", "child-5-ai-engine-migration", "child-6-frontend-migration", "child-n-decommission"],
+            "binds": [
+              "child-1-tenancy-auth-rls-hardening",
+              "child-2-money-minor-units-migration",
+              "child-3-connector-framework-migration",
+              "child-4-metric-engine-oltp-olap-split",
+              "child-5-ai-engine-migration",
+              "child-6-frontend-migration",
+              "child-n-decommission"
+            ],
             "constraint": "correlation-ID 4-tuple (request_id+trace_id+workspace_id+user_id) must propagate end-to-end through facade + session-scoped crons + connector ingest + shadow-compare jobs + Decision-Log/AI writes; missing-traceability is a Stage-4 VETO at every runtime child",
             "veto_surface": "Stage-4 @ every runtime child"
           },
           "CF-QA-1": {
             "source": "Tanvi NB-1",
-            "binds": ["child-2-money-minor-units-migration"],
+            "binds": [
+              "child-2-money-minor-units-migration"
+            ],
             "constraint": "TS roundHalfEven must NOT use intermediate float arithmetic; implement at Decimal precision (BigDecimal-equivalent or scaled-int from the start) so TS<->Python byte-identity holds for large money values; 6 CI vectors necessary but not sufficient",
             "veto_surface": "Stage-5 parity gate @ Child 2"
           },
           "CF-MAYA-1": {
             "source": "Maya A1.5 / M-A1-Q2",
-            "binds": ["child-4-metric-engine-oltp-olap-split"],
+            "binds": [
+              "child-4-metric-engine-oltp-olap-split"
+            ],
             "constraint": "Definitional-Delta Register is an explicit Child-4 deliverable (one row per metric+source where legacy_formula != brain_formula, e.g. P&L lagged-shipping CM2 vs compute-daily actual-cost CM2); each row signed off by Rohan before cutover; money-exact-equality insufficient where the CM2 definition itself changes",
             "veto_surface": "Stage-6 sign-off @ Child 4"
           },
           "CF-MAYA-2": {
             "source": "Maya A1.5 / M-A1-Q2",
-            "binds": ["child-2-money-minor-units-migration"],
+            "binds": [
+              "child-2-money-minor-units-migration"
+            ],
             "constraint": "WorkspaceCost currency-at-entry migration is a Child-2 pre-condition: costs stored in workspace primary currency (date-stamped historical rate at entry), NOT relying on hardcoded EXCHANGE_RATES FX at compute time; WorkspaceCost.currency @default(USD) mismatch (schema:256) is the contamination source",
             "veto_surface": "Stage-2/4 @ Child 2"
           },
           "CF-RES-1": {
             "source": "C6 / A2.0 / Shreya sharpening",
-            "binds": ["child-1-tenancy-auth-rls-hardening"],
+            "binds": [
+              "child-1-tenancy-auth-rls-hardening"
+            ],
             "constraint": "GATE-ZERO: confirm live Postgres/Supabase region BEFORE Child-1 RLS DDL touches the DB; ap-south-1 -> proceed; != ap-south-1 -> immediate /escalate to Founder + FREEZE A2 + insert pre-Child-1 data-residency-migration (Step 0) before any PII crosses; non-negotiable ordering, cannot slip to mid-Child-1",
             "veto_surface": "Child-1 gate-zero; armed tripwire R-RES-01"
           }
