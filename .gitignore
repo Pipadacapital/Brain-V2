@@ -1,6 +1,39 @@
+# Engineering OS internals (not product code)
 .engineering-os/index/
 .engineering-os/live.log
 .engineering-os/dashboard.html
 
 # macOS
 .DS_Store
+
+# Node / pnpm
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+
+# Generated TypeScript stubs (buf generate → regenerated in CI; see DECISIONS.md §3)
+packages/proto-ts/gen/
+
+# Python / uv
+.venv/
+__pycache__/
+*.egg-info/
+*.dist-info/
+*.pyc
+
+# Generated Python stubs (buf generate → regenerated in CI; see DECISIONS.md §3)
+pylibs/proto_py/proto_py/_gen/
+
+# Lockfiles are COMMITTED (not ignored) — pnpm-lock.yaml and uv.lock must be in git.
+# Do NOT add pnpm-lock.yaml or uv.lock here.
+
+# Next.js
+.next/
+!.next/cache/
+
+# Build artifacts
+build/
+out/
+
+legacy project

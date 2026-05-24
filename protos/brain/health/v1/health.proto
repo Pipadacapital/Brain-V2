@@ -1,0 +1,18 @@
+// SCAFFOLD-ONLY PLACEHOLDER — see DECISIONS.md §5.
+// This proto exists solely to make `buf lint`, `buf build`, and `buf generate`
+// verifiable with a real file during the scaffold acceptance contract.
+// It defines no gRPC service; it is a single trivial message.
+// Replace or delete this file when the first real service contract is defined
+// (api-gateway, core-service, etc.) under its own Architect plan.
+
+syntax = "proto3";
+
+package brain.health.v1;
+
+option go_package = "github.com/brain/protos/brain/health/v1;healthv1";
+
+// Health is a scaffold-only message used to verify buf codegen round-trips.
+// Not a real health-check contract; do not depend on this in production code.
+message Health {
+  string status = 1;
+}

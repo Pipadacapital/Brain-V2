@@ -1,0 +1,9 @@
+{
+  "name": "@brain/eslint-config",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared ESLint configuration for all TypeScript packages and apps.",
+  "scripts": {
+    "build": "echo 'no build needed for eslint config'"
+  }
+}

@@ -1,0 +1,61 @@
+version = 1
+revision = 3
+requires-python = "==3.13.*"
+
+[manifest]
+members = [
+    "analytics-service",
+    "brain",
+    "brain-clickhouse",
+    "brain-cost-router",
+    "brain-metrics",
+    "brain-regional",
+    "ingestion-service",
+    "intelligence-service",
+    "proto-py",
+]
+
+[[package]]
+name = "analytics-service"
+version = "0.0.0"
+source = { virtual = "apps/analytics-service" }
+
+[[package]]
+name = "brain"
+version = "0.0.0"
+source = { virtual = "." }
+
+[[package]]
+name = "brain-clickhouse"
+version = "0.0.0"
+source = { editable = "pylibs/brain_clickhouse" }
+
+[[package]]
+name = "brain-cost-router"
+version = "0.0.0"
+source = { editable = "pylibs/brain_cost_router" }
+
+[[package]]
+name = "brain-metrics"
+version = "0.0.0"
+source = { editable = "pylibs/brain_metrics" }
+
+[[package]]
+name = "brain-regional"
+version = "0.0.0"
+source = { editable = "pylibs/brain_regional" }
+
+[[package]]
+name = "ingestion-service"
+version = "0.0.0"
+source = { virtual = "apps/ingestion-service" }
+
+[[package]]
+name = "intelligence-service"
+version = "0.0.0"
+source = { virtual = "apps/intelligence-service" }
+
+[[package]]
+name = "proto-py"
+version = "0.0.0"
+source = { editable = "pylibs/proto_py" }

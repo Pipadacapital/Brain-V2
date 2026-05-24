@@ -1,0 +1,6 @@
+[project]
+name = "ingestion-service"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Shopify/Unicommerce/MoEngage connector ingestion pipeline. Phase 0-1 deployable. uv workspace member."
+dependencies = []

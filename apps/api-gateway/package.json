@@ -1,0 +1,11 @@
+{
+  "name": "@brain/api-gateway",
+  "private": true,
+  "version": "0.0.0",
+  "description": "BFF layer: tRPC for web+mobile, MCP server, auth/multi-tenancy/rate-limit choke point, gRPC fan-out. No business logic, no AI orchestration.",
+  "scripts": {
+    "build": "echo 'build stub — implement in service requirement'",
+    "lint": "echo 'lint stub'",
+    "test": "echo 'test stub'"
+  }
+}

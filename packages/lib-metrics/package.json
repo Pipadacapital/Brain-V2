@@ -1,0 +1,10 @@
+{
+  "name": "@brain/lib-metrics",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Metric registry — TypeScript half of the TS↔Python parity pair (counterpart: pylibs/brain_metrics). All metric names, types, and units defined here must be mirrored in brain_metrics. Parity enforced by check:metrics-parity CI task.",
+  "scripts": {
+    "build": "echo 'implement in metric-registry requirement'",
+    "check:metrics-parity": "../../tools/check-metrics-parity.sh"
+  }
+}

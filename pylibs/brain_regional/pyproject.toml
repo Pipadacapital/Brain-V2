@@ -1,0 +1,10 @@
+[project]
+name = "brain_regional"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "RegionAdapter interface home — Python regional math (RTO/COD/GST/data-residency). India is the only adapter now; UAE/GCC/EU adapters are Phase 4. See docs/conventions/region-adapter.md."
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

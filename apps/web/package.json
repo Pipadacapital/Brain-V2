@@ -1,0 +1,11 @@
+{
+  "name": "@brain/web",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Web client (Next.js 15). Scaffold home only — implementation in its own requirement.",
+  "scripts": {
+    "build": "echo 'build stub — implement in service requirement'",
+    "lint": "echo 'lint stub'",
+    "test": "echo 'test stub'"
+  }
+}

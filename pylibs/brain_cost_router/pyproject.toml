@@ -1,0 +1,10 @@
+[project]
+name = "brain_cost_router"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Cost routing paradigm primitives. Paradigm priority: SQL > ML > small_llm >> frontier_llm. Every compute path that reaches this library must carry a @paradigm decorator (see docs/conventions/paradigm.md)."
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

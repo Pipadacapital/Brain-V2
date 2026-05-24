@@ -1,0 +1,10 @@
+[project]
+name = "brain_clickhouse"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "ClickHouse query-gateway primitive (layer-4 of tenancy enforcement). Every query must include a workspace_id predicate — see docs/conventions/multi-tenancy.md. Home for OLAP query logic; OLTP stays in Postgres (see docs/conventions/data-model.md)."
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

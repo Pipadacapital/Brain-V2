@@ -1,0 +1,65 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "tsconfig.json",
+    ".node-version",
+    "package.json"
+  ],
+  "globalEnv": [],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "!**/.venv/**", "!**/uv.lock", "!**/*.dist-info"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "inputs": ["src/**", "!**/.venv/**", "!**/uv.lock", "!**/*.dist-info"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "!**/.venv/**", "!**/uv.lock", "!**/*.dist-info"]
+    },
+    "//#docker:build:ingestion": {
+      "inputs": [
+        "apps/ingestion-service/**",
+        "pylibs/**",
+        "!.venv/**",
+        "!**/uv.lock",
+        "!**/*.dist-info",
+        "!**/__pycache__/**"
+      ],
+      "cache": true
+    },
+    "//#docker:build:analytics": {
+      "inputs": [
+        "apps/analytics-service/**",
+        "pylibs/**",
+        "!.venv/**",
+        "!**/uv.lock",
+        "!**/*.dist-info",
+        "!**/__pycache__/**"
+      ],
+      "cache": true
+    },
+    "//#docker:build:intelligence": {
+      "inputs": [
+        "apps/intelligence-service/**",
+        "pylibs/**",
+        "!.venv/**",
+        "!**/uv.lock",
+        "!**/*.dist-info",
+        "!**/__pycache__/**"
+      ],
+      "cache": true
+    },
+    "//#check:metrics-parity": {
+      "inputs": [
+        "packages/lib-metrics/**",
+        "pylibs/brain_metrics/**",
+        "tools/check-metrics-parity.sh"
+      ],
+      "cache": true
+    }
+  }
+}

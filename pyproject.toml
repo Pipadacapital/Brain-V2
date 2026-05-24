@@ -1,0 +1,18 @@
+[project]
+name = "brain"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Brain analytics OS — uv workspace root"
+
+[tool.uv]
+# Pin uv to ensure reproducible resolves.
+# See TOOLCHAIN.md for the full bootstrap sequence.
+required-version = ">=0.8.22"
+
+[tool.uv.workspace]
+members = [
+  "apps/ingestion-service",
+  "apps/analytics-service",
+  "apps/intelligence-service",
+  "pylibs/*"
+]

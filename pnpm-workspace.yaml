@@ -1,0 +1,13 @@
+# Explicit enumerated members — NOT apps/** glob.
+# Python service dirs (ingestion-service, analytics-service, intelligence-service)
+# are deliberately absent; they are uv workspace members, not pnpm members.
+# Reason: pnpm globbing over Python dirs would cause a missing-package.json error.
+# See DECISIONS.md §1 and TOOLCHAIN.md for the graph-aware/file-hash-aware asymmetry.
+packages:
+  - "apps/web"
+  - "apps/mobile"
+  - "apps/api-gateway"
+  - "apps/core-service"
+  - "apps/notifications-service"
+  - "apps/lifecycle-service"
+  - "packages/*"

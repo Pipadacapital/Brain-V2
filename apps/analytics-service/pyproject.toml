@@ -1,0 +1,6 @@
+[project]
+name = "analytics-service"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Metric engine, ClickHouse query layer, Decision-Log writer, RTO/COD/GST analytics over integer minor-unit inputs. Phase 0-1 deployable. uv workspace member."
+dependencies = []

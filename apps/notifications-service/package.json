@@ -1,0 +1,11 @@
+{
+  "name": "@brain/notifications-service",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Alerts, Morning Brief assembly + delivery, digests, push, exports, outbound webhooks.",
+  "scripts": {
+    "build": "echo 'build stub — implement in service requirement'",
+    "lint": "echo 'lint stub'",
+    "test": "echo 'test stub'"
+  }
+}

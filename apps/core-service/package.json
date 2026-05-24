@@ -1,0 +1,11 @@
+{
+  "name": "@brain/core-service",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Orgs, workspaces, users, roles, settings, costs, goals, integrations registry, consent, audit, billing/metering. Money = integer minor units (BIGINT + currency_code), never float.",
+  "scripts": {
+    "build": "echo 'build stub — implement in service requirement'",
+    "lint": "echo 'lint stub'",
+    "test": "echo 'test stub'"
+  }
+}

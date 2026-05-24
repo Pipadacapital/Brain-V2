@@ -1,0 +1,6 @@
+[project]
+name = "intelligence-service"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "AI/ML inference layer, frontier-LLM gateway routing, Decision-Log schema (Postgres ai.*). Phase 0-1 deployable. uv workspace member."
+dependencies = []

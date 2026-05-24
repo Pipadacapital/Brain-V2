@@ -1,0 +1,11 @@
+{
+  "name": "@brain/mobile",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Mobile client (React Native + Expo). Morning Brief native app home. Scaffold only — implementation in its own requirement.",
+  "scripts": {
+    "build": "echo 'build stub — implement in service requirement'",
+    "lint": "echo 'lint stub'",
+    "test": "echo 'test stub'"
+  }
+}

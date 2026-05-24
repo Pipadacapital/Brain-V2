@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true
+  },
+  "exclude": [
+    ".venv",
+    "pylibs",
+    "apps/ingestion-service",
+    "apps/analytics-service",
+    "apps/intelligence-service",
+    "**/node_modules",
+    "**/_gen",
+    "**/gen"
+  ]
+}

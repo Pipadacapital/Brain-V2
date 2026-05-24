@@ -1,0 +1,9 @@
+{
+  "name": "@brain/config",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared config and region-aware routing utilities. Home for the TS counterpart to pylibs/brain_regional. Region-specific concerns go behind the RegionAdapter interface (see docs/conventions/region-adapter.md).",
+  "scripts": {
+    "build": "echo 'implement in config requirement'"
+  }
+}

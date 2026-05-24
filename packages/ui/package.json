@@ -1,0 +1,9 @@
+{
+  "name": "@brain/ui",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared UI component library (React). Consumed by apps/web and apps/mobile. Implement in its own requirement.",
+  "scripts": {
+    "build": "echo 'implement in ui requirement'"
+  }
+}

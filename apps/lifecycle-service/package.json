@@ -1,0 +1,11 @@
+{
+  "name": "@brain/lifecycle-service",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Node orchestration shell (Phase 0-1). Python side is deferred to Phase 2. See DECISIONS.md §4. Audience Builder, RFM scoring, campaign sequencing, DLT/NCPR/DND compliance engine home.",
+  "scripts": {
+    "build": "echo 'build stub — implement in service requirement'",
+    "lint": "echo 'lint stub'",
+    "test": "echo 'test stub'"
+  }
+}

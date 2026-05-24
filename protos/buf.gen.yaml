@@ -1,0 +1,20 @@
+version: v2
+# Codegen out: paths are dedicated workspace-member stub packages.
+# Consumers import a named package, never a relative path across protos/.
+# Generated files are gitignored and regenerated in CI. See DECISIONS.md §2-3.
+#
+# To regenerate: run `buf generate protos` from repo root.
+# CI must pin buf plugin versions for reproducible codegen (see TOOLCHAIN.md).
+plugins:
+  # TypeScript stubs → packages/proto-ts/gen/
+  # Uses @bufbuild/protoc-gen-es for ES modules compatible with Node/browser.
+  - remote: buf.build/bufbuild/es:v2.4.0
+    out: ../packages/proto-ts/gen
+    opt:
+      - target=ts
+  # Python stubs → pylibs/proto_py/proto_py/_gen/
+  # Uses betterproto for idiomatic Python dataclass-based stubs.
+  - remote: buf.build/community/danielgtaylor-betterproto:v1.2.5
+    out: ../pylibs/proto_py/proto_py/_gen
+    opt:
+      - python_type_stubs=False
