@@ -1,8 +1,481 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-24T00:09:30Z",
-  "updated_by": "platform-devops",
+  "updated_at": "2026-05-24T01:40:00Z",
+  "updated_by": "founder",
   "active_requirements": [
+    {
+      "req_id": "spike-legacy-migration-architecture",
+      "title": "Deep-audit the legacy platform & produce the binding legacy->Brain migration architecture (strangler-fig sequence)",
+      "status": "done",
+      "stage": 8,
+      "current_owner": "none",
+      "completed_at": "2026-05-24T07:14:41Z",
+      "founder_decision": "approved",
+      "founder_decision_ts": "2026-05-24T01:40:00Z",
+      "founder_decision_artifact": "12-founder-decision.json",
+      "residency_tripwire_resolved": true,
+      "legacy_db_region": "ap-south-1",
+      "secrets_handling": "not-persisted-to-repo; provision-via-secrets-manager-in-child-1; founder-advised-rotate-exposed",
+      "stage8_deploy_report": {
+        "artifact": "13-deploy-report.md",
+        "actor": "platform-devops",
+        "timestamp": "2026-05-24T07:14:41Z",
+        "deploy_class": "spike-no-op",
+        "runtime_deployed": false,
+        "argocd_sync": "skipped-no-service",
+        "ecr_push": "skipped-no-service",
+        "eas": "skipped-no-service",
+        "cdk": "skipped-no-service",
+        "48h_monitor": "n/a-no-code-spike",
+        "rollback": "n/a-no-runtime-architecture-superseded-by-new-spike-if-reopened",
+        "checks": {
+          "no_prod_code_guardrail": "PASS",
+          "secret_hygiene": "CLEAN",
+          "residency_resolved": true,
+          "architecture_binding_confirmed": true,
+          "carry_forward_ledger_captured": true,
+          "epic_ready_to_spawn_child1": true
+        },
+        "readiness_checks_passed": 6,
+        "readiness_checks_total": 6,
+        "secret_hygiene_detail": "zero credential values found in .engineering-os/ tree; project-ref + pooler-host in 12-founder-decision.json + pending-founder-attention.md are region-fact identifiers only (no auth capability); all credential patterns sk-ant-/shpss_/GOCSPX-/postgres-url/JWT returned zero hits",
+        "residency_resolution": "ap-south-1 confirmed by Founder at 2026-05-24T01:40:00Z; CF-RES-1 now runs as positive-assertion gate-zero in Child 1, not blocker-or-escalate fork",
+        "carry_forward_constraints": 11,
+        "child_1_binding_inputs": ["CF-SEC-1","CF-SEC-2","CF-SEC-3","CF-SEC-4","CF-SEC-5","CF-QA-1","CF-MAYA-1","CF-MAYA-2","CF-RES-1","CF-SEC-SECRETS-1"]
+      },
+      "co_owner_stage4": "qa-agent",
+      "submitted_by": "rishabhporwal",
+      "submitted_at": "2026-05-24T00:58:39Z",
+      "run_folder": ".engineering-os/runs/2026-05-24T00-58-39Z__a49c05__spike-legacy-migration-architecture__rishabhporwal",
+      "surface_to_founder": true,
+      "parent_epic": "chore-migrate-legacy-to-brain",
+      "epic_child_id": "child-0-audit-migration-architecture-spike",
+      "lane": "high-stakes",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Design-only spike (zero prod code, zero legacy runtime change) but its DECISIONS bind auth/RLS, money-representation, connector, metric, AI, and compliance choices across live tenant data. Foundational-scaffolding carve-out explicitly inapplicable (touches money/pii/connectors/india-compliance). Conservative tie-break forbids any downgrade.",
+      "trigger_surfaces_touched": [
+        "auth",
+        "multi-tenancy",
+        "mcp-tools",
+        "connectors",
+        "outbound-channels",
+        "pii",
+        "schema-proto",
+        "money",
+        "india-compliance"
+      ],
+      "is_spike": true,
+      "writes_production_code": false,
+      "intake_decision": "ADVANCE",
+      "pre_flight_dependency_check": {
+        "blocks": [],
+        "result": "no-violation"
+      },
+      "gate_applicability_no_code_spike": {
+        "architect_stage2": "full \u2014 co-owned Aryan + Maya; the A1-A6 artifacts ARE the Stage-2 deliverable",
+        "security_stage4": "full \u2014 adversarial review of RLS/isolation design + residency/PII sequencing + dual-run data-handling (design-level VETO)",
+        "qa_stage5": "adapted \u2014 verify artifacts exist, complete, internally consistent vs acceptance contract; mutation-tests N/A (no code), real-network-smoke N/A",
+        "final_review_stage6": "full \u2014 drift vs contract + phased-not-bigbang check + over-engineering audit",
+        "deploy_stage8": "no-op readiness analogue (runtime_deployed:false); 'deploy' == accepting architecture as binding to spawn children"
+      },
+      "needs_personas": [
+        "migration-strangler-fig-realist",
+        "india-data-isolation-compliance-officer"
+      ],
+      "personas_synthesized": true,
+      "persona_synthesis_artifact": "05-stage1-synthesis.md",
+      "persona_concerns_carried_to_stage2": 9,
+      "persona_concern_severity_breakdown": {
+        "critical": 2,
+        "high": 4,
+        "medium": 3
+      },
+      "persona_concern_bindings": {
+        "C1-strangler-connector-token-handoff": {
+          "severity": "critical",
+          "binds": [
+            "A2",
+            "A4"
+          ],
+          "rule": "per-connector token-handoff ceremony for all 7 connectors (data-loss window + replay-availability + rollback decision tree); Child 3 is a single-owner cutover slice not a shadow; Shiprocket flagged higher-risk (no historical event replay)"
+        },
+        "C2-strangler-workspacedailymetrics-single-writer": {
+          "severity": "high",
+          "binds": [
+            "A2",
+            "A5"
+          ],
+          "rule": "WorkspaceDailyMetrics single-writer-at-a-time; metrics shadow-compare into Brain ClickHouse shadow, NEVER dual-write the Postgres rollup; ownership-transition recorded as a named gate"
+        },
+        "C3-strangler-child5-hard-dep-on-child4": {
+          "severity": "high",
+          "binds": [
+            "A2",
+            "A4"
+          ],
+          "rule": "explicit DAG edge Child5->Child4 (Brain AI reads ClickHouse; WorkspaceDailyMetrics-no-longer-authoritative is a mandatory Child-5 entry criterion); AiInsight/WorkspaceAiInsightsCache filtersHash/TTL invalidation as a named cutover step at the Child4->Child5 boundary"
+        },
+        "C4-strangler-static-fx-parity-contamination": {
+          "severity": "medium",
+          "binds": [
+            "A5",
+            "A6"
+          ],
+          "rule": "exclude currency conversion from money parity; compare in workspace primary currency at a fixed snapshot rate (cm2_inr vs cm2_inr), not each system's compute-time rate; pnl.ts EXCHANGE_RATES + WorkspaceCost.currency default-USD logged as a parity-contamination risk"
+        },
+        "C5-compliance-rls-cron-entry-gate": {
+          "severity": "critical",
+          "binds": [
+            "A2",
+            "A5"
+          ],
+          "rule": "RLS-live-and-verified-on-all-workspace-scoped-tables + cron-fan-out-session-scoped is a HARD non-waivable entry criterion (explicit A2 column) for EVERY child's dual-run phase; facade enforces it; shadow-compare BLOCKED until met (DPDP 8(6) breach window)"
+        },
+        "C6-compliance-pii-boundary-register-and-residency-tripwire": {
+          "severity": "high",
+          "binds": [
+            "A6",
+            "A2"
+          ],
+          "rule": "PII-boundary-crossing register (per PII model: slice that crosses a storage boundary + consent/residency proof + DPDP 12/13 erasure-scoping); PLUS residency tripwire: spike confirms current Supabase/Postgres region FIRST; if not ap-south-1, insert a data-residency-migration step before Child 1 AND fire /escalate"
+        },
+        "C7-compliance-exact-integer-money-parity": {
+          "severity": "high",
+          "binds": [
+            "A4",
+            "A5"
+          ],
+          "rule": "Child-2 money shadow-compare = EXACT-integer-equality in minor units (zero tolerance); per-workspace-date reconciliation SUM(legacy Decimal*100 rounded) == SUM(Brain BIGINT); canonical rounding = ROUND_HALF_EVEN enforced identically in TS and Python; established in Child 2 before Child 4 metrics land"
+        },
+        "C8-compliance-connector-credential-rotation": {
+          "severity": "medium",
+          "binds": [
+            "A2",
+            "A6"
+          ],
+          "rule": "Child 3 credential migration is a ROTATION event not a copy; rotate into Brain secrets manager + delete legacy plaintext at each connector's cutover; logged as a credential-hygiene risk"
+        },
+        "C9-compliance-auditlog-null-workspaceid": {
+          "severity": "medium",
+          "binds": [
+            "A1",
+            "A6"
+          ],
+          "rule": "disposition AuditLog null-workspaceId rows (attribute to a system workspace OR filter from Decision Log migration as 'system-event not brand-event'); logged as a DPDP accountability/erasure-scoping gap"
+        }
+      },
+      "escalation": {
+        "decision": "spike-investigation-item-with-pre-wired-tripwire",
+        "subject": "DPDP cross-border data transfer (compliance Concern 2) \u2014 PII migrating legacy Postgres -> Brain ap-south-1",
+        "escalated_now": false,
+        "rationale": "Escalation predicate is an unconfirmed FACT (current Supabase/Postgres region), not a canon interpretation ambiguity; confirming it IS the spike's audit job. Escalating now would fabricate an escalation. Burying it would drift a real breach-risk. Resolution: spike MUST confirm region FIRST (before A2 finalized); if ap-south-1 -> record in A6, no escalation; if NOT ap-south-1 -> immediate /escalate to Founder + a data-residency-migration step inserted before Child 1, and A2 cannot finalize until Founder rules. Tripwire named in A6 so it cannot be silently skipped.",
+        "founder_heads_up_mirrored": true,
+        "founder_heads_up_target": ".engineering-os/pending-founder-attention.md"
+      },
+      "persona_briefs": {
+        "migration-strangler-fig-realist": "Adversarially prove the strangler sequence is a disguised big-bang: per-slice authoritativeness, reversible dual-write/dual-read, facade leakage, dependency-safe ordering (RLS before connectors, money before metrics); name the slice most likely to force an unplanned big-bang.",
+        "india-data-isolation-compliance-officer": "Pressure-test sequencing for isolation/residency/financial-integrity: 66 workspaceId refs with NO RLS (close leak BEFORE data moves; does RLS break app-layer assumptions?); live PII + ap-south-1 residency + unmodeled DPDP consent (when does PII cross a boundary?); Decimal/Float->BIGINT minor-units rounding-drift/dual-run mismatch as billing-base risk; flag /escalate-worthy DPDP/residency ambiguities."
+      },
+      "persona_decline_notes": "Declined ai-cost-realist (LiteLLM/@paradigm/kill-direct-SDK belong to Child 5 AI-engine; spike only MAPS the AI surface) and a generic architecture persona (slice-boundary correctness is Aryan's binding Stage-2 job, co-owned with Maya; strangler-realist already supplies the adversarial method read).",
+      "co_owners_stage2": [
+        "architect",
+        "intelligence-engineer"
+      ],
+      "spike_acceptance_artifacts": {
+        "A1": "capability-map (every model/route/connector/frontend-group -> Brain bounded context or deprecate; reuse/refactor/redesign + missing-non-negotiable tag; zero orphans)",
+        "A2": "strangler-fig-sequence (ordered slices + dependency edges + entry/exit-parity criteria + facade behavior; demonstrably phased + per-slice reversible)",
+        "A3": "facade-anti-corruption-layer-design (legacy live+authoritative per slice; no model leakage; cutover routing flip)",
+        "A4": "per-slice-parity-rollback-decommission-plan (measurable parity incl. zero money rounding-drift; rollback proc; decommission criterion)",
+        "A5": "dual-run-shadow-compare-strategy (dual-write/dual-read mechanics; numeric shadow-compare incl. money+metrics by Maya; cutover decision rule)",
+        "A6": "risk-register (6 absent non-negotiables + leak surface + PII/residency/DPDP + money financial-integrity; likelihood/blast-radius/mitigating-slice/escalate-candidate)"
+      },
+      "no_prod_code_guardrail": "ZERO changes to legacy project runtime/schema/connectors and ZERO new product code; only architecture/plan artifacts + EOS bookkeeping. Any builder touching legacy/product code = drift bounce.",
+      "cto_review_artifact": "02-cto-advisor-review.md",
+      "stage2_plan_artifact": "06-architecture-plan.md",
+      "stage2_artifacts_authored": {
+        "by": "architect (Aryan)",
+        "contains": "A1-A6 master plan",
+        "file": "06-architecture-plan.md",
+        "timestamp": "2026-05-24T01:11:34Z"
+      },
+      "maya_deepening_pending": false,
+      "maya_deepening_completed_at": "2026-05-24T01:18:46Z",
+      "maya_deepen_sections": {
+        "A1.5": "COMPLETED \u2014 rollup->metric-registry column-by-column map (8 tables; all SQL @paradigm; no ML required \u2014 M-A1-Q1); ROAS->CM2 inversion definitional-parity ruling (M-A1-Q2: parity vs Brain corrected formula; definitional-delta register required); AI-surface full map (13 context-adapters, 13 page-prompts, 2 signal tiers, filtersHash cache-purge gate CACHE-PURGE-C4C5); M-A1-Q3 answered (Tier A=sql/Tier B=haiku/sonnet; ~80% surface is deterministic SQL)",
+        "A5.2": "COMPLETED \u2014 M-A5-1 exact-equality harness (ROUND_HALF_EVEN byte-identity proof + 6 test vectors + TS/Python impl skeletons); M-A5-2 ClickHouse shadow table DDL + compare query (no Postgres dual-write confirmed); M-A5-3 FX-exclusion 4-mechanic design; M-A5-4 mismatch triage 4-category taxonomy + cutover decision rule; M-A5-5 AI-input shadow + CACHE-PURGE-C4C5 gate implementation spec; M-A5-Q1 (ratio->scaled-int FLOOR rule); M-A5-Q2 (paise canonical, 4-decimal sources rounded once at ACL); M-A5-Q3 (connector parity=count-based not numeric-shadow; rollback windows per connector)"
+      },
+      "maya_constraints": "must NOT change A1.1-A1.4 dispositions or the six A5.1 binding rules without a plan-amendment back to architect",
+      "maya_plan_amendment_needed": false,
+      "maya_plan_amendment_notes": "No A5.1 rules found infeasible. No A1.1-A1.4 dispositions changed. Two open design notes surfaced for Child 4/5 scoping: (1) Definitional-Delta Register must be an explicit Child 4 deliverable (lazy-P&L vs actual-cost CM2 delta is a known expected delta); (2) WorkspaceCost currency-at-entry migration is a Child 2 pre-condition (costs must be stored in primary currency post-migration, not relying on FX conversion at compute time).",
+      "residency_tripwire_status": "ARMED-unconfirmed (region not determinable from repo; DATABASE_URL in backend/.env; 0 region markers). R-RES-01 / A2.0. If region != ap-south-1 -> /escalate + freeze A2 + pre-Child-1 residency migration.",
+      "no_prod_code_verified": "git status shows only .engineering-os/** ; legacy project untouched (verified Stage 2)",
+      "persona_concerns_addressed_stage2": "9/9 (C1->A6 ceremony; C2->A2/A3.3/A5.1; C3->A2(Child5 edge)/A4/A1.5; C4->A5.1/A6 R-FX-01; C5->A2.1 gate/A5.1; C6->A6 register+A2.0 tripwire; C7->A4/A5.1; C8->A6 R-CRED-01; C9->A1.4/A6 R-AUD-01)",
+      "stage4_security_verdict": {
+        "verdict": "PASS",
+        "mode": "parallel-review",
+        "gate_type": "design-level-VETO",
+        "actor": "security-reviewer",
+        "timestamp": "2026-05-24T01:29:51Z",
+        "review_artifact": "08-security-review.md",
+        "critical": 0,
+        "high": 0,
+        "compliance_violations": 0,
+        "missing_traceability": 0,
+        "medium": 3,
+        "low": 2,
+        "med_low_disposition": "logged as binding child-stage Stage-4 VETO surfaces (tech debt carried forward); non-blocking for the spike",
+        "concerns_traceability": "9/9 genuinely bound; 0 hand-waved",
+        "no_prod_code_guardrail": "HELD (git status = .engineering-os/** only; legacy/product untouched)",
+        "ground_truth_reverified": [
+          "no-RLS",
+          "cron-cross-workspace-findMany",
+          "plaintext-creds",
+          "AuditLog-null-workspaceId",
+          "residency-0-markers"
+        ],
+        "residency_escalation_opinion": "CONCUR with Rohan: tripwire-not-escalate-now (unconfirmed FACT, not a canon ambiguity; escalating now would fabricate). Sharpening: region must be confirmed BEFORE Child-1 RLS DDL touches the DB.",
+        "blocking_findings": [],
+        "med_findings": [
+          "MED-1: facade gate-enforcement predicate design-deferred -> Child-1 must specify fail-closed auditable RLS-probe-derived GREEN state",
+          "MED-2: shadow-compare read path must be a physically-separate RLS-session-scoped replica/snapshot (read-only role alone insufficient) -> Child-2/4",
+          "MED-3: lawful-basis for migration-time PII processing (DPDP s4) not yet established -> Child-1/3; /escalate candidate if ambiguous at child-time"
+        ],
+        "low_findings": [
+          "LOW-1: oauth_states reuse needs short-TTL/single-use/tamper-evident confirm -> Child-3",
+          "LOW-2: correlation-ID 4-tuple end-to-end as Stage-4 VETO on every child runtime"
+        ]
+      },
+      "stage5_qa_verdict": "PASS",
+      "stage5_qa_actor": "tanvi",
+      "stage5_qa_timestamp": "2026-05-24T01:30:03Z",
+      "stage5_qa_artifact": "09-qa-review.md",
+      "stage5_qa_mode": "parallel-review",
+      "stage5_qa_findings": {
+        "blocking": 0,
+        "non_blocking": 1,
+        "informational": 2
+      },
+      "stage5_qa_nb1": "LOW: TS roundHalfEven uses float arithmetic; Child 2 must use Decimal-equivalent precision (not Math.round or float subtraction) \u2014 design intent sound, implementation concern for Child 2",
+      "stage6_final_review": {
+        "verdict": "PASS",
+        "recommendation": "APPROVE",
+        "actor": "cto-advisor",
+        "timestamp": "2026-05-24T01:36:40Z",
+        "review_artifact": "10-cto-final-review.md",
+        "retro_artifact": "14-retro.md",
+        "self_approved_stage8": false,
+        "self_approve_withheld_reason": "Program-shaping decision: approval == accepting this architecture as BINDING for the whole 7-child migration program + authorizing Child 1 filing. Belongs to the Founder's conscious ratification (as the epic decomposition did), despite standing delegation for routine gates.",
+        "plan_binding_ok": true,
+        "inputs_delivered": "6/6 (A1-A6)",
+        "persona_concerns_addressed": "9/9",
+        "over_engineering_audit": "clean",
+        "phased_not_bigbang_reconfirmed": true,
+        "guardrail_held": true,
+        "hard_rule_deviation": "none",
+        "independent_gates_reverified": [
+          "no-prod-code-guardrail (git status = .engineering-os/** only)",
+          "secrets-grep-staged-diff (zero matches)",
+          "no-RLS ground truth (0 policies in legacy project)",
+          "cron cross-workspace findMany (cron.ts:65 + :148 shopifyConnection.findMany)",
+          "plaintext creds at cited lines (Shiprocket.password:498, Klaviyo.apiKey:559, Woo.consumerSecret:1014, Shopify:286/293, google:699, meta:763)"
+        ],
+        "independent_gate_result": "all 5 re-run gates MATCH Shreya/Tanvi; both reviews grounded in real code, not strawman; no Stage-4/5 quality issue",
+        "residency_tripwire": "ARMED-unconfirmed; sharpened to GATE-ZERO (confirm region BEFORE Child-1 RLS DDL); founder heads-up accurate",
+        "recommended_child_1": "child-1-tenancy-auth-rls-hardening (blocks:[child-0]; unblocked on approval)",
+        "carry_forward_ledger": {
+          "total_binding_constraints": 11,
+          "note": "Binding on the named future children; each child's Stage-1 intake + Stage-4 security MUST inherit the relevant rows. These are ADDITIONAL hardening/pre-conditions beyond the 9 concern-bindings C1-C9 already embedded in A1-A6.",
+          "CF-SEC-1": {
+            "source": "Shreya MED-1",
+            "binds": ["child-1-tenancy-auth-rls-hardening"],
+            "constraint": "facade RLS+session gate must be a fail-closed auditable predicate (GREEN from live RLS-probe + cron-session-scope assertion, NOT a manual boolean; RED-by-default; flip events to immutable Decision Log)",
+            "veto_surface": "Stage-4 @ Child 1"
+          },
+          "CF-SEC-2": {
+            "source": "Shreya MED-2",
+            "binds": ["child-2-money-minor-units-migration", "child-4-metric-engine-oltp-olap-split"],
+            "constraint": "shadow-compare read path must be a physically-separate replica/PITR snapshot AND analytics read connection RLS-session-scoped per workspace (read-only role alone is insufficient); G1+G2 gate applies to the read connection too",
+            "veto_surface": "Stage-4 @ Child 2/4"
+          },
+          "CF-SEC-3": {
+            "source": "Shreya MED-3",
+            "binds": ["child-1-tenancy-auth-rls-hardening", "child-3-connector-framework-migration"],
+            "constraint": "establish lawful basis for migration-time PII processing (DPDP s4) before consent primitive exists (likely s7 legitimate-use/existing-consent continuity); document fresh-notice-at-cutover need; if ambiguous at child-time -> /escalate to Founder",
+            "veto_surface": "Stage-4 @ Child 1/3; /escalate candidate"
+          },
+          "CF-SEC-4": {
+            "source": "Shreya LOW-1",
+            "binds": ["child-3-connector-framework-migration"],
+            "constraint": "oauth_states (schema:843) reuse must be confirmed short-TTL + single-use + tamper-evident at connector cutover",
+            "veto_surface": "Stage-4 @ Child 3"
+          },
+          "CF-SEC-5": {
+            "source": "Shreya LOW-2",
+            "binds": ["child-1-tenancy-auth-rls-hardening", "child-2-money-minor-units-migration", "child-3-connector-framework-migration", "child-4-metric-engine-oltp-olap-split", "child-5-ai-engine-migration", "child-6-frontend-migration", "child-n-decommission"],
+            "constraint": "correlation-ID 4-tuple (request_id+trace_id+workspace_id+user_id) must propagate end-to-end through facade + session-scoped crons + connector ingest + shadow-compare jobs + Decision-Log/AI writes; missing-traceability is a Stage-4 VETO at every runtime child",
+            "veto_surface": "Stage-4 @ every runtime child"
+          },
+          "CF-QA-1": {
+            "source": "Tanvi NB-1",
+            "binds": ["child-2-money-minor-units-migration"],
+            "constraint": "TS roundHalfEven must NOT use intermediate float arithmetic; implement at Decimal precision (BigDecimal-equivalent or scaled-int from the start) so TS<->Python byte-identity holds for large money values; 6 CI vectors necessary but not sufficient",
+            "veto_surface": "Stage-5 parity gate @ Child 2"
+          },
+          "CF-MAYA-1": {
+            "source": "Maya A1.5 / M-A1-Q2",
+            "binds": ["child-4-metric-engine-oltp-olap-split"],
+            "constraint": "Definitional-Delta Register is an explicit Child-4 deliverable (one row per metric+source where legacy_formula != brain_formula, e.g. P&L lagged-shipping CM2 vs compute-daily actual-cost CM2); each row signed off by Rohan before cutover; money-exact-equality insufficient where the CM2 definition itself changes",
+            "veto_surface": "Stage-6 sign-off @ Child 4"
+          },
+          "CF-MAYA-2": {
+            "source": "Maya A1.5 / M-A1-Q2",
+            "binds": ["child-2-money-minor-units-migration"],
+            "constraint": "WorkspaceCost currency-at-entry migration is a Child-2 pre-condition: costs stored in workspace primary currency (date-stamped historical rate at entry), NOT relying on hardcoded EXCHANGE_RATES FX at compute time; WorkspaceCost.currency @default(USD) mismatch (schema:256) is the contamination source",
+            "veto_surface": "Stage-2/4 @ Child 2"
+          },
+          "CF-RES-1": {
+            "source": "C6 / A2.0 / Shreya sharpening",
+            "binds": ["child-1-tenancy-auth-rls-hardening"],
+            "constraint": "GATE-ZERO: confirm live Postgres/Supabase region BEFORE Child-1 RLS DDL touches the DB; ap-south-1 -> proceed; != ap-south-1 -> immediate /escalate to Founder + FREEZE A2 + insert pre-Child-1 data-residency-migration (Step 0) before any PII crosses; non-negotiable ordering, cannot slip to mid-Child-1",
+            "veto_surface": "Child-1 gate-zero; armed tripwire R-RES-01"
+          }
+        }
+      }
+    },
+    {
+      "req_id": "chore-migrate-legacy-to-brain",
+      "title": "Migrate & transform the legacy DTC analytics platform into the Brain architecture",
+      "status": "epic-ratified",
+      "stage": 1,
+      "current_owner": "none",
+      "architecture_binding": true,
+      "architecture_binding_at": "2026-05-24T07:14:41Z",
+      "next_child_to_file": "child-1-tenancy-auth-rls-hardening",
+      "submitted_by": "rishabhporwal",
+      "submitted_at": "2026-05-24T00:51:31Z",
+      "run_folder": ".engineering-os/runs/2026-05-24T00-51-31Z__e0edfa__chore-migrate-legacy-to-brain__rishabhporwal",
+      "surface_to_founder": false,
+      "founder_ratified_epic": true,
+      "founder_ratified_at": "2026-05-24T00:58:39Z",
+      "first_child_filed": "spike-legacy-migration-architecture",
+      "lane": "high-stakes",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Migration umbrella touches the maximal trigger-surface set (live data, live consumers, live business logic, real PII). No scaffolding carve-out, no tie-break ambiguity. Applies to the EPIC and every child slice.",
+      "trigger_surfaces_touched": [
+        "auth",
+        "multi-tenancy",
+        "mcp-tools",
+        "connectors",
+        "outbound-channels",
+        "pii",
+        "schema-proto",
+        "money",
+        "india-compliance"
+      ],
+      "intake_decision": "CHALLENGE-BACK",
+      "challenge_back_reason": "Umbrella EPIC, not a single shippable requirement: ~48 Prisma models, 7 connectors, ~204 tsx components, full AI engine; 6 absent Brain non-negotiables (no RLS, Decimal/Float money not minor-units, no OLTP/OLAP split, no metric-registry TS<->Python parity, no LiteLLM gateway/@paradigm/Decision-Log, no Kafka spine). Founder's own zero-downtime/phased/strangler constraints are only achievable if decomposed.",
+      "epic": true,
+      "needs_personas": [
+        "migration-strangler-fig-realist",
+        "india-data-isolation-compliance-officer"
+      ],
+      "personas_synthesized": false,
+      "persona_decline_notes": "Declined ai-cost-realist (belongs to the future AI-engine child, not the decomposition) and a generic architecture persona (slice-boundary correctness is Aryan's binding Stage-2 job on the spike child).",
+      "legacy_ground_truth": {
+        "backend": "looqus-backend: Express 5 + Prisma 5 + ioredis + @anthropic-ai/sdk-direct + Ollama + Supabase auth; no Fastify/tRPC/gRPC/buf/Kafka/ClickHouse/LiteLLM",
+        "frontend": "shopify-analitcs: Next.js 16 + React 19 + TanStack Query + shadcn/Recharts (aligned) but Zustand (banned) + axios->REST (Brain uses tRPC); ~204 tsx",
+        "prisma_models_approx": 48,
+        "prisma_schema_lines": 1110,
+        "workspaceid_refs": 66,
+        "rls_present": false,
+        "money_typing": "Decimal/Float (must become BIGINT minor-units + currency_code)",
+        "connectors": [
+          "shopify",
+          "woocommerce",
+          "meta-ads",
+          "google-ads",
+          "klaviyo",
+          "shiprocket",
+          "unicommerce"
+        ],
+        "decision_log_present": false,
+        "metric_registry_parity": false,
+        "olap_split": false,
+        "naming_violations": "docs describe insights as 'Triple Whale-style'; ROAS treated as primary metric"
+      },
+      "recommended_first_child": {
+        "title": "Deep-audit the legacy platform & produce the binding legacy->Brain migration architecture (strangler-fig sequence)",
+        "owners": [
+          "architect",
+          "data-ml-engineer"
+        ],
+        "produces": [
+          "capability-map",
+          "strangler-fig-sequence",
+          "facade-anti-corruption-layer-design",
+          "per-slice-parity-rollback-decommission-plan",
+          "dual-run-shadow-compare-strategy"
+        ],
+        "constraint": "zero changes to legacy runtime behavior during the spike",
+        "founder_action": "file as its own /requirement"
+      },
+      "proposed_children": [
+        {
+          "id": "child-0-audit-migration-architecture-spike",
+          "blocks": []
+        },
+        {
+          "id": "child-1-tenancy-auth-rls-hardening",
+          "blocks": [
+            "child-0-audit-migration-architecture-spike"
+          ]
+        },
+        {
+          "id": "child-2-money-minor-units-migration",
+          "blocks": [
+            "child-0-audit-migration-architecture-spike"
+          ]
+        },
+        {
+          "id": "child-3-connector-framework-migration",
+          "blocks": [
+            "child-0-audit-migration-architecture-spike",
+            "child-1-tenancy-auth-rls-hardening"
+          ]
+        },
+        {
+          "id": "child-4-metric-engine-oltp-olap-split",
+          "blocks": [
+            "child-0-audit-migration-architecture-spike",
+            "child-2-money-minor-units-migration"
+          ]
+        },
+        {
+          "id": "child-5-ai-engine-migration",
+          "blocks": [
+            "child-0-audit-migration-architecture-spike",
+            "child-4-metric-engine-oltp-olap-split"
+          ]
+        },
+        {
+          "id": "child-6-frontend-migration",
+          "blocks": [
+            "child-0-audit-migration-architecture-spike",
+            "child-4-metric-engine-oltp-olap-split"
+          ]
+        },
+        {
+          "id": "child-n-decommission",
+          "blocks": [
+            "child-3-connector-framework-migration",
+            "child-4-metric-engine-oltp-olap-split",
+            "child-5-ai-engine-migration",
+            "child-6-frontend-migration"
+          ]
+        }
+      ],
+      "cto_review_artifact": "02-cto-advisor-review.md"
+    },
     {
       "req_id": "chore-scaffold-monorepo",
       "title": "Scaffold the Brain monorepo folder structure",
@@ -17,15 +490,21 @@
       "completed_at": "2026-05-24T00:09:30Z",
       "surface_to_founder": true,
       "build_owner": "vikram",
-      "build_tracks": ["scaffold-monorepo-root-and-toolchain"],
+      "build_tracks": [
+        "scaffold-monorepo-root-and-toolchain"
+      ],
       "parallel": false,
       "lane": "high-stakes",
       "feature_class": "high-stakes",
       "feature_class_rationale": "Establishes protos/ + buf.yaml proto-contract source of truth (schema-proto trigger surface) and the irreversible top-level structure underpinning every day-one non-negotiable; standard/high-stakes doubt resolved upward by the conservative tie-break.",
-      "trigger_surfaces_touched": ["schema-proto"],
+      "trigger_surfaces_touched": [
+        "schema-proto"
+      ],
       "intake_decision": "ADVANCE",
       "scope_decision": "option-b: directory tree + working root toolchain config (pnpm/turbo/uv/buf resolve cleanly) + DDD layer folders as gitkeep; no per-service implementation",
-      "needs_personas": ["monorepo-toolchain-realist"],
+      "needs_personas": [
+        "monorepo-toolchain-realist"
+      ],
       "personas_synthesized": true,
       "persona_concerns_carried_to_stage2": 5,
       "stage2_plan_artifact": "06-architecture-plan.md",
@@ -82,10 +561,21 @@
         "plan_binding_ok": true,
         "inputs_delivered": "8/8",
         "persona_concerns_addressed": "5/5",
-        "independent_gates_reverified": ["buf-generate", "structural-assertions", "staging-discipline", "5-pins", "betterproto-pin", "proto-ts-dep"],
+        "independent_gates_reverified": [
+          "buf-generate",
+          "structural-assertions",
+          "staging-discipline",
+          "5-pins",
+          "betterproto-pin",
+          "proto-ts-dep"
+        ],
         "over_engineering_audit": "clean",
         "hard_rule_deviation": "none",
-        "followups_non_blocking": ["pin-buf-plugin-digests-at-ci", "align-dev-to-node-24", "replace-health.proto-placeholder-on-first-real-contract"],
+        "followups_non_blocking": [
+          "pin-buf-plugin-digests-at-ci",
+          "align-dev-to-node-24",
+          "replace-health.proto-placeholder-on-first-real-contract"
+        ],
         "commits": "none-staged-only-founder-commits-per-standing-rule"
       },
       "stage8_deploy_report": {

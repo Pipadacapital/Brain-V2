@@ -2,6 +2,8 @@
 .engineering-os/index/
 .engineering-os/live.log
 .engineering-os/dashboard.html
+# State backups are local safety copies; git history is the real audit trail
+.engineering-os/state/*.bak.*
 
 # macOS
 .DS_Store

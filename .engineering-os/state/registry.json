@@ -5,6 +5,17 @@
       "req_id": "chore-scaffold-monorepo",
       "title": "Scaffold the Brain monorepo folder structure",
       "first_seen": "2026-05-23T23:11:01Z"
+    },
+    {
+      "req_id": "chore-migrate-legacy-to-brain",
+      "title": "Migrate & transform the legacy DTC analytics platform into the Brain architecture",
+      "first_seen": "2026-05-24T00:51:31Z"
+    },
+    {
+      "req_id": "spike-legacy-migration-architecture",
+      "title": "Deep-audit the legacy platform & produce the binding legacy->Brain migration architecture (strangler-fig sequence)",
+      "first_seen": "2026-05-24T00:58:39Z",
+      "parent_epic": "chore-migrate-legacy-to-brain"
     }
   ]
 }

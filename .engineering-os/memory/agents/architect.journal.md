@@ -16,3 +16,16 @@
 **Skills loaded:** architecture-patterns, domain-driven-design, region-adapter, engineering-discipline, verification-before-completion.
 **Open questions:** none.
 **Next:** @vikram (backend-developer) — Stage 3 (single track).
+
+## 2026-05-24T01:11:34Z — Aryan (architect) — spike-legacy-migration-architecture
+**Stage:** 2 (co-owned with Maya/intelligence)
+**Action:** Produced the binding legacy->Brain migration architecture (A1-A6) in 06-architecture-plan.md. Design-only spike; ZERO legacy/product code touched (git status = only .engineering-os/**; verified).
+**Paradigm:** n/a for the spike (no compute path); program is sql-dominant (Children 1-4 deterministic SQL; only Child 5 carries small/frontier-LLM @paradigm, deferred to Child 5).
+**Artifacts:** A1 capability-map (44 models + routes/lib + 7 connectors + ~204 tsx grouped -> Brain service+context, reuse/refactor/redesign + missing-NN tags, ZERO orphans; AuditLog null-workspaceId dispositioned C9). A2 strangler-fig sequence (7 children, DAG no-cycle, RLS+session HARD gate column C5, armed residency tripwire A2.0 C6). A3 facade/ACL (no Decimal/no-RLS-model leakage; workspace_daily_metrics single-writer C2; routing flip). A4 per-slice parity+rollback+decommission (exact-integer-equality money C7; per-connector rollback tree C1). A5 dual-run shadow-compare (6 binding rules; STUB demarcated for Maya). A6 risk register (6 NN + leak + PII/residency register + money + per-connector token-handoff ceremony C1 + cred rotation C8).
+**Ground-truth (file:line):** middleware/workspace.ts:30-52 (app-layer-only iso); cron.ts:65 + meta/google/shiprocket-sync findMany (cross-workspace fan-out); compute-daily.ts:32-65 float; pnl.ts:42-56 hardcoded INR:83.5 FX; ShopifyConnection.accessToken:286 single-owner; ai-engine/providers/router.ts:6-18 direct Claude SDK no gateway; insight-cache.ts:9-18 filtersHash; AuditLog.workspaceId? schema:658; plaintext creds (Shiprocket/Unicommerce/Klaviyo/Woo/Shopify). Residency UNCONFIRMABLE from repo (.env not committed; 0 region markers) -> tripwire ARMED.
+**Single-Primitive sweep:** clean — facade/ACL is minimum for reversible strangler-fig; no speculative layers; no new deps (design-only).
+**Persona concerns:** 9/9 addressed + traceable (C1-C9 mapped to A-artifacts).
+**Maya-owned stubs (demarcated):** A1.5 (data/AI-surface mapping, Qs M-A1-Q1..Q3) + A5.2 (numeric shadow-compare, Qs M-A5-Q1..Q3). Constraint: extend, don't re-home models / don't relax the 6 A5.1 rules without a plan-amendment.
+**Skills loaded:** architecture-patterns, domain-driven-design, multi-tenancy-isolation, integration-connectors, metric-engine, event-driven-kafka, region-adapter, data-residency-enforcement, audit-log-immutability, api-versioning-strategy, decision-log.
+**Open questions:** residency region (armed tripwire — Maya/anyone confirms during deepening); Maya's M-* Qs.
+**Next:** Maya (intelligence-engineer) deepens A1.5 + A5.2, then parallel Security (Shreya) + QA (Tanvi) review.

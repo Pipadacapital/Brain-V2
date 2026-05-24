@@ -25,3 +25,31 @@
 **Follow-ups owned:** per-service ECR+ArgoCD+canary (when first service req ships), pin buf plugin digests (S-2), align CI to Node 24 (S-5), replace health.proto placeholder at first real contract
 **Deploy report:** 13-deploy-report.md
 **Next:** SHIPPED — awaiting Founder commit (product code staged; pending-founder-commit.md has the mechanical command)
+
+## 2026-05-24T07:13:35Z — Founder approval received — spike-legacy-migration-architecture
+- Founder /approve at 2026-05-24T01:40:00Z. Architecture accepted as BINDING for the 7-child legacy-migration epic; Child 1 greenlit.
+- Residency tripwire RESOLVED: legacy Supabase/Postgres confirmed in ap-south-1 (no DPDP s16 escalation).
+- Stage 8 = no-op readiness analogue for a no-code spike (runtime_deployed:false). Driving platform-devops now.
+- SECURITY: Founder shared live legacy env secrets in chat; NOT persisted to repo; to be provisioned via Secrets Manager in Child 1; rotation advised.
+
+## 2026-05-24T07:14:41Z — Jatin (platform-devops) — spike-legacy-migration-architecture
+**Stage:** 8 (no-op readiness analogue)
+**Action:** SPIKE-CLOSEOUT (no runtime deployed; architecture accepted as binding; carry-forward ledger captured)
+**CI:** N/A (no code; no CI pipeline target)
+**Staging:** N/A (no ArgoCD Application, no ECR image, no service)
+**Strategy:** N/A-spike-no-op
+**Monitor (so far):** N/A — no runtime; 48h_monitor: n/a-no-code-spike
+**Skills loaded:** operational-readiness, verification-before-completion, finishing-a-development-branch, data-residency-enforcement
+**Dashboards:** N/A (no runtime service)
+**Readiness checks (6/6 PASS):**
+  - R1 no-prod-code-guardrail: PASS (git status = .engineering-os/** only; zero product code)
+  - R2 secret-hygiene: CLEAN (zero credential values; project-ref + pooler-host are region-fact identifiers, not secrets)
+  - R3 residency: RESOLVED (ap-south-1 confirmed; CF-RES-1 now confirmation-mode gate-zero for Child 1)
+  - R4 architecture binding: CONFIRMED (A1-A6 + 9 persona concerns + 11 carry-forward constraints)
+  - R5 carry-forward ledger: CAPTURED in 13-deploy-report.md §5 + state.stage8_deploy_report
+  - R6 epic ready: READY to spawn child-1-tenancy-auth-rls-hardening
+**Deploy class:** spike-no-op; runtime_deployed: false
+**Deploy report:** 13-deploy-report.md
+**Epic update:** chore-migrate-legacy-to-brain -> architecture_binding:true, next_child_to_file:child-1-tenancy-auth-rls-hardening
+**Spike status:** done (completed_at: 2026-05-24T07:14:41Z)
+**Next:** Founder files Child 1 (/requirement to file child-1-tenancy-auth-rls-hardening with carry-forward ledger attached)

@@ -45,3 +45,31 @@ Prior bounce findings resolved:
 - LOW: git index non-empty — 105 files staged, stubs excluded.
 
 Full acceptance contract: 14/14 PASS. Traceability chain complete (01→02→02b→03→06→07→07b→08→09). Stage NOT advanced — returning to orchestrator.
+
+## 2026-05-24T01:30:03Z — Tanvi (qa-agent) — spike-legacy-migration-architecture
+**Stage:** 5 (PARALLEL REVIEW MODE — alongside Shreya/Security)
+**Action:** QA PASS
+**Test runs:** 0 unit (N/A) / 0 integration (N/A) / 0 contract (N/A) / 0 e2e (N/A) / 0 load (N/A)
+**Real-network smoke:** N/A (no-code spike; adapted gate per Rohan ruling in 02-cto-advisor-review.md)
+**Metric registry parity (TS↔Python):** N/A (no code; ROUND_HALF_EVEN parity enforced in A5.2 spec — deferred to Child 2 CI gate)
+**Trace IDs end-to-end:** N/A (no runtime)
+**Operational-readiness:** N/A (no service)
+**Mutation tests on high-stakes:** N/A (no code to mutate; adapted gate)
+**Coverage:** N/A (no code)
+**Bounced to:** NONE
+**Findings:** BLOCKING:0 / NON-BLOCKING:1 / INFORMATIONAL:2
+**Stage 4 skip acknowledgment:** ran `git diff --cached | grep -iE 'password|secret|...'` — zero hits; only .engineering-os/** staged.
+
+### Detail
+- A1: COMPLETE — 48 models/route-groups/connectors/frontend-areas dispositioned; zero orphans; all 6 missing-NN tags applied; C9 AuditLog null-workspaceId explicitly dispositioned in A1.4; Maya's A1.5 deepening complete (8 rollup tables, all SQL @paradigm, ROAS→CM2 inversion ruling, full AI-surface map).
+- A2: COMPLETE — 7-slice DAG, explicit dependency edges, RLS+session gate as explicit column (C5), armed residency tripwire (A2.0/C6), per-connector single-owner cutover named (C1), WorkspaceDailyMetrics ownership gate named (C2), Child5→Child4 HARD edge (C3), credential-rotation annotation (C8).
+- A3: COMPLETE — facade location, routing mechanics, 3 no-model-leakage rules, single-writer enforcement (C2), cutover flag mechanics.
+- A4: COMPLETE — 7 slices; each has measurable parity + rollback + decommission; C7 exact-integer-equality on Child 2; C3 cache-invalidation gate on Child 5; C4 FX-exclusion note on Child 4.
+- A5: COMPLETE — Aryan's 6 binding rules (C2/C4/C5/C7) + Maya's numeric deepening (A5.2): harness pseudocode, TS+Python skeletons + 6 test vectors, ClickHouse shadow DDL, compare query, 4-mechanic FX exclusion, 4-category mismatch taxonomy, AI-input shadow + CACHE-PURGE-C4C5 gate spec.
+- A6: COMPLETE — 6 non-negotiables, cross-brand-leak, PII register (5 models + DPDP §12/13 scoping), residency tripwire, money/FX risks, per-connector ceremony, credential hygiene, audit-gap.
+- Traceability: 9/9 concerns located at concrete named sections (no name-only citations).
+- Internal consistency: A2 DAG matches state.json proposed_children; A4 parity matches A5 harness; ROUND_HALF_EVEN stated consistently for money, FLOOR×10,000 for ratios (correct scope separation); A5.1 and A5.2 fully consistent.
+- No legacy/product code touched. Secrets grep: zero hits.
+- Acceptance bar: Child 2 and Child 4 can be built without re-deriving the architecture (spot-checked).
+- NON-BLOCKING NB-1 (LOW): TS `roundHalfEven` uses float subtraction for `.5` detection; Child 2 must use Decimal-equivalent precision for correctness on edge cases beyond the 6 test vectors. Design intent sound; implementation concern deferred to Child 2.
+- Parallel review mode: NOT advancing pipeline; returning verdict to orchestrator.

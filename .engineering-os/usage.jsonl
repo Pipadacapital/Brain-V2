@@ -9,3 +9,14 @@
 {"ts":"2026-05-24T00:50:00Z","req_id":"chore-scaffold-monorepo","agent":"qa-agent","stage":5,"total_tokens":67583,"model":"sonnet"}
 {"ts":"2026-05-24T01:10:00Z","req_id":"chore-scaffold-monorepo","agent":"cto-advisor","stage":6,"total_tokens":128285,"model":"opus"}
 {"ts":"2026-05-24T00:09:30Z","req_id":"chore-scaffold-monorepo","agent":"platform-devops","stage":8,"total_tokens":56469,"model":"sonnet"}
+{"ts":"2026-05-24T00:56:19Z","req_id":"chore-migrate-legacy-to-brain","agent":"cto-advisor","stage":1,"total_tokens":80066,"model":"opus"}
+{"ts":"2026-05-24T01:01:04Z","req_id":"spike-legacy-migration-architecture","agent":"cto-advisor","stage":1,"total_tokens":58675,"model":"opus"}
+{"ts":"2026-05-24T01:06:49Z","req_id":"spike-legacy-migration-architecture","agent":"dynamic-persona-generator","stage":1,"total_tokens":60997,"model":"sonnet"}
+{"ts":"2026-05-24T01:06:49Z","req_id":"spike-legacy-migration-architecture","agent":"dynamic-persona-generator","stage":1,"total_tokens":62344,"model":"sonnet"}
+{"ts":"2026-05-24T01:09:57Z","req_id":"spike-legacy-migration-architecture","agent":"cto-advisor","stage":1,"total_tokens":65862,"model":"opus"}
+{"ts":"2026-05-24T01:16:41Z","req_id":"spike-legacy-migration-architecture","agent":"architect","stage":2,"total_tokens":141286,"model":"opus"}
+{"ts":"2026-05-24T01:28:31Z","req_id":"spike-legacy-migration-architecture","agent":"intelligence-engineer","stage":2,"total_tokens":124315,"model":"sonnet"}
+{"ts":"2026-05-24T01:36:22Z","req_id":"spike-legacy-migration-architecture","agent":"security-reviewer","stage":4,"total_tokens":112433,"model":"opus"}
+{"ts":"2026-05-24T01:36:22Z","req_id":"spike-legacy-migration-architecture","agent":"qa-agent","stage":5,"total_tokens":88969,"model":"sonnet"}
+{"ts":"2026-05-24T01:41:12Z","req_id":"spike-legacy-migration-architecture","agent":"cto-advisor","stage":6,"total_tokens":145593,"model":"opus"}
+{"ts":"2026-05-24T07:19:02Z","req_id":"spike-legacy-migration-architecture","agent":"platform-devops","stage":8,"total_tokens":60244,"model":"sonnet"}
