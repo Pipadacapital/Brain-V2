@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-05-23T23:11:01Z",
+  "updated_by": "system",
+  "active_requirements": [
+    {
+      "req_id": "chore-scaffold-monorepo",
+      "title": "Scaffold the Brain monorepo folder structure",
+      "status": "cto-review",
+      "stage": 1,
+      "current_owner": "cto-advisor",
+      "lane": null,
+      "submitted_by": "rishabhporwal",
+      "submitted_at": "2026-05-23T23:11:01Z",
+      "run_folder": ".engineering-os/runs/2026-05-23T23-11-01Z__c4f3f4__chore-scaffold-monorepo__rishabhporwal"
+    }
+  ]
+}

@@ -1,4 +1,10 @@
 {
   "schema_version": 1,
-  "requirements": []
+  "requirements": [
+    {
+      "req_id": "chore-scaffold-monorepo",
+      "title": "Scaffold the Brain monorepo folder structure",
+      "first_seen": "2026-05-23T23:11:01Z"
+    }
+  ]
 }

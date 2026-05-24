@@ -1,0 +1,10 @@
+{"ts":"2026-05-23T23:13:35Z","req_id":"chore-scaffold-monorepo","agent":"cto-advisor","stage":1,"total_tokens":53173,"model":"opus"}
+{"ts":"2026-05-23T23:18:00Z","req_id":"chore-scaffold-monorepo","agent":"dynamic-persona-generator","stage":1,"total_tokens":59281,"model":"haiku"}
+{"ts":"2026-05-23T23:21:00Z","req_id":"chore-scaffold-monorepo","agent":"cto-advisor","stage":1,"total_tokens":43566,"model":"opus"}
+{"ts":"2026-05-23T23:24:49Z","req_id":"chore-scaffold-monorepo","agent":"architect","stage":2,"total_tokens":85700,"model":"opus"}
+{"ts":"2026-05-24T00:00:00Z","req_id":"chore-scaffold-monorepo","agent":"backend-developer","stage":3,"total_tokens":81039,"model":"sonnet"}
+{"ts":"2026-05-23T23:42:03Z","req_id":"chore-scaffold-monorepo","agent":"security-reviewer","stage":4,"total_tokens":60013,"model":"opus"}
+{"ts":"2026-05-23T23:45:03Z","req_id":"chore-scaffold-monorepo","agent":"qa-agent","stage":5,"total_tokens":74113,"model":"sonnet"}
+{"ts":"2026-05-24T00:30:00Z","req_id":"chore-scaffold-monorepo","agent":"backend-developer","stage":3,"total_tokens":56513,"model":"sonnet"}
+{"ts":"2026-05-24T00:50:00Z","req_id":"chore-scaffold-monorepo","agent":"qa-agent","stage":5,"total_tokens":67583,"model":"sonnet"}
+{"ts":"2026-05-24T01:10:00Z","req_id":"chore-scaffold-monorepo","agent":"cto-advisor","stage":6,"total_tokens":128285,"model":"opus"}
