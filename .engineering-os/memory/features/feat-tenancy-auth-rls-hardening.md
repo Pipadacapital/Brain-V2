@@ -134,3 +134,15 @@
 **Doc nit (retro):** "44 tables" in reports vs 43 distinct executable. Cosmetic; runbook asserts `POLICY_COUNT>=43`.
 
 **Artifact:** `10-cto-final-review.md`. No code committed (Founder Stage-7 gate owns commit).
+
+---
+
+## 2026-05-24 — Founder directive: UNTRACK legacy implementation → rebuild Brain-native
+
+**Decision (Founder):** Child 1's deliverable was implemented entirely **inside the legacy Express/Prisma backend** (22 files, deliberately force-added past `.gitignore`). Founder reaffirmed the legacy codebase is **reference-only** and must not sit on the active architecture path. Chose **"untrack & rebuild Brain-native"** over keeping the fix or re-homing it — with the open-P0 tradeoff stated explicitly.
+
+**Action taken:** `git rm -r --cached "legacy project/"` — all 22 tracked files removed from the index, kept on disk as gitignored reference. Forward commit only; **no history rewrite** (`2580ba5` stays in history). Verified beforehand: zero Brain-native coupling, legacy not in pnpm/turbo workspace.
+
+**Consequence — OPEN P0 (mirrored to pending-founder-attention.md):** the live shared Supabase Postgres still has **0 RLS** (45 models / 66 workspaceId refs). The reviewed fix was never deployed (was at Stage 8 awaiting commit) and is now untracked. **Tenant-isolation hole remains open in production** until a Brain-native RLS slice is built and shipped.
+
+**Status:** this requirement's *legacy* implementation is **WITHDRAWN**. Tenant-isolation work to be **re-scoped Brain-native** via a new requirement; Rohan to amend the Child 0 strangler-fig plan so no future slice implements into legacy. RLS *design* (policy shapes, FK-scope map, runbook, cron scoping) preserved on disk as migration reference.

@@ -68,3 +68,20 @@
 **Epic update:** chore-migrate-legacy-to-brain -> architecture_binding:true, next_child_to_file:child-1-tenancy-auth-rls-hardening
 **Spike status:** done (completed_at: 2026-05-24T07:14:41Z)
 **Next:** Founder files Child 1 (/requirement to file child-1-tenancy-auth-rls-hardening with carry-forward ledger attached)
+
+## 2026-05-24T11:24:00Z — Jatin (platform-devops) — feat-tenancy-rls-brain-native
+**Founder approval received** (12-founder-decision.json, approved by rishabh). Advancing to Stage 8 (deploy-readiness). FORCE flip remains HELD per HOLD-AT-FORCE; this Stage 8 is rollout-readiness + monitor plan, NOT a live RLS cutover. No git commit authorized by approval.
+
+## 2026-05-24T17:30:00Z — Jatin (platform-devops) — feat-tenancy-rls-brain-native
+**Stage:** 8
+**Action:** READINESS-COMPLETE (deploy-class=db-ddl-migration; HOLD-AT-FORCE; no live DDL applied)
+**CI:** PASS (local) — tsc exit 0; 158 unit tests passed / 9 skipped / 0 failed; integration 9/9 (Docker stack, rls_app role); coverage 90.71% stmt / 71.42% branch (all ≥ 70%); bash -n runbook PASS; fail-open grep 0 hits; DDL symmetry ENABLE 43 = FORCE 43 = DROP POLICY 45
+**Staging:** N/A — no ArgoCD Application, no ECR image, no Brain runtime; DDL ships via operator-run psql
+**Strategy:** HOLD-AT-FORCE — STEP 0-4 (region-assert, quiesce, ENABLE+CREATE, probe) are READY-IN-RUNBOOK; STEP 5 FORCE HELD until Child-3 + Founder/CTOA sign-off
+**Monitor (so far):** N/A — no runtime; 48h monitor plan DEFINED (probe-RED alarm, cron ctxless gap, 0-rows outage canary) as ARMED-AT-ROLLOUT predicates in 13-deployment-report.md §4-deferred
+**Skills loaded:** devops-aws, progressive-delivery, incident-response, data-residency-enforcement, observability, operational-readiness, finishing-a-development-branch
+**Dashboards:** N/A (no runtime; probe verdict + cron 4-tuple logs are the observability signal at rollout)
+**FORCE status:** NOT FLIPPED. step-b-force.sql HELD header confirmed intact. No psql against any live URL with irreversible DDL. No git commit by Jatin. No legacy files touched.
+**Deploy gate ledger:** 2 READY-IN-RUNBOOK / 1 HELD (FORCE — Founder+CTOA) / 1 HELD cross-child (Child-3 residual-writer conversion) / 7 DEFERRED-TO-ROLLOUT-WINDOW (all with exact predicates)
+**Deploy report:** 13-deployment-report.md
+**Next:** READINESS-COMPLETE. Awaiting: (1) Founder commits product code; (2) Child-3 residual-writer conversion; (3) Founder+CTOA FORCE ceremony sign-off; (4) live runbook execution by operator.

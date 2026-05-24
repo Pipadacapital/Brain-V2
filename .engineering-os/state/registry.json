@@ -29,6 +29,18 @@
       "first_seen": "2026-05-24T07:55:00Z",
       "status": "backlog",
       "backlog_doc": ".engineering-os/backlog/chore-security-governance-hardening-phase.md"
+    },
+    {
+      "req_id": "feat-tenancy-rls-brain-native",
+      "title": "Tenant isolation / RLS / auth-claim \u2014 Brain-native (Child 1 rebuild)",
+      "first_seen": "2026-05-24T09:57:25Z",
+      "parent_epic": "chore-migrate-legacy-to-brain"
+    },
+    {
+      "req_id": "feat-money-minor-units-parity",
+      "title": "Money / minor-units / numeric-type foundation \u2014 Brain-native (Child 2)",
+      "first_seen": "2026-05-24T12:54:15Z",
+      "parent_epic": "chore-migrate-legacy-to-brain"
     }
   ]
 }

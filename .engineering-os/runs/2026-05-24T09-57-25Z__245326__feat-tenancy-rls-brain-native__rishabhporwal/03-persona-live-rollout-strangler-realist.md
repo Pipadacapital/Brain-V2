@@ -1,0 +1,100 @@
+# Dynamic Persona Review — live-rollout / strangler-fig realist
+
+> Filled by a single persona spawned in Stage 1.
+> Validates against schemas/dynamic-persona.schema.json.
+> At least one concern is mandatory. A "no concerns" persona is rejected by the CTO Advisor.
+
+| Field | Value |
+|-------|-------|
+| **req_id** | `feat-tenancy-rls-brain-native` |
+| **Persona** | live-rollout / strangler-fig realist (engineering) |
+| **Timestamp** | 2026-05-24T10:07:00Z |
+
+---
+
+## What this lens sees
+
+The strangler-fig realist's job is to hold the "what actually runs against the live DB at FORCE time" question above everything else. Everything else in this requirement is sound: the policy shapes are proven, the FK-scope classification is done, the runbook sequence is right. What this lens sees is a structural sequencing trap baked into the framing itself: the requirement's non-goal (line 70, "Applying RLS DDL to the live DB in this run") plus its success metric (line 56, "the C5 gate is *satisfiable* Brain-native") are being offered as equivalent to "gate GREEN" — but they are not the same thing, and the Child-0 architecture (A2.1) states the gate in a way that only a live FORCE can satisfy. That gap is the load-bearing ambiguity.
+
+The legacy Child-1 implementation learned this the hard way: Stage 8 explicitly recorded "HOLD AT FORCE" (`feat-tenancy-auth-rls-hardening.md` Stage 8 entry in the plan, A4 Child-1 row: "Rollback = Disable RLS policies") because no context-aware runtime existed at deploy time for the full path. The Brain-native child is repeating the same structural situation — but now the runtime gap is wider (there is no Brain runtime at all, not just an incomplete one) and the gate language in A2.1 is even stricter.
+
+This review pressure-tests the four specific questions Rohan posed: (1) shape A vs shape B gate honesty; (2) whether the session-context primitive's physical home can serve both Brain and legacy without violating CF-BN-NOLEGACY-1; (3) whether DDL-only with no Brain consumer is a "tested-in-isolation" trap; and (4) whether "satisfiable but not flipped" is an honest reading of C5 or a deferred-outage setup.
+
+---
+
+## Concerns
+
+### Concern 1 — CRITICAL: A2.1 gate language does not say "satisfiable"; it says "live and verified" — shape A requires either a gate-language amendment or it ships an un-satisfiable gate
+
+- **Severity:** critical
+- **Concern:** Child-0 A2.1 (`06-architecture-plan.md` §A2.1 + §A2.2 sequence table, Child-1 row, "RLS+session gate" column) reads: **"ESTABLISHES the gate (G1+G2 go GREEN here)"** and defines the exit criterion as **"RLS live + verified on all workspace-scoped tables; cron paths session-scoped; zero behavior change to live API."** The word "live" is doing critical work: the gate column in the sequence table requires G1+G2 to actually be GREEN, not "ready to be made GREEN." Child 2's entry criterion (`06-architecture-plan.md` §A2.2 row 2) says **"RLS live; ROUND_HALF_EVEN rule agreed"** — it blocks on the live state, not on a runbook artifact. Shape A delivers the DDL + primitive + probe + runbook but does NOT flip FORCE on the live DB (requirement non-goal line 70). If Child 2 files its requirement against the current gate language, the pre-flight dependency check will correctly read G1+G2 as NOT GREEN and block it. This is not a prose ambiguity — it is a machine-checkable state column.
+
+  The requirement's own success metric (line 56) rewrites the gate criterion to "satisfiable Brain-native" rather than "live Brain-native." That rewrite is not self-authorizing: the gate is defined in the **binding Child-0 architecture** (a completed spike with decision-log status `done`), not in this child's own requirement text. The requirement cannot silently amend the gate by restating it softer. Either (a) Aryan in Stage 2 formally amends A2.1 to read "gate is satisfiable Brain-native; FORCE execution is a Stage-8 ceremony separately gated," records it in the decision log, and updates the A2.2 sequence table entry for Child 1 — at which point shape A is honest and correct — OR (b) the gate stays as written and this child's exit is technically incomplete by the binding architecture's own terms, which means later children (Child 2 onwards) cannot start with a clear dependency check.
+
+- **Rationale:** The legacy Child-1 journal (`feat-tenancy-auth-rls-hardening.md` Stage 2 notes) shows the architecture plan for that implementation DID include the FORCE step in the rollout runbook (runbook STEP 5 = FORCE per table) and treated the gate as not GREEN until STEP 5 ran on the live DB. The Brain-native rebuild is separating the code-authoring phase (this run) from the execution phase (Stage 8) — which is a sensible incremental shape, but it requires an explicit gate-language amendment in A2 to be architecturally honest. Without that amendment, "satisfiable Brain-native" in the success metric is an informal soft-read of a hard gate, and the strangler-fig program's dependency enforcement is only as strong as the weakest gate definition.
+
+  **The single step most likely to leave the gate un-satisfiable:** Aryan accepts shape A in Stage 2 without amending A2.1, ships the child, and the `state/active.json` marks Child 1 `done`. Child 2 files. Pre-flight reads A2.2 Child-2 entry criterion "RLS live" — checks the live DB — finds 0 RLS policies active — BLOCKS. The workaround at that point is informal gate-bypassing, which is exactly the "big-bang-creep" the strangler-fig discipline exists to prevent.
+
+---
+
+### Concern 2 — HIGH: The session-context primitive's physical home creates an unresolvable bind for shape B; shape A avoids it — but the package boundary must be settled now or every subsequent child re-derives it
+
+- **Severity:** high
+- **Concern:** CF-BN-OWNER-1 (CTO review `02-cto-advisor-review.md` line 132) states: "the session-context primitive + RLS migrations live in a Brain package/service (candidate: `core-service` per A1 row 186), authored to the new DDD standard, NOT in legacy. Aryan binds the exact home in Stage 2." This is correctly deferred, BUT shape B demands that the same primitive also be callable by the live legacy Express deployment to inject `app.workspace_id` before FORCE — and doing so WITHOUT editing legacy code (CF-BN-NOLEGACY-1). The only mechanism that satisfies both constraints simultaneously is a network-boundary injection: a Brain-resident facade/shim that intercepts legacy DB connections and injects the session context transparently. That shim IS a Brain runtime deployment. It is NOT a package you can npm-install into the legacy app (that would require editing `legacy project/backend/` to import it — violating CF-BN-NOLEGACY-1). Shape B therefore mandatorily expands this child's scope to "stand up the first Brain runtime service against the live shared Postgres," which is out of scope per the child-sized slice discipline and the current monorepo state (scaffolding only, no running service).
+
+  Shape A avoids this bind entirely: the primitive lives in `core-service` (Brain), is consumed only by the Brain runtime when it eventually exists, and the legacy app is left untouched. The FORCE flip is deferred to Stage 8 at which point the Brain runtime IS the live consumer. This is architecturally clean.
+
+  **What must be settled in Stage 2 (binding):** where exactly in the Brain package tree does the primitive live (`packages/core-service/src/db/workspace-context.ts` or similar), what is its exported interface (so every later child — connectors at Child 3, metric engine at Child 4 — imports the same module without re-deriving), and is the `rlsPrisma`-equivalent client (DIRECT_URL :5432, session-mode, `withWorkspace`) part of this primitive or a consumer-layer concern. The legacy child resolved this inside `src/lib/rls-prisma.ts` (`feat-tenancy-auth-rls-hardening.md` Stage 3, track 1a-A). The Brain-native equivalent needs an explicit package-path decision before builders touch code — otherwise the "built once, consumed N times" Single-Primitive Rule (CTO review line 78) fractures immediately into per-child-re-implementations.
+
+- **Rationale:** The legacy child's QA (Stage 5) hit exactly the "tested-in-isolation" problem: the session-context + withWorkspace primitive was built and unit-tested inside the legacy backend, but its correctness under pgbouncer txn-pool interleaved with the live legacy singleton client was only testable in integration against the live :6543/:5432 URLs (deferred to Stage 8). The Brain-native child faces the same trap: the primitive can be unit-tested in isolation (pass a mock txn, verify `set_config` called), but its correctness under the REAL pgbouncer connection pool — specifically whether a `set_config(...,true)` issued inside a `$transaction` on `:5432` leaks across pool connections when the `RESET ALL` on txn-end is not guaranteed — cannot be confirmed without a running context. A2.4's CF-C1-POOL-1.a (`02-cto-advisor-review.md` line 122: "session-level SET banned; bind-param no injection") is correct as a code rule but is an untestable assertion until a Brain runtime actually hits the real Supabase pooler. Stage 2 should prescribe at minimum a local Supabase-emulation integration test (e.g., `supabase start` + pgbouncer container) as part of Stage 3's test coverage, not leave pool-correctness entirely to Stage 8.
+
+---
+
+### Concern 3 — HIGH: Per-slice reversibility (A4) is non-trivial for a DDL-only deliverable when the FORCE flip is deferred — the "rollback = disable + drop policy" path assumes FORCE was applied; without FORCE the rollback path is untested and the ENABLE step alone can cause query-plan regressions
+
+- **Severity:** high
+- **Concern:** A4 Child-1 row (`06-architecture-plan.md` §A4 table, Child 1 row): "Rollback: Disable RLS policies (additive; app-layer scoping still present) — fully reversible; restore unscoped cron." This rollback path assumes FORCE was applied, because the danger state is "RLS FORCE-on + consumer missing context = 0 rows." Without FORCE, the rollback is not a rollback of a dangerous state — it's just `DROP POLICY` + `DISABLE` on tables that the legacy app was never gated against (the legacy app bypasses RLS anyway via the service role, which skips row-level security unless `ALTER TABLE ... FORCE ROW LEVEL SECURITY` is explicitly set).
+
+  However: `ENABLE ROW LEVEL SECURITY` (without FORCE) does affect the behavior for non-superuser roles. If the Supabase `anon` or `authenticated` role is used anywhere in the legacy app's direct :5432 path — or if any Brain-side test or probe runs against the live DB as a non-service-role user — `ENABLE` alone is enough to start filtering rows for those roles. The legacy Child-1 architecture recognized this (`feat-tenancy-auth-rls-hardening.md` Stage 2, CF-C1-ROLLOUT-ORDER-1: "STEP1 quiesce-crons-FIRST -> STEP2 context-code -> STEP3 ENABLE+CREATE policy") because even ENABLE without FORCE can cause unexpected zero-row results for non-superuser connections. A shape-A delivery that ships ENABLE+CREATE policy DDL in migrations and expects Stage-8 to FORCE is making an implicit assumption: that only the service role hits the DB between ENABLE and FORCE. If any background job, webhook handler, or analytics read in the legacy app runs as the `authenticated` Supabase role (not the service role), ENABLE without FORCE already gates those reads through the policy — and since `app.workspace_id` is unset, those reads return 0 rows. That is a partial outage, not a safe intermediate state.
+
+  **The specific file/sequence that creates the risk:** `scripts/rollout-runbook.sh` (legacy child, track 1a-F in `feat-tenancy-auth-rls-hardening.md` Stage 3) contained STEP3 as ENABLE+CREATE followed by probe GREEN before STEP5 FORCE. The runbook correctly quiesced crons first (STEP1) to protect the `authenticated`-role cron paths. If the Brain-native runbook similarly separates ENABLE execution (some Stage before 8) from FORCE execution (Stage 8), the quiesce requirement applies at ENABLE time, not just at FORCE time — and quiescing crons twice (once at ENABLE, once at FORCE) is operationally complex for a live production system with a single-person ops team.
+
+- **Rationale:** The A4 reversibility claim ("additive; app-layer scoping still present") is only unambiguously true in two states: (a) pre-ENABLE (nothing applied) or (b) post-FORCE + reversal via `NO FORCE + DISABLE + DROP POLICY`. The intermediate state ENABLE+CREATE-but-not-yet-FORCE is a partial application that is reversible in theory (`DISABLE + DROP POLICY`) but operationally hazardous: it can cause zero-row results for `authenticated`-role reads without the "you're protected" guarantee that only comes after FORCE. Stage 2 must make an explicit decision: either (i) the Brain-native migrations package ships ENABLE+CREATE but those migrations are NOT run against the live DB until Stage 8 (making the DDL runbook-gated, not migration-runner-gated), or (ii) ENABLE+CREATE is accepted as a safe partial apply with an explicit proof that 100% of live DB connections run as the service role (which requires the same role-audit as the FORCE pre-step). This decision must appear in the Stage-2 plan, not be left implicit in the Stage-8 runbook.
+
+---
+
+### Concern 4 — MEDIUM: "Satisfiable Brain-native" as a gate is an honest incremental shape IF AND ONLY IF the gate definition is formally amended; without amendment it is a structural deferral that leaves Children 2-7 starting from an unverified foundation
+
+- **Severity:** medium
+- **Concern:** The CTO review (`02-cto-advisor-review.md` lines 63, 75) recommends shape A as "the correct deliverable boundary for a child-sized slice when there is no Brain runtime yet" and frames the success metric as "the gate is satisfiable Brain-native." Rohan also flags the new constraint CF-BN-GATE-BOUNDARY-1 (line 133): "the deliverable boundary (shape A vs B) is explicitly settled in Stage-2 plan, with the C5-gate 'satisfiable Brain-native' success criterion made falsifiable." This is the right instinct. But "satisfiable Brain-native" is only an honest gate if the amendment to A2.1 is explicit, decision-logged, and reflected in the `state/active.json` exit criteria for Child 1.
+
+  If the amendment is not recorded, the strangler-fig program's enforceability degrades: future CTO Advisor intake (Stage 1) for Child 2 will do a dependency check against the binding architecture's gate definition, find it unamended, and face a judgment call — either informally acknowledge that "satisfiable" = "done" (which normalizes gate softening) or block Child 2 (which is the correct mechanical behavior but creates friction for the Founder). Neither outcome is acceptable when the explicit purpose of Child 0 was to make dependency enforcement machine-checkable.
+
+  The analog in the legacy child: the "HOLD AT FORCE" discipline was explicitly recorded in the Stage-8 runbook as a named hold state, not an informal understanding. The Brain-native equivalent needs the same named-hold-state discipline applied to the architecture gate itself.
+
+- **Rationale:** This is MEDIUM (not HIGH) because Rohan has already identified CF-BN-GATE-BOUNDARY-1 as a new constraint requiring Aryan to explicitly settle the boundary in Stage 2. If Aryan does this well in Stage 2 — amends A2.1, decision-logs it, makes the exit criterion for Child 1 explicitly "probe + runbook artifacts present; FORCE deferred per named hold state" — then this concern is fully resolved at Stage 2. It is surfaced here because it is the one thing that could silently NOT happen in Stage 2 (Aryan settles shape A but forgets to amend the gate language), leaving the structural gap.
+
+---
+
+## Recommendations
+
+1. **Stage 2 must produce an explicit gate-language amendment to A2.1.** Aryan's architecture plan must include a formal amendment to the `06-architecture-plan.md` A2.2 Child-1 exit criterion, changing it from "RLS live + verified" to "RLS migrations + session-context primitive + probe + runbook artifacts present in Brain-native code (FORCE execution deferred per CF-C1-ROLLOUT-ORDER-1; Stage-8/runbook-gated); gate satisfiable Brain-native." This amendment must be decision-logged with a reference to the original gate language and the reason for the change (no Brain runtime exists at this child; FORCE-without-runtime = outage). The `state/active.json` exit criteria for Child 1 must reflect the amended gate. This is the single action that makes shape A architecturally honest without requiring shape B's scope expansion.
+
+2. **Stage 2 must prescribe a local integration test for pool-correctness.** The session-context primitive's correctness under pgbouncer txn-pool cannot be left entirely to Stage-8 live verification. The Stage-2 plan should mandate a local Supabase emulation test (e.g., `supabase start` container with pgbouncer in txn-pool mode, `:6543` and `:5432` both listening) that exercises `withWorkspace()` under interleaved concurrent transactions and asserts (a) no context leak across pooled connections and (b) `RESET ALL` or txn-end correctly clears `app.workspace_id`. This prevents the "tested-only-in-isolation" trap the legacy child hit, and makes the Stage-5 QA gate completable without live-DB access.
+
+3. **The `ENABLE` vs `FORCE` execution boundary must be explicit.** Stage 2 must decide whether the Brain-native migrations package's `step-a-enable-create.sql` is intended to be run ONLY as part of the Stage-8 runbook (making it a runbook-gated DDL artifact, not a migration-runner-applied migration) or as a safe partial-apply. If the former, the migrations directory structure should make this explicit (e.g., `migrations/manual/rls/` not `migrations/` to prevent accidental Prisma migrate deploy from applying it). If the latter, a proof is required that 100% of live DB reads run as the service role between ENABLE and FORCE. The legacy child's runbook correctly required quiesce-crons-first BEFORE ENABLE, not just before FORCE — and the Brain-native runbook must preserve this ordering, with an explicit note that even ENABLE without FORCE is not a safe partial state for `authenticated`-role DB paths.
+
+4. **Settle the session-context primitive's package path before Stage 3 build starts.** CF-BN-OWNER-1 defers the exact package home to Aryan (Stage 2). This is correct, but it must produce a binding path decision (e.g., `packages/core-service/src/db/workspace-context.ts`) and the exported interface signature (at minimum: `withWorkspace<T>(workspaceId: string, fn: (tx: PrismaTx) => Promise<T>): Promise<T>` and `withSuperadmin<T>(fn: (tx: PrismaTx) => Promise<T>): Promise<T>`). Without a settled path and signature, the "built once, consumed N times" Single-Primitive Rule fractures at Child 3 (connectors) or Child 4 (metrics) when those children import the primitive and find either no standard export or multiple competing implementations. The legacy child's experience is instructive: `src/lib/rls-prisma.ts` was a single file with a clear interface, but it lived in the legacy monolith where there was no multi-package import question — the Brain monorepo's package-boundary discipline makes the ownership decision load-bearing from the first use.
+
+---
+
+## Skills consulted
+
+- `engineering-discipline` (strangler-fig rollout sequencing, per-slice reversibility, gate-language precision)
+- `architecture-patterns` (fail-closed RLS under pgbouncer txn-pool, FORCE/ENABLE distinction, DDL-only deliverable reversibility)
+
+---
+
+## One line for the CTO Advisor synthesis
+
+**Shape A is the correct and only viable shape (shape B violates CF-BN-NOLEGACY-1 and inflates scope to first-Brain-runtime-deployment), but it is only architecturally honest if Aryan's Stage-2 plan formally amends the Child-0 A2.1 gate language from "RLS live" to "RLS satisfiable Brain-native + FORCE deferred per named hold state" — otherwise the child ships against a gate it cannot satisfy by its own binding architecture's terms, and every downstream child's dependency check is enforced against a ghost criterion.**

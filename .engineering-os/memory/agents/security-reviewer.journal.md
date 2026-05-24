@@ -36,3 +36,26 @@
 **Traceability:** PASS on the delta (cron 4-tuple intact; tx wraps bind workspaceId). M3 logged for the integrations routes (workspaceId present; req/trace degrade to sentinel — not a dropped-ID regression).
 **Bounced to:** NONE (PASS — returned to orchestrator; parallel mode, did NOT advance)
 **Rationale:** F1/M1 confirmed via grep proof — cron.ts/meta-sync.ts/google-sync.ts ZERO bare-prisma writes; shiprocket cron path (syncShiprocketForConnection→upsertOrder/upsertShipment/syncTracking/mapShiprocketToShopify) fully tx-threaded; 37/37 tests pass incl. negative WITH-CHECK simulations. The 5 route-handler wraps are SAFE: each is withWorkspace(<the exact workspaceId requireWorkspaceAdmin authorized>, (tx)=>sync(...,tx)) — no withSuperadmin-where-workspace-meant, no wrong-id source, no unwrapped sibling write on the happy path; UUID guard (L1) active. PrismaTx=Prisma.TransactionClient is the canonical fix (no longer 'never'). No DDL auto-applies (FORCE is runbook/Stage-8 gated) so pre-FORCE owner-bypass means residual bare writes behave as today — no new leak. Fail-closed RLS intact (no NULL-trap in executable policy). Secret hygiene CLEAN; .env not staged. Net: zero CRITICAL/HIGH/compliance/missing-traceability → PASS.
+
+## 2026-05-24T17:45:00Z — Shreya (security-reviewer) — feat-money-minor-units-parity
+**Stage:** 4 (parallel-review; did not advance)
+**Action:** Security review BOUNCE
+**Findings (CRITICAL):** 0
+**Findings (HIGH):** 1 — F1: duplicate, already-divergent golden-fixture trees; CI gate (`check-metrics-parity.sh:22`) reads top-level `pylibs/brain_metrics/parity/` while harness/tests read package `pylibs/brain_metrics/brain_metrics/parity/`; the two golden_fixtures.json already differ (probe id). Breaks single-source-of-truth of the C7 billing-base gate.
+**Findings (MED):** 2 — F2: ROUNDING_MODE_MISMATCH re-derivation is a tautology/dead code (fails SAFE; never suppresses a real BLOCKING_BUG; must fix before Stage-8 live recon). F3: parity gate cross-checks TS==Python only, never vs expected_minor_units (mitigated by unit tests). LOW: F4 ratio overflow throws(TS)/clamps(Py) divergence; F5 convert.ts log10 float exponent.
+**Compliance gates (DPDP/PDPL/DLT/NCPR/calling-hours/recording-consent):** N/A — no PII/channel/consent/residency surface this child (synthetic fixtures, no live data, no logs). No violation.
+**Traceability:** N/A — pure deterministic library; no endpoint/consumer/gRPC/Kafka/LLM code path.
+**Bounced to:** backend-developer (Vikram)
+**Rationale:** CF-C2-STRING-API-1 money primitive is clean (string-in, exact BigInt/Decimal, no Number()*100, no epsilon, divergence probe genuine, byte-identical 25/25). One HIGH ships → veto: duplicate divergent golden source defeats the C7 gate's single-source-of-truth. No-legacy-edit/no-live-data/no-decimal.js/pnpm-audit all clean.
+
+## 2026-05-24T14:36:10Z — Shreya (security-reviewer) — feat-money-minor-units-parity
+**Stage:** 4 (round-2 re-review, parallel mode)
+**Action:** Security re-review PASS (was BOUNCE round 1)
+**Findings (CRITICAL):** 0
+**Findings (HIGH):** 0 — F1 RESOLVED
+**Findings (MED):** 1 carried (F3, Child-4) — tech debt logged
+**Findings (LOW):** F4 + F5 RESOLVED; 1 new (N1 stale docstring, cosmetic)
+**Compliance (DPDP/PDPL/DLT/NCPR/calling-hours/recording-consent):** N/A — no PII/channel/consent/residency surface; no violation possible
+**Traceability:** N/A — pure deterministic library; no endpoint/Kafka/gRPC/LLM code path
+**Bounced to:** NONE (PASS)
+**Rationale:** F1 — single canonical golden_fixtures.json (one file; gate+both runners+harness all resolve to it; stray tree gone from disk+git); independently re-ran gate 25/25 exit0 + drift-inject exit1 proving non-triviality; C7 billing-base gate now true single-source-of-truth. F2 — RMM classifier genuinely fires: independent ROUND_HALF_UP re-derive path (no longer tautology), real divergent fixtures (35714≠35715), run_harness rmm_count=2 blocking=0, fail-safe preserved both directions, asserting test exercises real classifier via run_harness. Both LOWs closed. Regression scan clean: pnpm audit clean, no secrets, decimal.js absent, prod deps {}, zero legacy staged, no live-read sneak, no float in money path. pytest 125, vitest 62, tsc 0. Parallel mode: returned verdict to orchestrator, did not advance.

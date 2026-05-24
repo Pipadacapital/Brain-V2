@@ -87,3 +87,73 @@ Full acceptance contract: 14/14 PASS. Traceability chain complete (01→02→02b
 **Bounced to:** backend-developer (Vikram)
 **Findings:** 1 BOUNCE / 2 NOTE / 2 INFO
 **Bounce cause:** F1 — inner sync functions write to RLS-protected tables via bare :6543 prisma singleton (no app.workspace_id set). Post-FORCE writes fail. No test, no runbook gate.
+
+## 2026-05-24T12:32:00Z — Tanvi (qa-agent) — feat-tenancy-rls-brain-native
+**Stage:** 5 (PARALLEL REVIEW MODE — round 2 re-review)
+**Action:** QA PASS
+**Test runs:** 158 unit / 9 integration (live Docker, rls_app role) / 102 contract (static DDL) / 0 e2e / 0 load
+**Real-network smoke:** PASS — local Docker Postgres:16+edoburu/pgbouncer:latest stack; 9/9 integration assertions confirmed; 3x no-flake
+**Metric registry parity (TS↔Python):** N/A (paradigm=sql, no metrics emitted this child)
+**Trace IDs end-to-end:** PARTIAL/PASS for scope — ALS 4-tuple {requestId,traceId,workspaceId,userId} present and tested; no runtime service this child (N/A end-to-end)
+**Operational-readiness:** PASS — HOLD-AT-FORCE intact; DIRECT_URL assertion present; runbook gated
+**Mutation tests on high-stakes:** PASS — requireRole >= target covered (round 1); probe && target: genuinely covered by live-predicate tests (b)+(c) confirmed this round; &&→|| mutant caught
+**Coverage:** 90.71% stmts / 71.42% branches / 94.11% funcs / 90.57% lines (all ≥ 70%)
+**Bounced to:** NONE
+**Findings:** 0 new; 5 from round 1 all RESOLVED
+
+### Finding resolutions
+- F1 (CRITICAL/VETO): RESOLVED — rls_app (rolbypassrls=false) role via initdb SQL; assertNonBypassRls() guard confirmed throws on postgres; 9/9 isolation assertions PASS for right reason
+- F2 (HIGH): RESOLVED — edoburu/pgbouncer:latest (ARM64, scram-sha-256); stack healthy; concurrent + fail-closed tests PASS
+- F3 (HIGH): RESOLVED — runner.rawQuery() in contextless arm; _rawQuery asserts rolbypassrls=false; old dead block gone; integration test confirms fail-closed
+- F4 (HIGH): RESOLVED — ProbeQueryRunner injectable interface; 19 new unit tests; coverage 90.71/71.42/94.11/90.57
+- F5 (MEDIUM): RESOLVED — three (F5-mutation-target) tests call runRlsProbe via runner; &&→|| mutant caught by test (b) cross=1,ctxless=0→GREEN-but-expects-RED and test (c) cross=0,ctxless=3→GREEN-but-expects-RED
+
+## 2026-05-24T17:55:00Z — Tanvi (qa-agent) — feat-money-minor-units-parity
+**Stage:** 5
+**Action:** QA BOUNCE (PARALLEL REVIEW MODE — did not advance)
+**Test runs:** 104 unit py / 61 unit ts / 0 integration (harness golden) / 0 contract (goalType parity) / 0 e2e
+**Real-network smoke:** PASS (substitute: byte-identity gate 25/25 PASS; drift injection exit=1 on 9 divergences — PROVEN NOT A NO-OP)
+**Metric registry parity (TS<>Python):** PASS (25/25 byte-identical vectors)
+**Trace IDs end-to-end:** N/A (no distributed call path — declared; not a VETO condition)
+**Operational-readiness:** PASS (no runtime; DDL gated)
+**Mutation tests on high-stakes:** PARTIAL — ROUND_HALF_EVEN mutation caught by parity gate (9 divergences); non-string guard mutation caught by TS unit tests; ROUNDING_MODE_MISMATCH removal caught by harness tests. GAP: TS ratioToBasisPoints negative-FLOOR mutation survives all unit tests (caught only by parity gate, not unit test).
+**Coverage:** TS 85.71%stmt/77.77%branch/100%func; Py 96% — both above 70%
+**Bounced to:** maya (intelligence-engineer) + vikram (backend-developer)
+**Findings:** F1 HIGH (duplicate fixture trees, C7 single-source-of-truth violated), F2 MEDIUM (TS ratio FLOOR test gap), F3 LOW (deferred)
+
+## 2026-05-24T18:50:00Z — Tanvi (qa-agent) — feat-money-minor-units-parity
+**Stage:** 5 (round 2 re-review)
+**Action:** QA PASS
+**Test runs:** 125 unit-py / 62 unit-ts / 25 contract-byte-identity / 0 e2e
+**Real-network smoke:** PASS (parity gate 25/25 exit 0; non-trivial proven by drift-injection round 1)
+**Metric registry parity (TS<>Python):** PASS (25 vectors, single canonical source confirmed)
+**Trace IDs end-to-end:** N/A (no distributed call path; pure value-object library)
+**Operational-readiness:** PASS (no runtime; DDL gated; no-runner-scanned path)
+**Mutation tests on high-stakes:** PASS (FLOOR mutant killed by new -1n/3n=-3334 test)
+**Coverage:** TS 87.5%/79.62%/100%; Py 97%
+**Bounced to:** NONE
+**Findings:** F1 HIGH RESOLVED; F2 MEDIUM RESOLVED; F3 LOW deferred (unchanged); 0 new
+
+### Detail
+- F1 (HIGH, RESOLVED): Single canonical fixture confirmed — find returns exactly one path; gate+harness+test_harness all resolve to same inode (st_ino equality verified). _meta.shared_by corrected. rounding_mode_mismatch_fixtures present with 2 vectors. C7 single-source-of-truth restored.
+- F2 (MEDIUM, RESOLVED): -1n/3n=-3334 killing test added. Mutation arithmetic independently verified: mutant (floor block removed) returns -3333; real code returns -3334; test FAILS on mutant, PASSES on real code. Prior -1n/4n=-2500 test correctly identified as non-killing (exact, rem=0n). ratio.ts branch coverage 81.81
+## 2026-05-24T18:50:00Z -- Tanvi (qa-agent) -- feat-money-minor-units-parity
+**Stage:** 5 (round 2 re-review)
+**Action:** QA PASS
+**Test runs:** 125 unit-py / 62 unit-ts / 25 contract-byte-identity / 0 e2e
+**Real-network smoke:** PASS (parity gate 25/25 exit 0)
+**Metric registry parity (TS<>Python):** PASS (25 vectors, single canonical source)
+**Trace IDs end-to-end:** N/A (no distributed call path)
+**Operational-readiness:** PASS (no runtime; DDL gated)
+**Mutation tests on high-stakes:** PASS (FLOOR mutant killed by -1n/3n=-3334 test)
+**Coverage:** TS 87.5%/79.62%/100%; Py 97%
+**Bounced to:** NONE
+**Findings:** F1 HIGH RESOLVED; F2 MEDIUM RESOLVED; F3 LOW deferred; 0 new
+
+### Detail
+- F1 (HIGH, RESOLVED): find returns exactly one path; gate+harness+test_harness same inode confirmed. _meta.shared_by corrected. rounding_mode_mismatch_fixtures present (2 vectors). C7 restored.
+- F2 (MEDIUM, RESOLVED): -1n/3n=-3334 killing test added. Mutation arithmetic verified: mutant returns -3333; real code returns -3334; test FAILS on mutant, PASSES on real. ratio.ts branch 81.81% -> 90.9%.
+- F3 (LOW, DEFERRED): Two-layer defence adequate. No regression.
+- New findings: NONE.
+- 3x: TS 62/62 x3 stable; Py 125/125 x3 stable.
+- tsc: exit 0. secrets: CLEAN. decimal.js: ABSENT. legacy: NONE.

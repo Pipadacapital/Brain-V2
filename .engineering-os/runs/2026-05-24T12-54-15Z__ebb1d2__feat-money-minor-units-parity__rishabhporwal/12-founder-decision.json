@@ -1,0 +1,32 @@
+{
+  "req_id": "feat-money-minor-units-parity",
+  "stage": 7,
+  "decision": "APPROVE",
+  "decided_by": "cto-advisor (Rohan)",
+  "on_behalf_of": "founder",
+  "delegation_basis": "Standing Founder delegation (MEMORY: feedback_founder_delegates_to_cto_advisor.md) — 'Run EOS pipeline end-to-end; Rohan signs every Founder gate on the Founder's behalf.' Plus the Founder directive 2026-05-24 'go ahead with all childs without asking, i will approve at last.'",
+  "decided_at": "2026-05-24T19:05:00Z",
+  "verdict_source": "11-final-review.md (Stage-6 PASS)",
+  "recommendation": "APPROVE",
+  "hard_rule_deviation_check": "NONE — no dependency/Single-Primitive/compliance/paradigm/gate-skip deviation (see 11-final-review §4). Auto-approve under delegation permitted.",
+  "independent_reverifications_replicated": [
+    "byte-identity parity gate 25/25 exit 0 (captured)",
+    "Python 125 passed; TS 62 passed; tsc --noEmit exit 0 (captured)",
+    "gate non-triviality: drift-inject => exit 1 (25 divergences), restored => exit 0 git-clean (captured)",
+    "RMM classifier live-fire: rounding_mode_mismatches_count=2, blocking_bug_count=0, is_pass=True (captured)",
+    "FLOOR mutation killing vector -1n/3n: real=-3334 vs mutant=-3333 (captured)",
+    "single-source: exactly one golden_fixtures.json on disk + git index at canonical package path; stray tree absent"
+  ],
+  "over_engineering_audit": "CLEAN",
+  "carried_nonblocking": [
+    "F3 (MED) gate-also-assert-expected_minor_units => Child-4 (two-layer unit-test defense adequate now)",
+    "N1 (LOW) stale ratio.py docstring 'Clamped to INT32 range' vs OverflowError throw => fix opportunistically Child-4"
+  ],
+  "next_stage": 8,
+  "next_owner": "platform-devops",
+  "stage8_class": "CI-parity-gate readiness artifact (no live deploy; mirrors Child-1 readiness-only)",
+  "commit_authorization": "NOT GRANTED BY THIS DECISION. Feature-branch-only rule + harness guard: nothing is staged or committed until the Founder gives explicit free-text 'commit it'. The Stage-7 sign-off authorizes pipeline advancement, NOT a git commit.",
+  "commit_command_artifact": "pending-founder-commit.md",
+  "branch": "feature/feat-tenancy-auth-rls-hardening (current); a feature/feat-money-minor-units-parity branch off development is the intended home — Founder decides at commit time"
+}
+</content>
