@@ -1,0 +1,278 @@
+{
+  "_meta": {
+    "description": "Golden fixtures for TS↔Python byte-identity parity gate. CF-C2-GOLDEN-1.",
+    "paradigm": "sql",
+    "constraint": "NO live data. ALL values are synthetic and exactly computed. CF-C2-NO-LIVE-1.",
+    "shared_by": ["pylibs/brain_metrics/brain_metrics/parity/fixtures/"],
+    "workspace_id": "ws_test_golden_001",
+    "note": "subunit_multiplier carried on every fixture. Callers read it; never hardcode 100. CF-C2-SUBUNIT-1."
+  },
+  "bankers_rounding_ties": [
+    {
+      "id": "tie-1",
+      "description": "tie: 1234.565 × 100 — floor=123456 (EVEN) → ROUND_HALF_EVEN stays at 123456",
+      "amount": "1234.565",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 123456
+    },
+    {
+      "id": "tie-2",
+      "description": "tie: 1234.575 × 100 — floor=123457 (ODD) → ROUND_HALF_EVEN rounds UP to 123458",
+      "amount": "1234.575",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 123458
+    },
+    {
+      "id": "tie-3",
+      "description": "tie: 0.005 × 100 = 0.5 — floor=0 (EVEN) → ROUND_HALF_EVEN stays at 0",
+      "amount": "0.005",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 0
+    },
+    {
+      "id": "tie-4",
+      "description": "tie: 0.015 × 100 = 1.5 — floor=1 (ODD) → ROUND_HALF_EVEN rounds UP to 2",
+      "amount": "0.015",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 2
+    },
+    {
+      "id": "tie-5",
+      "description": "tie: 999.995 × 100 = 99999.5 — floor=99999 (ODD) → ROUND_HALF_EVEN rounds UP to 100000",
+      "amount": "999.995",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 100000
+    },
+    {
+      "id": "tie-6",
+      "description": "tie: 0.025 × 100 = 2.5 — floor=2 (EVEN) → ROUND_HALF_EVEN stays at 2",
+      "amount": "0.025",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 2
+    }
+  ],
+  "negative_variants": [
+    {
+      "id": "neg-1",
+      "description": "NEGATIVE tie: -1234.565 × 100 → -123456 (mirrors positive, CF-C2-NEG-VECTORS-1)",
+      "amount": "-1234.565",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": -123456,
+      "source_field": "shopify_refund_line_items.subtotal_amount"
+    },
+    {
+      "id": "neg-2",
+      "description": "NEGATIVE tie: -1234.575 × 100 → -123458",
+      "amount": "-1234.575",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": -123458,
+      "source_field": "shopify_refund_line_items.subtotal_amount"
+    },
+    {
+      "id": "neg-3",
+      "description": "NEGATIVE tie: -0.005 × 100 → 0 (nearest even = 0). Negative zero is zero.",
+      "amount": "-0.005",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 0,
+      "source_field": "shopify_refund_line_items.subtotal_amount"
+    },
+    {
+      "id": "neg-4",
+      "description": "NEGATIVE tie: -0.015 × 100 → -2",
+      "amount": "-0.015",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": -2,
+      "source_field": "shopify_refund_line_items.subtotal_amount"
+    },
+    {
+      "id": "neg-5",
+      "description": "NEGATIVE tie: -999.995 × 100 → -100000",
+      "amount": "-999.995",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": -100000,
+      "source_field": "shopify_refund_line_items.subtotal_amount"
+    },
+    {
+      "id": "neg-6",
+      "description": "NEGATIVE tie: -0.025 × 100 → -2",
+      "amount": "-0.025",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": -2,
+      "source_field": "shopify_refund_line_items.subtotal_amount"
+    },
+    {
+      "id": "neg-7",
+      "description": "NEGATIVE sub-paise: -0.005 × 100 → 0 (negative zero edge case)",
+      "amount": "-0.005",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 0,
+      "source_field": "shopify_refund_line_items.subtotal_amount"
+    }
+  ],
+  "sub_paise": [
+    {
+      "id": "sub-1",
+      "description": "4-decimal sub-paise: 1234.5678 × 100 → 123457 (78 > 50 → round up). M-A5-Q2.",
+      "amount": "1234.5678",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 123457
+    },
+    {
+      "id": "sub-2",
+      "description": "4-decimal sub-paise: 999.9999 × 100 → 100000 (99 > 50 → round up)",
+      "amount": "999.9999",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 100000
+    },
+    {
+      "id": "sub-3",
+      "description": "4-decimal sub-paise: 1.0001 × 100 → 100 (01 < 50 → round down, stay at 00→100)",
+      "amount": "1.0001",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 100
+    }
+  ],
+  "zero": [
+    {
+      "id": "zero-1",
+      "description": "zero: 0.00 × 100 → 0",
+      "amount": "0.00",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 0
+    },
+    {
+      "id": "zero-2",
+      "description": "zero: 0.000 × 100 → 0 (3 dp)",
+      "amount": "0.000",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 0
+    },
+    {
+      "id": "zero-3",
+      "description": "zero: 0 (no decimal point) × 100 → 0",
+      "amount": "0",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 0
+    }
+  ],
+  "multi_currency_subunit": [
+    {
+      "id": "mc-1",
+      "description": "same string '1.255' × 100 (INR) → 126 (tie: 25 is even → stay at 125 wait... 1.255*100=125.5, floor=125 ODD → UP=126)",
+      "amount": "1.255",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 126
+    },
+    {
+      "id": "mc-2",
+      "description": "same string '1.255' × 1000 (KWD) → 1255 (exact: no remainder at 3dp)",
+      "amount": "1.255",
+      "subunit_multiplier": 1000,
+      "currency_code": "KWD",
+      "expected_minor_units": 1255
+    },
+    {
+      "id": "mc-3",
+      "description": "'1234.565' × 1 (JPY) → 1235 (ROUND_HALF_EVEN on .565: floor=1234 EVEN → wait, remainder=565 > 500 → round up to 1235)",
+      "amount": "1234.565",
+      "subunit_multiplier": 1,
+      "currency_code": "JPY",
+      "expected_minor_units": 1235
+    },
+    {
+      "id": "mc-4",
+      "description": "'5.005' × 100 (AED) → 500 (tie: floor=500 EVEN → stay at 500)",
+      "amount": "5.005",
+      "subunit_multiplier": 100,
+      "currency_code": "AED",
+      "expected_minor_units": 500
+    }
+  ],
+  "bigint_overflow_boundary": [
+    {
+      "id": "overflow-1",
+      "description": "Large GMV near Int64 max / 100 rupees. Assert no silent wrap. INT64_MAX=9223372036854775807.",
+      "amount": "92233720368547757.00",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 9223372036854775700,
+      "note": "9223372036854775700 < INT64_MAX=9223372036854775807. Verify no overflow."
+    }
+  ],
+  "divergence_probe": [
+    {
+      "id": "divergence-proof-probe-1",
+      "description": "DIVERGENCE PROBE (CF-C2-FIXTURE-PROOF-1): the test MUST verify that string path gives expected_minor_units AND Number()*Math.round gives number_path_wrong_result. A green CI without this probe does NOT discharge CF-C2-STRING-API-1.",
+      "amount": "1234.565",
+      "subunit_multiplier": 100,
+      "currency_code": "INR",
+      "expected_minor_units": 123456,
+      "number_path_wrong_result": 123457,
+      "divergence_explanation": "float('1234.565')*100 = 123456.5 exactly in IEEE-754. ROUND_HALF_EVEN: floor=123456 is EVEN → stay at 123456. Math.round (ROUND_HALF_UP, legacy): 123456.5 rounds UP to 123457. These DIFFER by 1 paise per occurrence. The string path is CORRECT; the Number() path is WRONG for EVEN-floor ties.",
+      "bit_pattern_argument": "Decimal('1234.565') * 100 = Decimal('123456.5') exactly (rational arithmetic). float('1234.565') * 100 = 123456.5 in IEEE-754 double (this happens to be representable exactly because 1234565/10 = 123456.5 = 247213/2 which has a finite binary expansion: 0x40FE244000000000). Math.round(123456.5) = 123457 (ties round to +infinity in JS). ROUND_HALF_EVEN(123456.5) = 123456 (floor 123456 is even). Delta = 1."
+    }
+  ],
+  "high_volume_cogs": [
+    {
+      "id": "cogs-1",
+      "description": "CF-C2-FLOAT-COGS-1: 10001 line items at coq='123.4567' (Decimal(12,4)). Brain per-item integer path is exact. This documents the per-item-rounding accumulation artifact class.",
+      "coq_per_item": "123.4567",
+      "n_items": 10001,
+      "subunit_multiplier": 100,
+      "per_item_minor_units": 12346,
+      "brain_total_minor_units": 123472346,
+      "float_accum_wrong_total": 123469046,
+      "delta_paise": 3300,
+      "note": "Brain path: each item converts to 12346 paise (ROUND_HALF_EVEN: 12345.67 → floor=12345 ODD → round up to 12346). Sum = 10001 × 12346 = 123472346. Float path: 123.4567 × 100 = 12345.67 per float, accumulated = 123469045.67, Math.round = 123469046. Delta = 3300 paise. This is a KNOWN rounding-accumulation artifact (NOT a float-ULP error): Brain rounds per-item to the nearest paise; the legacy float accumulates fractional paise and rounds once at the end. Both are internally consistent; the Brain path is the correct paise-canonical path per M-A5-Q2. Classified as CF-C2-FLOAT-COGS-1 artifact, not BLOCKING_BUG.",
+      "source_field": "ShopifyProduct.coq Decimal(12,4)"
+    }
+  ],
+  "rounding_mode_mismatch_fixtures": [
+    {
+      "id": "rmm-1",
+      "description": "ROUNDING_MODE_MISMATCH: miscExpensesProrated .X45 midpoint. Monthly cost / 28 days stored as '357.145' (ROUND_HALF_UP from irrational quotient). Brain ROUND_HALF_EVEN: 357.145 × 100 = 35714.5, floor=35714 EVEN → stay = 35714. Legacy Postgres ROUND_HALF_UP → 35715. brain_expected_mu=35715 (Brain stored the legacy-path value). Harness detects 35714 ≠ 35715, re_derive (ROUND_HALF_UP)=35715 == brain_mu → ROUNDING_MODE_MISMATCH. NOT a BLOCKING_BUG.",
+      "workspace_id": "ws_test_rmm_001",
+      "date": "2026-01-15",
+      "field": "miscExpensesProrated",
+      "legacy_stored_decimal": "357.145",
+      "brain_expected_mu": 35715,
+      "brain_canonical_mu": 35714,
+      "category": "ROUNDING_MODE_MISMATCH",
+      "division_derived": true,
+      "note": "brain_expected_mu=35715 is the ROUND_HALF_UP value (Brain stored via legacy import path). Brain canonical ROUND_HALF_EVEN=35714. Delta=1. re_derive (ROUND_HALF_UP)=35715 == brain_mu → ROUNDING_MODE_MISMATCH. CF-C2-RECON-TAXONOMY-1."
+    },
+    {
+      "id": "rmm-2",
+      "description": "ROUNDING_MODE_MISMATCH: cm3 .X45 midpoint. Legacy stored '4642.845' (ROUND_HALF_UP from irrational). Brain ROUND_HALF_EVEN: 4642.845 × 100 = 464284.5, floor=464284 EVEN → stay = 464284. Legacy Postgres ROUND_HALF_UP → 464285. brain_expected_mu=464285 (Brain stored the legacy-path value). Harness detects 464284 ≠ 464285, re_derive (ROUND_HALF_UP)=464285 == brain_mu → ROUNDING_MODE_MISMATCH. NOT a BLOCKING_BUG.",
+      "workspace_id": "ws_test_rmm_001",
+      "date": "2026-01-15",
+      "field": "cm3",
+      "legacy_stored_decimal": "4642.845",
+      "brain_expected_mu": 464285,
+      "brain_canonical_mu": 464284,
+      "category": "ROUNDING_MODE_MISMATCH",
+      "division_derived": true,
+      "note": "brain_expected_mu=464285 is the ROUND_HALF_UP value (Brain stored via legacy import path). Brain canonical ROUND_HALF_EVEN=464284. Delta=1. re_derive (ROUND_HALF_UP)=464285 == brain_mu → ROUNDING_MODE_MISMATCH. CF-C2-RECON-TAXONOMY-1."
+    }
+  ]
+}

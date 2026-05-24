@@ -1,0 +1,47 @@
+-- column-migration-skeleton.sql — ADDITIVE minor-units columns skeleton.
+--
+-- STATUS: UN-APPLICABLE. Do NOT run this file. HOLD-AT-LIVE-RECON.
+-- This file lives in a path no migration runner scans (mirrors Child-1
+-- migrations/manual/rls/ discipline). CF-C2-NO-LIVE-1.
+--
+-- Authored: Child 2 (feat-money-minor-units-parity).
+-- Applied: future Stage-8 ceremony, Founder supervision only.
+--
+-- Purpose: document the ADDITIVE column additions so the live migration is
+-- mechanical (no re-derivation at Stage 8). Review by Shreya (Stage 4) +
+-- Tanvi (Stage 5) confirms no live data is touched this child.
+
+-- -------------------------------------------------------------------------
+-- ADDITIVE columns: add *_mu BIGINT columns alongside legacy Decimal columns.
+-- Legacy columns are untouched during the shadow phase. Brain SHADOW writes
+-- go to ClickHouse (Child 4), NOT to this Postgres table (per Child-0 A5.1
+-- rule 2: no dual-write to the legacy rollup table).
+-- -------------------------------------------------------------------------
+
+-- workspace_daily_metrics: add minor-unit shadow columns
+-- ALTER TABLE "workspace_daily_metrics"
+--   ADD COLUMN IF NOT EXISTS "netSales_mu"          BIGINT,
+--   ADD COLUMN IF NOT EXISTS "grossSales_mu"        BIGINT,
+--   ADD COLUMN IF NOT EXISTS "refunds_mu"           BIGINT,
+--   ADD COLUMN IF NOT EXISTS "cogs_mu"              BIGINT,
+--   ADD COLUMN IF NOT EXISTS "totalAdSpend_mu"      BIGINT,
+--   ADD COLUMN IF NOT EXISTS "cm1_mu"               BIGINT,
+--   ADD COLUMN IF NOT EXISTS "cm2_mu"               BIGINT,
+--   ADD COLUMN IF NOT EXISTS "cm3_mu"               BIGINT,
+--   ADD COLUMN IF NOT EXISTS "miscExpensesProrated_mu" BIGINT;
+
+-- WorkspaceMetricGoal: goalType split (resolves Child-0 A1 #8)
+-- Design-only this child; column addition at Child 4.
+-- ALTER TABLE "WorkspaceMetricGoal"
+--   ADD COLUMN IF NOT EXISTS "goalType" TEXT NOT NULL DEFAULT 'money';
+-- CREATE TYPE "GoalType" AS ENUM ('money', 'ratio');
+-- ALTER TABLE "WorkspaceMetricGoal"
+--   ALTER COLUMN "goalType" TYPE "GoalType" USING "goalType"::"GoalType";
+
+-- -------------------------------------------------------------------------
+-- ROLLBACK (reversible until Child 7):
+-- ALTER TABLE "workspace_daily_metrics"
+--   DROP COLUMN IF EXISTS "netSales_mu",
+--   DROP COLUMN IF EXISTS "grossSales_mu",
+--   ... (all _mu columns);
+-- -------------------------------------------------------------------------

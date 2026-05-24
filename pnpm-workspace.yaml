@@ -11,3 +11,8 @@ packages:
   - "apps/notifications-service"
   - "apps/lifecycle-service"
   - "packages/*"
+# Dependency build scripts are blocked by default in pnpm v10+.
+# esbuild ships a native binary and must run its install/build script
+# (vitest + tsx depend on it). Approve it explicitly.
+onlyBuiltDependencies:
+  - esbuild

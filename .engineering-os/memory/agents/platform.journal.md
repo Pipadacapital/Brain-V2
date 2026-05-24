@@ -25,3 +25,63 @@
 **Follow-ups owned:** per-service ECR+ArgoCD+canary (when first service req ships), pin buf plugin digests (S-2), align CI to Node 24 (S-5), replace health.proto placeholder at first real contract
 **Deploy report:** 13-deploy-report.md
 **Next:** SHIPPED — awaiting Founder commit (product code staged; pending-founder-commit.md has the mechanical command)
+
+## 2026-05-24T13:30:00Z — Jatin (platform-devops) — feat-tenancy-auth-rls-hardening
+**Stage:** 8 (rollout — HOLD AT FORCE)
+**Action:** STAGE-8-PLAN-COMPLETE — static validation GREEN, corrected bare-write grep run, STEP0-STEP4 turnkey operator plan documented, FORCE explicitly held
+**CI:** N/A (no new CI pipeline — legacy monolith; runbook is the deploy artifact)
+**Staging:** N/A (legacy Supabase/Fargate — no ArgoCD Application for this slice; deploy_class = db-ddl-migration, app-layer code ships with Founder commit + Heroku/Supabase deploy)
+**Strategy:** Incremental DDL rollout — STEP0 (region-assert) → STEP1 (quiesce) → STEP2 (context-code verify) → STEP3 (ENABLE+CREATE, additive) → STEP4 (CF-SEC-1 probe GREEN) → HOLD. STEP5 FORCE gated on Child 3.
+**Monitor (so far):** Pre-FORCE state; 48h monitor plan in §6 of report. Key signals: API p95 (no change expected pre-FORCE), cron success rate, RLS probe re-runs at H+2/H+24/H+48.
+**Skills loaded:** operational-readiness, progressive-delivery, verification-before-completion, finishing-a-development-branch, data-residency-enforcement, incident-response
+**Dashboards:** N/A (no new service; probe output is the observability signal)
+**Static validation results:** STEP ordering CORRECT. Migration file separation CORRECT (step-a and step-b independent files). down.sql symmetry COMPLETE (43 tables, all policies dropped). Fail-closed verified (zero IS NULL/COALESCE/USING true in executable SQL). FORCE coverage COMPLETE (no table FORCEd without policy). Runbook STEP5 grep CONFIRMED DEFECTIVE (excludes backfill/discoverChannels per Rohan §4.A).
+**Corrected bare-write grep:** Run READ-ONLY across full src/. ~80+ residual bare-write sites enumerated (priority convert-list in §2.3 of report): shopify/sync.ts (7 sites, Groups B), shopify/webhooks.ts (9 sites, Groups A+B+PII), shiprocket backfill/discoverChannels (8 sites), woocommerce-sync.ts, cron.ts:249 recompute (bare prisma to product_daily_aggregates), meta.ts:192 catch-block, all route-handler connection-management writes across ~12 routes. All fail-CLOSED post-FORCE (outage, not leak).
+**FORCE status:** HELD. Explicit. Non-negotiable until Child 3 convert-list GREEN + corrected grep ZERO hits + probe GREEN re-run.
+**Deploy report:** 11-stage8-rollout-report.md
+**Next:** Founder commits + deploys product code (22 files staged). Human operator runs STEP0-STEP4 against prod Supabase using the turnkey plan in §3. 48h monitor. Child 3 converts residual writers → FORCE unlocked.
+
+## 2026-05-24T07:13:35Z — Founder approval received — spike-legacy-migration-architecture
+- Founder /approve at 2026-05-24T01:40:00Z. Architecture accepted as BINDING for the 7-child legacy-migration epic; Child 1 greenlit.
+- Residency tripwire RESOLVED: legacy Supabase/Postgres confirmed in ap-south-1 (no DPDP s16 escalation).
+- Stage 8 = no-op readiness analogue for a no-code spike (runtime_deployed:false). Driving platform-devops now.
+- SECURITY: Founder shared live legacy env secrets in chat; NOT persisted to repo; to be provisioned via Secrets Manager in Child 1; rotation advised.
+
+## 2026-05-24T07:14:41Z — Jatin (platform-devops) — spike-legacy-migration-architecture
+**Stage:** 8 (no-op readiness analogue)
+**Action:** SPIKE-CLOSEOUT (no runtime deployed; architecture accepted as binding; carry-forward ledger captured)
+**CI:** N/A (no code; no CI pipeline target)
+**Staging:** N/A (no ArgoCD Application, no ECR image, no service)
+**Strategy:** N/A-spike-no-op
+**Monitor (so far):** N/A — no runtime; 48h_monitor: n/a-no-code-spike
+**Skills loaded:** operational-readiness, verification-before-completion, finishing-a-development-branch, data-residency-enforcement
+**Dashboards:** N/A (no runtime service)
+**Readiness checks (6/6 PASS):**
+  - R1 no-prod-code-guardrail: PASS (git status = .engineering-os/** only; zero product code)
+  - R2 secret-hygiene: CLEAN (zero credential values; project-ref + pooler-host are region-fact identifiers, not secrets)
+  - R3 residency: RESOLVED (ap-south-1 confirmed; CF-RES-1 now confirmation-mode gate-zero for Child 1)
+  - R4 architecture binding: CONFIRMED (A1-A6 + 9 persona concerns + 11 carry-forward constraints)
+  - R5 carry-forward ledger: CAPTURED in 13-deploy-report.md §5 + state.stage8_deploy_report
+  - R6 epic ready: READY to spawn child-1-tenancy-auth-rls-hardening
+**Deploy class:** spike-no-op; runtime_deployed: false
+**Deploy report:** 13-deploy-report.md
+**Epic update:** chore-migrate-legacy-to-brain -> architecture_binding:true, next_child_to_file:child-1-tenancy-auth-rls-hardening
+**Spike status:** done (completed_at: 2026-05-24T07:14:41Z)
+**Next:** Founder files Child 1 (/requirement to file child-1-tenancy-auth-rls-hardening with carry-forward ledger attached)
+
+## 2026-05-24T11:24:00Z — Jatin (platform-devops) — feat-tenancy-rls-brain-native
+**Founder approval received** (12-founder-decision.json, approved by rishabh). Advancing to Stage 8 (deploy-readiness). FORCE flip remains HELD per HOLD-AT-FORCE; this Stage 8 is rollout-readiness + monitor plan, NOT a live RLS cutover. No git commit authorized by approval.
+
+## 2026-05-24T17:30:00Z — Jatin (platform-devops) — feat-tenancy-rls-brain-native
+**Stage:** 8
+**Action:** READINESS-COMPLETE (deploy-class=db-ddl-migration; HOLD-AT-FORCE; no live DDL applied)
+**CI:** PASS (local) — tsc exit 0; 158 unit tests passed / 9 skipped / 0 failed; integration 9/9 (Docker stack, rls_app role); coverage 90.71% stmt / 71.42% branch (all ≥ 70%); bash -n runbook PASS; fail-open grep 0 hits; DDL symmetry ENABLE 43 = FORCE 43 = DROP POLICY 45
+**Staging:** N/A — no ArgoCD Application, no ECR image, no Brain runtime; DDL ships via operator-run psql
+**Strategy:** HOLD-AT-FORCE — STEP 0-4 (region-assert, quiesce, ENABLE+CREATE, probe) are READY-IN-RUNBOOK; STEP 5 FORCE HELD until Child-3 + Founder/CTOA sign-off
+**Monitor (so far):** N/A — no runtime; 48h monitor plan DEFINED (probe-RED alarm, cron ctxless gap, 0-rows outage canary) as ARMED-AT-ROLLOUT predicates in 13-deployment-report.md §4-deferred
+**Skills loaded:** devops-aws, progressive-delivery, incident-response, data-residency-enforcement, observability, operational-readiness, finishing-a-development-branch
+**Dashboards:** N/A (no runtime; probe verdict + cron 4-tuple logs are the observability signal at rollout)
+**FORCE status:** NOT FLIPPED. step-b-force.sql HELD header confirmed intact. No psql against any live URL with irreversible DDL. No git commit by Jatin. No legacy files touched.
+**Deploy gate ledger:** 2 READY-IN-RUNBOOK / 1 HELD (FORCE — Founder+CTOA) / 1 HELD cross-child (Child-3 residual-writer conversion) / 7 DEFERRED-TO-ROLLOUT-WINDOW (all with exact predicates)
+**Deploy report:** 13-deployment-report.md
+**Next:** READINESS-COMPLETE. Awaiting: (1) Founder commits product code; (2) Child-3 residual-writer conversion; (3) Founder+CTOA FORCE ceremony sign-off; (4) live runbook execution by operator.

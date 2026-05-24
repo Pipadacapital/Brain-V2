@@ -1,0 +1,7 @@
+{
+  "decision": "approved",
+  "ts": "2026-05-24T11:24:00Z",
+  "actor": "rishabh",
+  "req_id": "feat-tenancy-rls-brain-native",
+  "note": "Approved per Rohan Stage-6 PASS/APPROVE. Advance to Stage 8 deploy-readiness. FORCE flip remains HELD (HOLD-AT-FORCE) and separately Founder-gated. No git commit authorized by this approval — commit requires explicit 'commit it'."
+}

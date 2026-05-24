@@ -2,6 +2,25 @@
 
 > Append-only. See /Users/rishabhporwal/.claude/plugins/cache/brain-engineering-os-marketplace/brain-engineering-os/0.23.0/docs/role-empowerment-model.md for entry shape.
 
+## 2026-05-24T14:05:00Z — Aryan (architect) — feat-money-minor-units-parity (Child 2 of EPIC chore-migrate-legacy-to-brain)
+**Stage:** 2 (co-owned with Maya/intelligence — numeric mechanics; the C7 money-parity gate)
+**Action:** Produced the binding Child-2 plan (06-architecture-plan.md) + prescriptive handoff (07-handoff-to-developer.md). DESIGN + golden-fixture harness only — ZERO live data, ZERO legacy edit, ZERO backfill (Shape A; mirrors Child-1 HOLD-AT-FORCE via a named HOLD-AT-LIVE-RECON state). git scope = .engineering-os/** only this Stage-2 act.
+**Paradigm:** sql (deterministic value object + exact-integer comparator; zero float, zero LLM; CTOA sign-off carried from Stage-1 intake+synthesis, Aryan affirms — no re-invoke, paradigm unchanged).
+**Tracks emitted:** Track M (@maya, parallel) — conversion bodies both langs, ratio/subunit, ALL fixtures incl. divergence-probe + negatives + high-volume-COGS, harness engine + 5-category taxonomy, numeric tests. Track V (@vikram, parallel) — TS package homes + Money object, goalType split, CI byte-identity gate (rewrite tools/check-metrics-parity.sh stub), HOLD-AT-LIVE-RECON runbook skeleton, TS tests. Run IN PARALLEL; integrate at the CI byte-identity gate (Track V3).
+**Key bindings (all settled):**
+- CF-C2-STRING-API-1 [CRIT]: `decimalToMinorUnits(amount: string, subunitMultiplier)` — string-in (type + runtime reject), exact decimal-string BigInt arithmetic, NO `Number()*100`, NO `1e-10` epsilon. **Ruled `decimal.js` REJECTED → audited inline pure fn** (verified: decimal.js NOT in pnpm-lock; Brain has no Prisma → the persona's "Prisma transitive dep" claim is false here; Single-Primitive + no-new-deps favors inline). decimal.js@10.6.0 documented as considered-and-rejected (real version, zero runtime deps).
+- CF-C2-RECON-TAXONOMY-1 [HIGH]: 5th category ROUNDING_MODE_MISMATCH + re-derivation rule + rounding_mode_mismatches_count; division-derived fields enumerated (miscExpensesProrated, cm3; audit cogs, totalAdSpend). Designed now, populated at live run.
+- CF-C2-FIXTURE-PROOF-1 [HIGH]: divergence-proving probe fixture (PASS string path / FAIL number path) — without it CI-green does NOT discharge the CRITICAL.
+- CF-C2-SUBUNIT-1 [MED]: Money carries subunit_multiplier (default 100; KWD/BHD=1000, JPY=1); conversion+comparator read it, never hardcode 100. Added NOW to avoid a future irreversible value-rewriting migration at the ae/sa Phase-4 seam.
+- CF-C2-FLOAT-COGS-1 [MED] + CF-C2-NEG-VECTORS-1 [LOW]: documented artifact + high-volume fixture; negative-tie variants before Tanvi's Stage-5 gate.
+- goalType money|ratio split resolves Child-0 A1 #8 (shared enum both registries + typed goalValue rule).
+- Homes: packages/lib-metrics (TS) + pylibs/brain_metrics (Python) — byte-identity pair; harness engine in pylibs/brain_metrics/parity/; runbook in parity/runbook/ (no-runner-scanned path, Stage-8-only README).
+**Single-Primitive sweep:** clean — one new foundational primitive (Money + conversion + harness) built ONCE per language as a byte-identity pair; subunit_multiplier parameterizes the single rule rather than forking it; no per-channel/per-currency fork; no `decimal.js` second path.
+**Over-engineering audit:** PASS (7/7) — zero new deps; no runtime observability (no runtime); scope held to Child 2 (no metric defs, no live read, no backfill, no Definitional-Delta population — only the unpopulated hook); no new service ⇒ no deploy-pipeline track (CI parity gate IS the pipeline artifact, mirrors Child-1 runbook-as-deploy-artifact).
+**Skills loaded:** metric-engine, india-commerce-economics, database-design, api-contract-testing, turborepo, domain-driven-design, architecture-patterns, writing-plans, billing-metering, decision-log.
+**Open questions:** none (all 6 persona concerns folded + bound; M-A5 answers inherited fixed).
+**Next:** @maya (intelligence-engineer) + @vikram (backend-developer) — Stage 3, IN PARALLEL.
+
 ## 2026-05-23T12:48:01Z — system — bootstrap
 **Action:** Journal initialized by /eos init on 2026-05-23T12:48:01Z.
 
@@ -16,3 +35,53 @@
 **Skills loaded:** architecture-patterns, domain-driven-design, region-adapter, engineering-discipline, verification-before-completion.
 **Open questions:** none.
 **Next:** @vikram (backend-developer) — Stage 3 (single track).
+
+## 2026-05-24T01:11:34Z — Aryan (architect) — spike-legacy-migration-architecture
+**Stage:** 2 (co-owned with Maya/intelligence)
+**Action:** Produced the binding legacy->Brain migration architecture (A1-A6) in 06-architecture-plan.md. Design-only spike; ZERO legacy/product code touched (git status = only .engineering-os/**; verified).
+**Paradigm:** n/a for the spike (no compute path); program is sql-dominant (Children 1-4 deterministic SQL; only Child 5 carries small/frontier-LLM @paradigm, deferred to Child 5).
+**Artifacts:** A1 capability-map (44 models + routes/lib + 7 connectors + ~204 tsx grouped -> Brain service+context, reuse/refactor/redesign + missing-NN tags, ZERO orphans; AuditLog null-workspaceId dispositioned C9). A2 strangler-fig sequence (7 children, DAG no-cycle, RLS+session HARD gate column C5, armed residency tripwire A2.0 C6). A3 facade/ACL (no Decimal/no-RLS-model leakage; workspace_daily_metrics single-writer C2; routing flip). A4 per-slice parity+rollback+decommission (exact-integer-equality money C7; per-connector rollback tree C1). A5 dual-run shadow-compare (6 binding rules; STUB demarcated for Maya). A6 risk register (6 NN + leak + PII/residency register + money + per-connector token-handoff ceremony C1 + cred rotation C8).
+**Ground-truth (file:line):** middleware/workspace.ts:30-52 (app-layer-only iso); cron.ts:65 + meta/google/shiprocket-sync findMany (cross-workspace fan-out); compute-daily.ts:32-65 float; pnl.ts:42-56 hardcoded INR:83.5 FX; ShopifyConnection.accessToken:286 single-owner; ai-engine/providers/router.ts:6-18 direct Claude SDK no gateway; insight-cache.ts:9-18 filtersHash; AuditLog.workspaceId? schema:658; plaintext creds (Shiprocket/Unicommerce/Klaviyo/Woo/Shopify). Residency UNCONFIRMABLE from repo (.env not committed; 0 region markers) -> tripwire ARMED.
+**Single-Primitive sweep:** clean — facade/ACL is minimum for reversible strangler-fig; no speculative layers; no new deps (design-only).
+**Persona concerns:** 9/9 addressed + traceable (C1-C9 mapped to A-artifacts).
+**Maya-owned stubs (demarcated):** A1.5 (data/AI-surface mapping, Qs M-A1-Q1..Q3) + A5.2 (numeric shadow-compare, Qs M-A5-Q1..Q3). Constraint: extend, don't re-home models / don't relax the 6 A5.1 rules without a plan-amendment.
+**Skills loaded:** architecture-patterns, domain-driven-design, multi-tenancy-isolation, integration-connectors, metric-engine, event-driven-kafka, region-adapter, data-residency-enforcement, audit-log-immutability, api-versioning-strategy, decision-log.
+**Open questions:** residency region (armed tripwire — Maya/anyone confirms during deepening); Maya's M-* Qs.
+**Next:** Maya (intelligence-engineer) deepens A1.5 + A5.2, then parallel Security (Shreya) + QA (Tanvi) review.
+
+## 2026-05-24T07:43:15Z — Aryan (architect) — feat-tenancy-auth-rls-hardening
+**Stage:** 2 (Child 1 of EPIC chore-migrate-legacy-to-brain — FIRST code-moving strangler slice; data-layer isolation gate)
+**Action:** Produced the binding Child-1 build plan (06-architecture-plan.md). DESIGN ONLY — ZERO live data touched, ZERO legacy/product code edited (git status = only .engineering-os/**; verified). Build is HARD-GATED on the DPDP lawful-basis instrument (CF-SEC-3.HARD) — plan proceeds, build does not.
+**Paradigm:** SQL/DDL + connection-handling (no ML/LLM) — Rohan Stage-1 sign-off; no Maya co-owner (no metric/money/AI/numeric-parity); FK-scope EXPLAIN surfaced no metric-rollup dependency.
+**Scope:** 1a (data-layer isolation = C5-gate-establishing, ships first, additive+reversible) -> 1b (auth/role-claim contract, behind 1a). 1a independently committable/reversible with gate GREEN before 1b.
+**Key decisions (all settled, not deferred):**
+- CF-C1-POOL-1.a: rlsPrisma 2nd client on DIRECT_URL :5432 session-mode + tx-local set_config(app.workspace_id,$1,true) inside explicit $transaction via withWorkspace(); session-level SET banned; injection-safe bind param. Interleaved-tenant test on :6543 (bleed->0, contextless->0) is G1 gate.
+- CF-C1-FK-SCOPE-1.a: ALL 45 models classified (21 direct / ~18 connId-FK 1-hop / 1 orderId-FK 2-hop WoocommerceLineItem / 4 global User/Workspace/SystemSettings/AuditLog). Default JOIN-policy + live EXPLAIN(ANALYZE,BUFFERS) decision-gate per table; escalate hot tables shopify_orders/shopify_line_items to workspace_id denorm via additive col + chunked(5000) online backfill + CONCURRENTLY index + IS-NULL=0 verify (reversible). Zero workspace-scoped table left unprotected.
+- CF-C1-RLS-DEFAULT-1.a: USING/WITH CHECK = (col = current_setting(app.workspace_id,true)::uuid) -> NULL=>0 rows (proven fail-closed). Banned OR-IS-NULL / COALESCE / USING(true) / session-SET / bare-singleton-RLS-query (Tanvi static hard-fail). CF-SEC-1 probe RED-by-default -> GREEN on (cross-read=0 AND contextless=0) per table, Decision-Log transition with 4-tuple.
+- Rollout (CF-C1-ROLLOUT-ORDER-1 + QUIESCE-1 + RES-1.a + R2 + R4): STEP0 region-assert(BOTH URLs, Postgres-level) -> STEP1 quiesce-crons-FIRST (harness asserts 0 cross-ws findMany) -> STEP2 deploy context-code (owner bypass, no RLS) -> STEP3 ENABLE+CREATE fail-closed policy -> STEP4 probe GREEN -> STEP5 FORCE per table -> STEP6 byte-identical smoke + clean cron tick. G1+G2 GREEN TOGETHER, one deploy. Rollback = NO FORCE+DISABLE+DROP POLICY (DDL, corrects A4 Child-1 text).
+- CF-C1-CRON-SCOPE-1.a: wrap each syncAll* per-connection unit in withWorkspace(c.workspaceId); outer enumeration under withSuperadmin; preserve per-connection try/catch + proof-of-attempt log; Shiprocket no-replay -> attempted-vs-connected alarm (silent-drop detector).
+- CF-C1-AUDITLOG-1.a: dual-policy (ws-scoped + SUPERADMIN-only app.is_superadmin for null rows) + §12 erasure under withSuperadmin userId-only; compatible with deferred Child-5 sentinel.
+- CF-RES-1.a: STRENGTHENED by ground truth — .env.bak.singapore shows DB was previously ap-southeast-1 (Singapore); a region move ACTUALLY happened -> region must be LIVE-asserted on BOTH :6543 + :5432, never trusted.
+- CF-SEC-5: 4-tuple {request_id,trace_id,workspace_id,user_id} via AsyncLocalStorage through withWorkspace + cron + probe. CF-SEC-SECRETS-1: both pool URLs via Secrets Manager (rotate exposed creds first).
+**Single-Primitive sweep:** clean — withWorkspace/withSuperadmin = the minimum sanctioned context-setter (one home, not future-proofing); rlsPrisma implements canon layer-3, not a new layer; second client uses existing @prisma/client (no new deps).
+**10/10 persona concerns homed** (R1 §2b, R2 §5, R3 §3, R4 §4, R5 §6, C1 §5 STEP1, C2 §11 BUILD-GATE, C3 §5 STEP0, C4 §7, C5 §12 PII-register).
+**Tracks emitted (all BLOCKED on CF-SEC-3.HARD):** 1a-A..1a-F + 1b -> @vikram (backend; 1a-F exec @jatin Stage 8). @ananya NOT needed (no frontend auth wiring). No new service -> no deploy-pipeline track (runbook is the deploy artifact).
+**Skills loaded:** database-design, multi-tenancy-isolation, auth-and-access, security-baseline, data-privacy-dpdp, data-residency-enforcement, audit-log-immutability, writing-plans, progressive-delivery, region-adapter.
+**Open questions:** none for design. Build BLOCKED on Founder lawful-basis instrument (CF-SEC-3.HARD) + region-assert is an armed runtime tripwire.
+**Next:** Orchestrator should STOP after Stage 2 + surface to Founder (escalation already in pending-founder-attention.md). Stage-3 @vikram only after gate lifted.
+
+## 2026-05-24T14:20:00Z — Aryan (architect) — feat-tenancy-rls-brain-native
+**Stage:** 2
+**Action:** Produced binding architecture plan (Brain-native rebuild of withdrawn legacy Child-1; universal C5 hard gate).
+**Paradigm:** sql (SQL/DDL + connection-handling; no ML/LLM; no Maya — confirmed at Stage-1 synthesis + intake).
+**Deliverable boundary BOUND:** Shape A — primitive + RLS DDL + probe + runbook as Brain code; live FORCE deferred to Stage-8. Shape B (live ACL shim) rejected (= first Brain runtime + collides CF-BN-NOLEGACY-1).
+**HEADLINE (CF-BN-GATE-BOUNDARY-1, CRITICAL):** authored the §A0 gate-language amendment to Child-0 06-architecture-plan.md §A2.2 (line 501 Child-1 exit "RLS live" -> "RLS SATISFIABLE Brain-native"; line 502 Child-2 entry -> "satisfiable + FORCE-ready") + a named **HOLD-AT-FORCE** state (three C5 states: NOT-SATISFIABLE -> SATISFIABLE -> LIVE/FORCED). Track G applies the edit + updates state/active.json exit_criteria + emits the architecture-gate-amendment decision-log row at Stage 3; Rohan countersigns at Stage 6. Founder visibility already mirrored to pending-founder-attention.md at Stage 1.
+**CF-BN-OWNER-1 BOUND (path + signature):** primitive = `apps/core-service/src/infrastructure/db/workspace-context.ts` exporting `withWorkspace<T>(workspaceId, fn)` + `withSuperadmin<T>(fn)`. KEY DEPARTURE from legacy: built against the `pg` driver (session-mode :5432), NOT a Prisma client — the Brain monorepo has NO schema.prisma/generated client yet (verified). Identical exported interface => Single-Primitive Rule holds at the contract; a Prisma adapter can back it later. RLS DDL home = `apps/core-service/migrations/manual/rls/` (runbook-gated, CF-BN-DDL-GATING-1).
+**Single-Primitive sweep:** clean. Introduced ONE new primitive (session-context) with one-sentence justification (no existing Brain tenancy primitive — monorepo is scaffolding); extended Decision Log (probe transition write) + Identity (auth-claim). No per-call-site forks.
+**Tracks emitted:** G(gate-amendment,CRITICAL) + A(primitive) + B(rls-ddl) + C(probe) + D(cron-fanout) + E(auth-claim) + F(runbook-artifact) + T(tests incl. LOCAL pgbouncer-txn-pool) -> all @vikram (backend; SQL/DDL). Runbook EXEC -> @jatin Stage-8. No @ananya/@karan/@maya. No new service => no new deploy-pipeline track (runbook IS the deploy artifact; core-service already scaffolded).
+**must-fix folded into acceptance contract (shift-left, O7 class):** R-O7 complete bare-write grep (legacy grep was DEFECTIVE — excluded backfill/discoverChannels) as runbook STEP-5 prerequisite (conversion itself is Child-3); CF-C1-POOL-1.a LOCAL pgbouncer test; CF-BN-NOLEGACY-1; CF-C1-RLS-DEFAULT-1.a banned-shape grep.
+**Skills loaded:** multi-tenancy-isolation, database-design, architecture-patterns, domain-driven-design, defense-in-depth-validation, audit-log-immutability, data-residency-enforcement, security-baseline, testing-tdd, writing-plans, finishing-a-development-branch.
+**Semantic recall:** top hits = this req's intake-synthesis (0.766) + the legacy sibling's QA-bounce (F1: inner sync libs wrote to RLS Group-A via bare prisma → fail-closed post-FORCE) — folded as R-O7 must-fix. REUSED legacy proven logic (policy shapes, 44-table FK-scope map, probe predicate, cron scoping, runbook), re-expressed Brain-native, imported nothing.
+**Over-engineering self-check:** PASS 7/7 (re-derivation forbidden; only new dep = pg + local docker-compose dev-dep; no Prisma; no Child 2-7 scope pulled forward — FK-denorm backfill design-only).
+**Open questions:** none for design. Build is UNBLOCKED (CF-SEC-3 resolved on record; no live PII this run — probe/backfill deferred to Stage-8).
+**Next:** @vikram (backend-developer) — Stage 3 (single builder; tracks G then A→F sequentially in one pass + T).

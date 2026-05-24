@@ -1,0 +1,9 @@
+{
+  "decision": "approved",
+  "ts": "2026-05-24T01:40:00Z",
+  "actor": "rishabh",
+  "note": "Architecture accepted as BINDING for the whole legacy-migration epic; greenlight Child 1 (tenancy/auth/RLS hardening). Residency tripwire RESOLVED: Founder confirmed legacy Supabase/Postgres is in ap-south-1 (DATABASE_URL host aws-1-ap-south-1.pooler.supabase.com, project ref pavcgecgciamejdcysjx) — no DPDP s16 cross-border-transfer escalation; Child 1 gate-zero runs as confirmation, not blocker. Founder shared live legacy env/secrets in chat for downstream reference; secrets are NOT persisted to the repo and MUST be provisioned via AWS Secrets Manager in Child 1; Founder advised to rotate all exposed credentials.",
+  "residency_resolved": true,
+  "legacy_db_region": "ap-south-1",
+  "secrets_handling": "not-persisted-to-repo; provision-via-secrets-manager-in-child-1; rotate-exposed-credentials"
+}

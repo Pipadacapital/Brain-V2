@@ -1,0 +1,72 @@
+# Dynamic Persona Review — migration-strangler-fig-realist
+
+> Filled by a single persona spawned in Stage 1.
+> Validates against schemas/dynamic-persona.schema.json.
+> At least one concern is mandatory.
+
+| Field | Value |
+|-------|-------|
+| **req_id** | `spike-legacy-migration-architecture` |
+| **Persona** | `migration-strangler-fig-realist` |
+| **Timestamp** | 2026-05-24T01:03:39Z |
+
+---
+
+## What this lens sees
+
+I have seen "strangler-fig" programmes collapse to big-bang on three predictable failure modes: (1) an implicit shared-state assumption that makes no single slice independently reversible, (2) a data-representation conversion (money types, ID formats) that cannot be dual-homed without a synchronous cutover of every writer, and (3) a fat "integration" slice that, when you enumerate its actual dependencies, turns out to require every prior slice to already be complete — meaning it was never really independent. All three failure modes are present here.
+
+The proposed sequence is Child 1 (RLS/auth) → Child 2 (money) → Child 3 (connectors) → Child 4 (metric engine + OLAP) → Child 5 (AI engine) → Child 6 (frontend). On its face that ordering is defensible. But the legacy schema reveals a structural problem that makes Child 3 (connectors) the single slice most likely to force an unplanned big-bang: the legacy connector data does not live under `workspaceId`-keyed tables but under `connectionId`-keyed tables, and the Brain connector framework requires workspace-partitioned Kafka topics, idempotency keys, and an S3-raw / ClickHouse fan-out. You cannot "shadow-run" a Brain connector alongside a legacy connector against the same live Shopify/WooCommerce/Shiprocket API credentials — the APIs enforce one active webhook registration per store, and OAuth token refresh races will corrupt both sides. Child 3 is not a phased slice; it is a connector-by-connector cutover requiring the token to live in exactly one system at a time.
+
+There is also a hidden dependency cycle: Child 4 (metric engine) formally depends on Child 2 (money in minor-units), but the `WorkspaceDailyMetrics` table — the legacy metric rollup that `workspace_daily_metrics/compute-daily.ts` writes and the legacy AI module reads directly from `workspace_daily_metrics` — is itself the *shared state* that both the legacy P&L routes (`pnl.ts` line 488: `workspaceId: workspace.id`) and the Brain metric engine would need to write during dual-run. Two writers to the same Postgres rollup table with different money representations is not a dual-run; it is a data race.
+
+---
+
+## Concerns
+
+### Concern 1 — The `connectionId`-scoped tables create a connector-token point of no return that makes Child 3 a hidden big-bang
+
+- **Severity:** critical
+- **Concern:** Legacy transactional data (orders, line items, shipments, ad metrics) is scoped to `connectionId`, not `workspaceId` directly. The `ShopifyConnection`, `ShiprocketConnection`, `KlaviyoConnection`, `meta_ads_connections`, and `google_ads_connections` models each hold exactly one OAuth access token or API credential. Shopify allows only one active webhook endpoint per shop; Shiprocket and Klaviyo API keys are similarly singular. Brain's connector framework requires re-registration of webhooks to the Brain event bus and takes ownership of the token. There is no dual-homing: the moment Brain registers its Shopify webhook, the legacy system stops receiving real-time order events. Replaying historical data via the legacy cron is possible, but any live orders during the transition window are lost to whichever system does not own the webhook at that instant. The schema shows `ShopifyConnection.accessToken` as a single nullable field (line 290); there is no "shadow token" column to support two concurrent readers. This is not a phased cutover — it is a synchronous token transfer with a data-loss window. The spike must name this moment explicitly and design around it.
+- **Rationale:** `legacy project/backend/prisma/schema.prisma` line 290: `accessToken String? @map("access_token")` — one field, one owner. `legacy project/backend/src/routes/cron.ts` line 37: the hourly `sync-ads` cron fires against the stored token without any dual-write capability. The Brain connector spec requires workspace-partitioned Kafka topics + webhook ownership. These two facts are structurally incompatible with phased dual-run. Spike-acceptance criterion: the spike must produce a per-connector "token transfer protocol" design that specifies (a) the exact moment legacy loses event reception, (b) the maximum data-loss window in minutes, (c) whether a replay-from-API window is technically available for each of the 7 connectors (Shopify has a 60-day order API; Shiprocket does not offer a historical event API), and (d) a go/no-go rollback decision tree (if Brain connector parity is not reached within N hours of token transfer, what restores the legacy connector without data corruption).
+
+### Concern 2 — `WorkspaceDailyMetrics` is shared mutable rollup state; dual-write during Child 2 (money) and Child 4 (metric engine) creates a data race, not a shadow
+
+- **Severity:** high
+- **Concern:** The legacy metric compute path (`src/lib/workspace-metrics/compute-daily.ts`) writes float-typed CM1/CM2/CM3 rows into `workspace_daily_metrics`. The legacy AI module (`src/module/ai/context/from-db.ts`) reads directly from this table to build its context. The legacy P&L route reads from this table. Brain's metric engine (Child 4) would also write to this table — but in minor-units. These two writers cannot coexist in the same Postgres table: a Brain writer in paise and a legacy writer in rupees with 2-decimal float will produce rows where any JOIN or SUM is financially nonsensical. The proposal assumes Child 2 (money migration) isolates the money representation before Child 4 begins. But Child 2 itself requires a dual-run comparison of computed metrics — which requires both systems to read from the same source-of-truth. The only safe resolution is that `WorkspaceDailyMetrics` is owned by exactly one system at a time, which means Child 4 is not a shadow; it is a cutover. Calling it a shadow-compare slice is a naming fiction.
+- **Rationale:** `legacy project/backend/prisma/schema.prisma` lines 857–897: `WorkspaceDailyMetrics` stores `cm1 Decimal @db.Decimal(12,2)`, `cm2`, `cm3`, `blendedRoas` — all in Decimal(12,2). `src/lib/workspace-metrics/compute-daily.ts` line 32–65 defines `WorkspaceDailyMetricsRow` with all fields typed as `number` (JS float). `src/module/ai/context/from-db.ts` reads from `workspace_daily_metrics` to feed the AI pipeline. Brain's metric registry requirement: one definition per metric, TS↔Python parity, LLMs never produce a number. These two compute paths writing to the same table is a non-starter for a genuinely reversible slice. Spike-acceptance criterion: the spike must name `WorkspaceDailyMetrics` as either (a) a shared read-only legacy table that Brain shadows into a separate ClickHouse materialization (never dual-writing to the Postgres table), or (b) a table owned exclusively by Brain's metric engine from the moment Child 4 begins, with a precise legacy-read cutover timestamp. Option (a) is the correct strangler-fig design; the spike must confirm it explicitly and design the shadow-compare harness accordingly.
+
+### Concern 3 — The `AiInsight` / `WorkspaceAiInsightsCache` coupling to `workspace_daily_metrics` creates a hidden dependency: Child 5 (AI engine) secretly requires Child 4 to be complete and is not an independent slice
+
+- **Severity:** high
+- **Concern:** The legacy AI pipeline (`src/module/ai/pipeline/README.md`: "Current period: workspace_daily_metrics (from DB), end date = yesterday") reads from `WorkspaceDailyMetrics` and writes to `AiInsight` and `WorkspaceAiInsightsCache`. The Brain AI engine (Child 5) must consume from the Brain metric registry (ClickHouse) and write to the Decision Log. If Child 4 (metric engine + ClickHouse) is not fully complete and authoritative before Child 5 begins, the AI engine has no data source — it cannot shadow against a metric table that does not yet exist in Brain. The proposed slice sequence treats Child 4 and Child 5 as sequential but independent; they are sequential and tightly coupled: Child 5 has a hard dependency on Child 4's ClickHouse materializations being live and parity-proven. The spike must make this dependency explicit in the DAG rather than leaving it as an implicit assumption. More critically, the `AiInsight` cache table uses a `filtersHash` key (`src/module/ai-engine/cache/insight-cache.ts` referenced in `pipeline/page-insight.ts` line 68) computed from `(workspaceId, page, fromStr, toStr)` — if Brain changes the metric definitions behind those pages during Child 4, cached insights in the legacy table become stale and misleading to users who may see old AI commentary on new Brain numbers. The spike must specify cache invalidation as a formal cutover step.
+- **Rationale:** `page-insight.ts` line 2–5: the pipeline exports `generatePageInsight` with a Prisma-dependent context adapter chain (13 adapters × 13 prompt builders). Every context adapter queries `workspace_daily_metrics` or the connector-scoped tables. Until Child 4 re-sources those reads from ClickHouse, the legacy AI pipeline cannot be moved without breaking its data inputs. `AiInsight` model lines 163–185: `expiresAt` TTL-based cache means stale insights survive metric redefinitions unless explicitly purged. Spike-acceptance criterion: the spike's A2 (strangler-fig sequence) must include an explicit "cache-invalidation event" step at the Child 4→Child 5 boundary, and A4 (per-slice parity) for Child 5 must list "`WorkspaceDailyMetrics` is no longer authoritative" as a mandatory entry criterion, not just an implied one.
+
+### Concern 4 — The `pnl.ts` hardcoded exchange-rate table (`EXCHANGE_RATES: Record<string, number>`) is a dead-but-live semantic leak into Brain's money model that Child 2 does not retire
+
+- **Severity:** medium
+- **Concern:** `src/routes/workspaces/pnl.ts` lines 42–56 define a hardcoded `EXCHANGE_RATES` map (`INR: 83.5`, `USD: 1`, etc.) used to `convertCurrency()` inside the P&L computation. This static rate is not stored in Prisma, not versioned, and produces a computed `PnLRow` in a target currency that may differ from the currency stored in `ShopifyOrder.currency` or `WorkspaceDailyMetrics.currency`. When Brain runs its P&L in shadow alongside the legacy system, if the two systems use different exchange rates (Brain should use live ECB/RBI rates from a rate service; legacy uses a static table), the shadow-compare will produce systematic mismatches that look like bugs but are actually design divergence. The spike's dual-run / shadow-compare strategy (A5) does not exist yet, and if it is naively designed as "compare computed CM2 between legacy and Brain", it will produce false positives on every multi-currency workspace (including Sugandh Lok, which is INR-primary but has Shopify orders in USD for any international SKUs). This is not a data-race risk but a semantic contamination risk: the legacy P&L's currency-conversion logic will leak its wrong-but-consistent numbers into the shadow baseline, making Brain's correct numbers look wrong.
+- **Rationale:** `pnl.ts` line 43: `const EXCHANGE_RATES: Record<string, number> = { USD: 1, INR: 83.5, EUR: 0.92, GBP: 0.79, AUD: 1.53, CAD: 1.35 }`. Brain's money non-negotiable: BIGINT minor-units + `currency_code` + no in-app currency conversion at rest. The `WorkspaceCost` model already has a nullable `currency String? @default("USD")` (line 257) that mixes USD-default costs with INR-primary revenue — another artifact of the static-rate assumption. Spike-acceptance criterion: A5 (dual-run shadow-compare strategy) must specify that monetary comparisons are done in the workspace's primary currency (INR for India-first) with an explicit statement that currency conversion is excluded from the parity check — i.e., the shadow-compare compares `cm2_inr` to `cm2_inr` at a fixed exchange snapshot, not at whatever rate each system used at compute time.
+
+---
+
+## Recommendations
+
+1. Redesign Child 3 (connectors) in the spike as a "token handoff ceremony" document, not a generic "dual-run" slice. For each of the 7 connectors, the spike must answer: is a data-loss window acceptable, can historical data be replayed from the API, and what is the rollback procedure if Brain's connector fails within 1 hour of token transfer? Shopify (60-day order API) and Meta/Google (historical insights API) are recoverable; Shiprocket has no public historical event replay API. The spike must flag Shiprocket as a higher-risk connector requiring a longer legacy-shadow period before token transfer.
+
+2. In A2 (strangler-fig sequence), rename `WorkspaceDailyMetrics` ownership explicitly: the sequence must record the exact moment this table transitions from "legacy writes, Brain reads shadow" to "Brain writes, legacy reads fallback" to "legacy reads decommissioned". Do not leave this as an implied handoff inside Child 4 — it is the highest-risk shared state in the entire migration and must be a named gate, not a footnote.
+
+3. In A5 (dual-run / shadow-compare strategy), specify that shadow compares for money metrics are tolerance-banded: zero-drift on BIGINT minor-unit totals is the target, but the comparison framework must account for the legacy system's float arithmetic producing rounding residuals (e.g., a Decimal(12,2) summed over 90 days may drift ±1 paisa per line item). The spike must define whether the acceptance threshold is absolute zero or sub-1-paisa-per-order-line-item, and document this as the parity bar in A4.
+
+---
+
+## Skills consulted
+
+- `engineering-discipline` (migration sequencing, dependency-graph analysis, dual-write patterns)
+- `architecture-patterns` (strangler-fig, facade / anti-corruption layer, point-of-no-return identification)
+
+---
+
+## One line for the CTO Advisor synthesis
+
+**Child 3 (connectors) is the single slice most likely to collapse the strangler-fig into a big-bang, because legacy connector tokens cannot be dual-homed and live Shopify/Shiprocket webhooks enforce exactly-one-owner semantics — the spike must produce a per-connector "token handoff ceremony" design with explicit data-loss window and rollback decision tree as a mandatory A2/A4 deliverable, not leave it as a generic "dual-run" assumption.**
