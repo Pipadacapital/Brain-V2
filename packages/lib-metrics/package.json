@@ -1,10 +1,24 @@
 {
   "name": "@brain/lib-metrics",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "type": "module",
   "description": "Metric registry — TypeScript half of the TS↔Python parity pair (counterpart: pylibs/brain_metrics). All metric names, types, and units defined here must be mirrored in brain_metrics. Parity enforced by check:metrics-parity CI task.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "build": "echo 'implement in metric-registry requirement'",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --reporter=verbose",
+    "test:coverage": "vitest run --coverage",
     "check:metrics-parity": "../../tools/check-metrics-parity.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@vitest/coverage-v8": "^4.1.7",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
   }
 }
