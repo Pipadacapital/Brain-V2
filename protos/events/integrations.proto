@@ -1,0 +1,86 @@
+// IntegrationEvent — Kafka envelope for all Brain connector events.
+//
+// @paradigm: sql + event-handling (no ML, no LLM)
+//
+// Topic naming: integrations.<vendor>.v1
+//   integrations.shopify.v1
+//   integrations.woocommerce.v1
+//   integrations.meta.v1
+//   integrations.google.v1
+//   integrations.klaviyo.v1
+//   integrations.shiprocket.v1
+//   integrations.unicommerce.v1
+//
+// Partition key: workspace_id (ensures per-workspace ordering + tenant isolation).
+//
+// CF-C3-SINGLE-PRIMITIVE-1: ONE envelope consumed by all vendors.
+// Adding a vendor is additive (new topic, same envelope shape).
+// Any field-shape change is a CTOA-gated proto amendment (mirrors Child-1 / Child-2 bindings).
+//
+// NO money fields — connectors land raw; Child-2 converts Decimal→minor-units at the ACL.
+// CF-C3 scope carve-out: money conversion is NOT an ingest concern.
+//
+// Codegen:
+//   buf generate protos
+//   → packages/proto-ts/gen/  (TypeScript, @bufbuild/protoc-gen-es v2.4.0)
+//   → pylibs/proto_py/proto_py/_gen/  (Python, betterproto v1.2.5)
+
+syntax = "proto3";
+
+package brain.events.integrations.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// IntegrationEvent is the canonical Kafka envelope for all Brain connector events.
+// It is produced by the ingestion-service ingest_batch primitive (P2) and consumed
+// by the analytics-service / intelligence-service in Child-4+.
+message IntegrationEvent {
+  // workspace_id is the Kafka partition key — ensures per-workspace ordering
+  // and is also used by consumers to scope their RLS session context.
+  // Must be a valid UUIDv4 (validated by the producer before publish).
+  string workspace_id = 1;
+
+  // vendor identifies the source connector, e.g. "shopify", "shiprocket".
+  string vendor = 2;
+
+  // vendor_event_id is the idempotency anchor from the vendor (e.g. Shopify order ID).
+  // Combined with (workspace_id, vendor) this forms the dedup key on the consumer side.
+  string vendor_event_id = 3;
+
+  // event_type is the vendor-specific event category, e.g. "order", "shipment", "ad_daily".
+  string event_type = 4;
+
+  // occurred_at is the vendor-supplied event timestamp (when the event happened at the vendor).
+  google.protobuf.Timestamp occurred_at = 5;
+
+  // ingested_at is the Brain ingest timestamp (when ingest_batch wrote the row).
+  google.protobuf.Timestamp ingested_at = 6;
+
+  // payload is the raw vendor JSON (verbatim vendor shape, opaque bytes).
+  // NO money conversion — raw vendor decimal strings are preserved.
+  // Child-2 converts at the ACL; Child-4 materializes metrics from the raw store.
+  bytes payload = 7;
+
+  // lawful_basis is the DPDP §7 lawful basis for processing (CF-C3-CONSENT-COLUMN-1).
+  // Stamped at ingest-write, never backfilled.
+  // Initial value: "owner_brand_controller" for all Sugandh-Lok connectors.
+  string lawful_basis = 8;
+
+  // purpose_code is the declared processing purpose (CF-C3-CONSENT-COLUMN-1).
+  // Enum values: analytics_performance | logistics_tracking | email_performance | catalog_sync
+  string purpose_code = 9;
+
+  // Correlation 4-tuple (CF-SEC-5 / H1 traceability requirement).
+  // Propagated from the ingest_batch caller through to every Kafka consumer.
+  // Mirrors the Child-1 AsyncLocalStorage 4-tuple pattern.
+  // request_id: UUID generated per ingest_batch invocation (or passed in by a caller).
+  string request_id = 10;
+
+  // trace_id: distributed trace ID (UUID). Used for end-to-end request tracing
+  // across the ingest path → Kafka → analytics consumer. Surfaced on error responses.
+  string trace_id = 11;
+
+  // actor: the identity that triggered the ingest (e.g. "system:ingest" for
+  // cron-driven runs, "user:<user_id>" for operator-initiated backfills).
+  string actor = 12;
+}
