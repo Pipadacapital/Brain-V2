@@ -36,6 +36,13 @@ import {
   OnboardingError,
 } from '@brain/core-onboarding';
 import {
+  initiateConnect,
+  completeCallback,
+  listConnectors,
+  disconnect,
+  ConnectorError,
+} from '@brain/core-connectors';
+import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
@@ -89,6 +96,33 @@ function mapOnboardingError(err: unknown, requestId: string): TRPCError {
   return new TRPCError({
     code: 'INTERNAL_SERVER_ERROR',
     message: `Operation failed. request_id=${requestId}`,
+  });
+}
+
+/**
+ * Map a core-service ConnectorError to a tRPC error (Slice D). Validation/domain
+ * issues → BAD_REQUEST/FORBIDDEN; a non-ConnectorError (DB/crypto fault) is wrapped
+ * as INTERNAL_SERVER_ERROR with a GENERIC message — the underlying detail (which
+ * could include a provider body) is NEVER surfaced, only the requestId. No token
+ * value can leak through this mapper.
+ */
+function mapConnectorError(err: unknown, requestId: string): TRPCError {
+  if (err instanceof ConnectorError) {
+    const codeMap: Record<string, 'BAD_REQUEST' | 'FORBIDDEN'> = {
+      VALIDATION: 'BAD_REQUEST',
+      INVALID_SHOP_DOMAIN: 'BAD_REQUEST',
+      INVALID_STATE: 'FORBIDDEN',
+      HMAC_INVALID: 'FORBIDDEN',
+      EXCHANGE_FAILED: 'BAD_REQUEST',
+    };
+    return new TRPCError({
+      code: codeMap[err.code] ?? 'BAD_REQUEST',
+      message: `${err.message} request_id=${requestId}`,
+    });
+  }
+  return new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `Connector operation failed. request_id=${requestId}`,
   });
 }
 
@@ -1548,6 +1582,115 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // connectors router (Slice D) — live integrations OAuth + token custody.
+  // @paradigm io. READ integrations (Shopify/Meta/Google) — NO outbound send,
+  // NO DLT/NCPR/WhatsApp surface. Tokens are SECRET: persisted ENCRYPTED at rest
+  // (AES-256-GCM, RLS-scoped) via core-service custody; the token VALUE is NEVER
+  // returned by any procedure here (status only). core-service owns the logic.
+  // -------------------------------------------------------------------
+  const connectorVendor = z.enum(['SHOPIFY', 'META', 'GOOGLE']);
+  const connectorsRouter = router({
+    /**
+     * Begin an OAuth connect: create the CSRF state nonce + return the provider
+     * consent URL. requireRole(MANAGER) — connecting a store is a managerial config
+     * change (mirrors legacy requireWorkspaceAdmin). Workspace tier (the connecting
+     * workspace is the authenticated claim).
+     */
+    initiate: workspaceProc
+      .input(
+        z.object({
+          vendor: connectorVendor,
+          // Shopify is per-store OAuth → the *.myshopify.com host. Ignored for Meta/Google.
+          shopDomain: z.string().max(255).optional().nullable(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `connectors.initiate requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+        try {
+          const { authUrl } = await initiateConnect({
+            vendor: input.vendor,
+            workspaceId: ctx.workspaceId,
+            userId: ctx.claim.userId,
+            shopDomain: input.shopDomain ?? null,
+          });
+          return { authUrl, requestId: ctx.requestId };
+        } catch (err) {
+          throw mapConnectorError(err, ctx.requestId);
+        }
+      }),
+
+    /**
+     * Complete the OAuth callback (called by the web redirect route handler after it
+     * has validated the Supabase session). Identity tier: the workspace is derived
+     * from the CONSUMED state record (CSRF), NOT a spoofable header/claim — the state
+     * was bound to the workspace at initiate. Exchange → custody.put (encrypted) →
+     * UPSERT connection. Idempotent + RLS-scoped. Returns NON-secret outcome only.
+     */
+    completeCallback: identityProc
+      .input(
+        z.object({
+          vendor: connectorVendor,
+          code: z.string().min(1).max(4096),
+          state: z.string().min(1).max(256),
+          // Full provider callback query (Shopify HMAC validation needs it). NON-secret.
+          query: z.record(z.string()).optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const result = await completeCallback({
+            vendor: input.vendor,
+            code: input.code,
+            state: input.state,
+            query: input.query,
+          });
+          // NEVER return the token — only the non-secret outcome.
+          return {
+            vendor: result.vendor,
+            status: result.status,
+            accountRef: result.accountRef,
+            requestId: ctx.requestId,
+          };
+        } catch (err) {
+          throw mapConnectorError(err, ctx.requestId);
+        }
+      }),
+
+    /** Per-vendor connection status (connected / not-connected / token-expired). READ.
+     *  requireRole(ANALYST). NEVER returns a token. */
+    list: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `connectors.list requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const rows = await listConnectors(ctx.workspaceId);
+      return { rows, requestId: ctx.requestId };
+    }),
+
+    /** Disconnect a connector: seal (delete) the credential + mark DISCONNECTED.
+     *  requireRole(MANAGER). */
+    disconnect: workspaceProc
+      .input(z.object({ vendor: connectorVendor }))
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `connectors.disconnect requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await disconnect({ vendor: input.vendor, workspaceId: ctx.workspaceId });
+        return { ...result, requestId: ctx.requestId };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // Root router
   // -------------------------------------------------------------------
   return router({
@@ -1571,6 +1714,7 @@ export function createBrainRouter(
     morningBrief: morningBriefRouter,
     insights: insightsRouter,
     device: deviceRouter,
+    connectors: connectorsRouter,
   });
 }
 
