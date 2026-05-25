@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-25T19:42:04Z",
+  "updated_at": "2026-05-25T20-25-53Z",
   "updated_by": "cto-advisor",
   "active_requirements": [
     {
@@ -3228,7 +3228,7 @@
       "parent_epic": null,
       "run_folder": "2026-05-25T19-12-57Z__27c2e9__epic-real-auth-supabase__rishabhporwal",
       "created_at": "2026-05-25T19:14:36Z",
-      "updated_at": "2026-05-25T19:14:36Z",
+      "updated_at": "2026-05-25T20-25-53Z",
       "proposed_children": [
         {
           "req_id": "feat-auth-supabase-identity",
@@ -3259,7 +3259,12 @@
           ]
         }
       ],
-      "notes": "Lands on Child-1's prebuilt BrainClaim/RLS seam. Slice A = identity only; uses real Supabase Auth identity ONLY, NOT the live RLS-less Postgres data plane. Personas requested: auth-secret-leak-realist:sonnet, session-to-claim-tenancy-realist:sonnet."
+      "notes": "Lands on Child-1's prebuilt BrainClaim/RLS seam. Slice A = identity only; uses real Supabase Auth identity ONLY, NOT the live RLS-less Postgres data plane. Personas requested: auth-secret-leak-realist:sonnet, session-to-claim-tenancy-realist:sonnet.",
+      "slices_built": [
+        "A",
+        "B",
+        "C"
+      ]
     },
     {
       "req_id": "feat-auth-supabase-identity",
@@ -3287,6 +3292,28 @@
       "delegation_basis": "Founder standing delegation to CTO Advisor (MEMORY: feedback_founder_delegates_to_cto_advisor).",
       "stage6_decision": "PASS",
       "b2_amendment": "RS256\u2192{RS256,ES256} (live project signs ES256); HS256/none still rejected."
+    },
+    {
+      "req_id": "feat-onboarding-membership-db",
+      "title": "Onboarding + membership + invitations (DB-backed, local dev Postgres)",
+      "parent_epic": "epic-real-auth-supabase",
+      "slice": "C",
+      "status": "awaiting-founder-commit",
+      "stage": 8,
+      "current_owner": "founder",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Trigger surfaces: auth, multi-tenancy (workspace_id RLS), PII (email/name), schema/DB. No carve-out (live consumers + business logic).",
+      "trigger_surfaces_touched": [
+        "auth",
+        "multi-tenancy",
+        "pii",
+        "schema-proto"
+      ],
+      "paradigm": "sql",
+      "stage6_decision": "PASS",
+      "founder_gate": "signed-delegated",
+      "updated_at": "2026-05-25T20-25-53Z",
+      "notes": "DB-backed onboarding/membership on LOCAL dev Postgres (docker brain_dev) with Brain-native FORCE RLS. DbMembershipResolver replaces LocalSeed on real-auth path. Deferred to slice D: Shopify/Woo live connect, invite email send. Nothing committed; sliceC-pending-founder-commit.md produced."
     }
   ]
 }
