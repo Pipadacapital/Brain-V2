@@ -18,6 +18,16 @@ It moves to **LIVE/FORCED** only at Stage-8 when ALL of:
    set, OR the live consumer is proven 100% service-role.
 2. Child-3 converts all residual no-context writers (backfill, discoverChannels,
    inner sync libs — enumerated in the runbook STEP-5 bare-write grep).
+   **CF-C3-FORCE-UNLOCK-SCOPE-1 (added 2026-05-24, Child-3 Stage-3):**
+   The legacy bare writers (`discoverChannels`, `backfillShiprocketCourierNames`,
+   `backfillShiprocketPincodes`) in `legacy project/backend/src/services/shiprocket-sync.ts`
+   stay LIVE until the **Shiprocket connector is DECOMMISSIONED** (the last connector,
+   sequenced LAST in the Stage-8 HOLD-AT-CUTOVER ceremony). Building the Brain
+   framework (Child-3) does NOT silence the legacy writers — only retiring the legacy
+   caller at Shiprocket decommission does. Therefore:
+   - Condition 2 is NOT satisfied by shipping the Brain framework (Child-3).
+   - Condition 2 IS satisfied after Shiprocket decommission + bare-write grep ZERO hits.
+   - FORCE IS HELD until Shiprocket decommission + all four conditions met.
 3. The complete bare-write grep returns ZERO hits (the runbook grep MUST NOT
    use `grep -v backfill` or `grep -v discoverChannels` — that was the DEFECT
    in the legacy implementation).

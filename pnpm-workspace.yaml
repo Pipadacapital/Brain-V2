@@ -11,6 +11,13 @@ packages:
   - "apps/notifications-service"
   - "apps/lifecycle-service"
   - "packages/*"
+allowBuilds:
+  '@parcel/watcher': set this to true or false
+  '@shopify/react-native-skia': true
+  '@swc/core': set this to true or false
+  protobufjs: true
+  sharp: set this to true or false
+  unrs-resolver: set this to true or false
 # Dependency build scripts are blocked by default in pnpm v10+.
 # esbuild ships a native binary and must run its install/build script
 # (vitest + tsx depend on it). Approve it explicitly.
