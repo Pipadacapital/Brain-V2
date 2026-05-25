@@ -81,6 +81,11 @@ import type {
   EmailSmsPerformanceResult,
   EmailPerfRow,
   EmailSmsFilterInput,
+  // Phase-2 slice-10 (feat-parity-cleanup-pages): thin honest READ surfaces.
+  WorkspaceMembersResult,
+  WorkspaceSettingsResult,
+  IntegrationsResult,
+  BackfillStatusResult,
 } from '../domain/proto-types.js';
 import {
   INVENTORY_DAYS_LEFT,
@@ -1751,6 +1756,66 @@ function buildSugandhlokEmailSmsPerformance(filters?: EmailSmsFilterInput): Emai
 // Accepts an optional InMemoryDecisionLog for G-IDEMPOTENT gate testing.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Phase-2 slice-10 (feat-parity-cleanup-pages): HONEST seeds for the parity-cleanup
+// pages. The Child-3 connector cutover is HELD, so live connector data is NOT flowing.
+// These seeds tell the TRUTH: Shopify CONNECTED (the anchor brand's backfilled facts,
+// last-sync == DATA_EPOCH); Meta/Google/Shiprocket/Klaviyo PENDING_CUTOVER with NO
+// fake sync time; backfill jobs empty. NEVER a fabricated number (CF-S10-HONEST-STATE-1).
+// ---------------------------------------------------------------------------
+
+function buildSugandhlokMembers(): WorkspaceMembersResult {
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    members: [
+      { user_id: '00000000-0000-0000-0000-0000000000a1', full_name: 'Aarti Sugandh', email: 'aarti@sugandhlok.in', role: 'OWNER', joined_at: '2026-01-04' },
+      { user_id: '00000000-0000-0000-0000-0000000000a2', full_name: 'Rohit Mehta', email: 'rohit@sugandhlok.in', role: 'MANAGER', joined_at: '2026-02-12' },
+      { user_id: '00000000-0000-0000-0000-0000000000a3', full_name: 'Neha Sharma', email: 'neha@sugandhlok.in', role: 'ANALYST', joined_at: '2026-03-20' },
+    ],
+    pending_invitations: 0, // invite (write) is DEFERRED this slice.
+  };
+}
+
+function buildSugandhlokWorkspaceSettings(): WorkspaceSettingsResult {
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    name: 'Sugandh Lok',
+    plan: 'GROWTH',
+    timezone: 'Asia/Kolkata',
+    region: 'IN',
+    currency_code: 'INR',
+    created_at: '2026-01-04',
+  };
+}
+
+function buildSugandhlokIntegrations(): IntegrationsResult {
+  const epoch = DATA_EPOCH.toISOString();
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    rows: [
+      // Shopify drives the seeded analytics facts — truthfully CONNECTED, last-sync == data epoch.
+      { connector: 'Shopify', status: 'CONNECTED', last_sync_at: epoch, last_sync_error: null },
+      // The rest are HELD at the Child-3 cutover — honest PENDING_CUTOVER, NO fake sync time.
+      { connector: 'Meta Ads', status: 'PENDING_CUTOVER', last_sync_at: null, last_sync_error: null },
+      { connector: 'Google Ads', status: 'PENDING_CUTOVER', last_sync_at: null, last_sync_error: null },
+      { connector: 'Shiprocket', status: 'PENDING_CUTOVER', last_sync_at: null, last_sync_error: null },
+      { connector: 'Klaviyo', status: 'PENDING_CUTOVER', last_sync_at: null, last_sync_error: null },
+    ],
+  };
+}
+
+function buildSugandhlokBackfillStatus(): BackfillStatusResult {
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    jobs: [
+      { job_type: 'ads-backfill', status: 'PENDING_CUTOVER', started_at: null, note: 'Available after Meta/Google connector cutover.' },
+      { job_type: 'shiprocket-courier', status: 'PENDING_CUTOVER', started_at: null, note: 'Available after Shiprocket connector cutover.' },
+      { job_type: 'shiprocket-pincode', status: 'PENDING_CUTOVER', started_at: null, note: 'Available after Shiprocket connector cutover.' },
+    ],
+    note: 'No backfill jobs have run locally — connector cutover is pending. Triggers become available after cutover.',
+  };
+}
+
 export class StubDataPlane implements DataPlanePort {
   private readonly goalStore = new InMemoryGoalStore();
 
@@ -2127,6 +2192,43 @@ export class StubDataPlane implements DataPlanePort {
       registered: true,
       updated_at: new Date().toISOString(),
     };
+  }
+
+  // Phase-2 slice-10 (feat-parity-cleanup-pages): honest READ surfaces. Fail-closed.
+  async getWorkspaceMembers(params: {
+    workspace_id: string;
+  }): Promise<{ result: WorkspaceMembersResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokMembers(), data_epoch: DATA_EPOCH };
+  }
+
+  async getWorkspaceSettings(params: {
+    workspace_id: string;
+  }): Promise<{ result: WorkspaceSettingsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokWorkspaceSettings(), data_epoch: DATA_EPOCH };
+  }
+
+  async getIntegrations(params: {
+    workspace_id: string;
+  }): Promise<{ result: IntegrationsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokIntegrations(), data_epoch: DATA_EPOCH };
+  }
+
+  async getBackfillStatus(params: {
+    workspace_id: string;
+  }): Promise<{ result: BackfillStatusResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokBackfillStatus(), data_epoch: DATA_EPOCH };
   }
 
   getDecisionLog(): InMemoryDecisionLog {

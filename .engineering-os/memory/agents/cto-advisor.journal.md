@@ -567,3 +567,23 @@
 **Tests:** api-gateway 151 (+17) + web 41 + lib-metrics 166 (no regression) + faithfulness golden-set 13 (+3), all green; typecheck 0 (api-gateway/web); live smoke PASS (insights.forPage paradigm small_llm/faithfulness_ok/₹3.2L grounded; /pnl HTTP 200; cross-ws UnscopedQueryError; insights.submit NOT_FOUND).
 **Open questions:** pre-existing harness quirk — pnl_eval.py uses `src.domain.*` imports that collide with analytics-service/src under monorepo-wide pytest (eval logic proven green with collision excluded); recommend normalizing to `domain.*`. Non-blocking, flagged to Founder.
 **Next:** Founder commits via pending-founder-commit.md ("commit it"), then drives the Child-7 HELD cutover sequence. **EPIC FUNCTIONALLY COMPLETE (9/9) — Brain at functional parity with legacy.**
+
+## 2026-05-25T18:53:59Z — Rohan (cto-advisor) — feat-parity-cleanup-pages (epic-phase2 SLICE 10, FINAL)
+**Stage:** 1 (intake)
+**Action:** ADVANCE — full high-stakes pipeline on feature/feat-store-order-fact-layer
+**Lane:** high-stakes (trigger surfaces: multi-tenancy, connectors, PII /team, schema/proto)
+**Personas requested (Stage 1):** frontend-data-honesty-realist:haiku (1 — honest-state under HELD connector cutover is the single dominant risk)
+**Decision:** ADVANCE
+**Rationale:** 9 ScaffoldPage stubs in (shell) must become real, runnable pages. ~55% pure reuse of shipped tRPC (analytics→store+pnl; meta/google-ads→marketing; shiprocket→logistics; ad-campaigns→acquisition split), ~45% thin net-new honest-state READ surfaces (team/settings/integrations/backfill). ZERO new metric defs expected. @paradigm sql, zero LLM. Honest-state rule: real seed where shipped, explicit "pending cutover" affordance where connector-live, NEVER a fabricated number; WRITE/OAuth/backfill-trigger deferred.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, architecture-patterns, agentic-design, verification-before-completion
+**Open questions:** integrations seed shape (mixed CONNECTED/PENDING vs all-pending — both honest); /team PII shape mirrors legacy (fullName/email/role/joinedAt)
+**Next:** persona round-trip → Aryan Stage 2
+
+## 2026-05-25T19:04:31Z — Rohan (cto-advisor) — feat-parity-cleanup-pages (epic-phase2 SLICE 10, FINAL)
+**Stage:** 6 (final review, VETO authority)
+**Action:** PASS — APPROVE under standing delegation
+**Decision:** PASS
+**Rationale:** All 9 (shell) ScaffoldPage stubs are now real, runnable, honest pages. Zero ScaffoldPage / "Coming in Phase 2" in (shell) (committed test). 5 reuse pages (store+pnl/marketing/logistics) + 4 thin net-new honest READ surfaces (team/settings/integrations/backfill). Honest-state: ConnectorPending for connector-live tiles, NEVER a fake number; held connectors carry NULL last_sync (asserted). RLS fail-closed at the wire (foreign-ws → UnscopedQueryError); team.invite → NOT_FOUND (read-only). @paradigm sql; ZERO new metric defs (registry untouched); ZERO new deps; typecheck 0. Independently re-ran 3 gates (typecheck, router 13/13, no-scaffold 4/4). Over-engineering audit clean. Real-network smoke all 9 routes HTTP 200 + real data on :3050/:3051 (:3001 occupied by a process I did not own — did not kill it). Nothing committed (pending-founder-commit.md).
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, architecture-patterns, india-commerce-economics, verification-before-completion
+**Open questions:** smoke harness should not assume :3001/:3000 free; client-rendered pages would benefit from a headless-browser smoke gate
+**Next:** Founder commit via pending-founder-commit.md. epic-phase2-feature-parity parity gap CLOSED — no dead stubs remain.

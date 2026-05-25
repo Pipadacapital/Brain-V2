@@ -963,6 +963,70 @@ export interface DateRange {
   end: string;    // ISO date
 }
 
+// ---------------------------------------------------------------------------
+// Phase-2 slice-10 (feat-parity-cleanup-pages): thin NET-NEW honest READ surfaces
+// for the parity-cleanup pages (/team, /settings, /settings/integrations,
+// /settings/backfill). These are OPERATIONAL / membership / connector-status reads
+// — NOT metric registry scalars (they do not go through the registry/parity gate).
+// READ-only; every method is fail-closed on tenancy. WRITE/OAuth/backfill-trigger
+// surfaces are DEFERRED (rendered as disabled affordances on the client).
+// ---------------------------------------------------------------------------
+
+/** Workspace role level (mirrors core-auth WORKSPACE_ROLE_LEVEL keys). */
+export type WorkspaceMemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'ANALYST' | 'VIEWER';
+
+export interface WorkspaceMemberRow {
+  user_id: string;
+  full_name: string;
+  email: string;            // real PII — READ-only, workspace-scoped, ANALYST-gated.
+  role: WorkspaceMemberRole;
+  joined_at: string;        // ISO date
+}
+
+export interface WorkspaceMembersResult {
+  workspace_id: string;
+  members: WorkspaceMemberRow[];
+  pending_invitations: number; // count only; invite (write) is deferred this slice.
+}
+
+export interface WorkspaceSettingsResult {
+  workspace_id: string;
+  name: string;
+  plan: string;
+  timezone: string;
+  region: string;           // RegionAdapter region code (e.g. 'IN').
+  currency_code: string;
+  created_at: string;       // ISO date
+}
+
+/** Honest connector status. PENDING_CUTOVER is the truthful local state (Child-3 HELD). */
+export type ConnectorStatus = 'CONNECTED' | 'PENDING_CUTOVER' | 'DISCONNECTED' | 'ERROR';
+
+export interface IntegrationRow {
+  connector: string;        // 'Shopify' | 'Meta Ads' | 'Google Ads' | 'Shiprocket' | 'Klaviyo' | ...
+  status: ConnectorStatus;
+  last_sync_at: string | null;   // null when never synced — NO fake timestamp.
+  last_sync_error: string | null;
+}
+
+export interface IntegrationsResult {
+  workspace_id: string;
+  rows: IntegrationRow[];
+}
+
+export interface BackfillJobRow {
+  job_type: string;         // 'ads-backfill' | 'shiprocket-courier' | 'shiprocket-pincode' | ...
+  status: 'NONE' | 'PENDING_CUTOVER' | 'RUNNING' | 'COMPLETE' | 'FAILED';
+  started_at: string | null;
+  note: string;             // honest human note ("connector cutover pending").
+}
+
+export interface BackfillStatusResult {
+  workspace_id: string;
+  jobs: BackfillJobRow[];
+  note: string;             // page-level honest note.
+}
+
 export interface DataPlanePort {
   queryMetrics(params: {
     workspace_id: string;
@@ -1172,4 +1236,22 @@ export interface DataPlanePort {
     device_id: string;
     expo_push_token: string;
   }): Promise<RegisterPushTokenResult>;
+
+  // Phase-2 slice-10 (feat-parity-cleanup-pages): thin honest READ surfaces.
+  // Additive methods on the SAME port (CF-C6-DATA-SEAM-1). All fail-closed on tenancy.
+  getWorkspaceMembers(params: {
+    workspace_id: string;
+  }): Promise<{ result: WorkspaceMembersResult; data_epoch: Date }>;
+
+  getWorkspaceSettings(params: {
+    workspace_id: string;
+  }): Promise<{ result: WorkspaceSettingsResult; data_epoch: Date }>;
+
+  getIntegrations(params: {
+    workspace_id: string;
+  }): Promise<{ result: IntegrationsResult; data_epoch: Date }>;
+
+  getBackfillStatus(params: {
+    workspace_id: string;
+  }): Promise<{ result: BackfillStatusResult; data_epoch: Date }>;
 }

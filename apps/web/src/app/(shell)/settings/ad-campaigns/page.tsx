@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ScaffoldPage } from "@/interfaces/components/shell/scaffold-page.js";
+import { AdCampaignsContent } from "@/interfaces/components/settings/ad-campaigns-content.js";
 
 export const metadata: Metadata = { title: "Ad Campaigns — Brain" };
 
 export default function Page() {
-  return <ScaffoldPage title="Ad Campaigns" description="Link ad campaigns to Brain metrics for attribution." />;
+  return <AdCampaignsContent />;
 }

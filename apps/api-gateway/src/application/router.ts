@@ -959,6 +959,86 @@ export function createBrainRouter(
           request_id: ctx.requestId,
         };
       }),
+
+    // -----------------------------------------------------------------
+    // Phase-2 slice-10 (feat-parity-cleanup-pages): thin honest READ surfaces.
+    // 🚨 READ-ONLY: each is a `.query`. There is NO write/connect/backfill-trigger
+    // mutation here — those are DEFERRED (rendered as disabled affordances). A
+    // structural test (CF-S10-NO-WRITE-1) asserts no mutation on these surfaces.
+    // -----------------------------------------------------------------
+
+    /** Workspace settings display (name/plan/timezone/region). requireRole(ANALYST). READ. */
+    workspace: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.workspace requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getWorkspaceSettings({ workspace_id: ctx.workspaceId });
+      return { result: result.result, data_epoch: result.data_epoch, request_id: ctx.requestId };
+    }),
+
+    /** Connector list + health/status/last-sync. requireRole(ANALYST). READ. Honest (connector cutover HELD). */
+    integrations: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.integrations requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getIntegrations({ workspace_id: ctx.workspaceId });
+      return {
+        result: result.result,
+        rows: result.result.rows,
+        data_epoch: result.data_epoch,
+        request_id: ctx.requestId,
+      };
+    }),
+
+    /** Ads-backfill job status. requireRole(ANALYST). READ. Honest (triggers deferred). */
+    backfill: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.backfill requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getBackfillStatus({ workspace_id: ctx.workspaceId });
+      return {
+        result: result.result,
+        jobs: result.result.jobs,
+        note: result.result.note,
+        data_epoch: result.data_epoch,
+        request_id: ctx.requestId,
+      };
+    }),
+  });
+
+  // -------------------------------------------------------------------
+  // team router — workspace tier, requireRole(ANALYST). READ-ONLY.
+  // Phase-2 slice-10 (feat-parity-cleanup-pages): workspace member list.
+  // 🚨 PII: member email/name. READ-only, workspace-scoped, ANALYST-gated, fail-closed.
+  //    Member invite (which emails a person, ADMIN-gated) is DEFERRED — NO mutation here.
+  // -------------------------------------------------------------------
+  const teamRouter = router({
+    /** Workspace members + pending-invitation count. requireRole(ANALYST). READ. */
+    members: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `team.members requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getWorkspaceMembers({ workspace_id: ctx.workspaceId });
+      return {
+        result: result.result,
+        members: result.result.members,
+        pending_invitations: result.result.pending_invitations,
+        data_epoch: result.data_epoch,
+        request_id: ctx.requestId,
+      };
+    }),
   });
 
   // -------------------------------------------------------------------
@@ -1302,6 +1382,7 @@ export function createBrainRouter(
     ltv: ltvRouter,
     catalog: catalogRouter,
     settings: settingsRouter,
+    team: teamRouter,
     calendar: calendarRouter,
     lifecycle: lifecycleRouter,
     morningBrief: morningBriefRouter,

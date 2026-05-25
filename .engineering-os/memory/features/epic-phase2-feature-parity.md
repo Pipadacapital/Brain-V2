@@ -163,3 +163,25 @@
 **Deferred (non-goals):** narration on other pages beyond /pnl (the seam is page-parameterized — store/dashboard enumerated, /pnl wired); chat (5b); Morning-Brief Pattern-B fan-out (5b); real Haiku live call (config flip at Stage 8 cutover); action graduation (recommendation-only held).
 
 **Progress: slices 1-9 DONE (9/9). 🎉 epic-phase2-feature-parity is FUNCTIONALLY COMPLETE — Brain is at functional parity with the legacy backend. The HELD Child-7 layer-cutovers are now flippable.** Nothing committed; Founder commits via pending-founder-commit.md, then drives the cutover sequence.
+
+## 2026-05-25T19:04:51Z — Slice 10 SHIPPED (Stage 6 PASS) — feat-parity-cleanup-pages — Rohan — PARITY CLEANUP COMPLETE (NO DEAD STUBS)
+
+**Make the 9 remaining "Coming in Phase 2" (shell) scaffolds REAL + runnable** so the app is runnable like legacy on every nav item. Full high-stakes pipeline (Rohan S1 → Aryan S2 → Maya/Vikram/Ananya S3 → Shreya S4 → Tanvi S5 → Rohan S6), signed under standing delegation. Nothing committed (pending-founder-commit.md).
+
+**Zero scaffolds remaining (Founder's literal bar):** ScaffoldPage imports in apps/web/src/app/(shell) = 0; "Coming in Phase 2" = 0 — backed by a COMMITTED structural test (CF-S10-NO-SCAFFOLD-1), not a one-time grep.
+
+**Two buckets (reuse audit at S1 held):**
+- **5 REUSE-only pages (zero new BFF):** /analytics (store.summary + pnl.statement), /meta-ads + /google-ads (marketing.efficiency meta/google split + acquisition; ONE shared platform-ads-view — Single-Primitive), /shiprocket (logistics.summary), /settings/ad-campaigns (marketing.acquisition acquisition-split). ZERO new metric defs.
+- **4 thin NET-NEW honest READ surfaces:** /team (team.members — PII, READ/scoped/ANALYST), /settings (settings.workspace), /settings/integrations (settings.integrations — connector health), /settings/backfill (settings.backfill). 4 additive DataPlanePort methods on the SAME port (CF-C6-DATA-SEAM-1).
+
+**Honest-state under HELD Child-3 connector cutover (the slice's whole point):** ConnectorPending shared primitive renders the TRUTH ("pending connector cutover") for connector-live tiles — sessions/conversion, per-campaign ads, backfill jobs — NEVER a fabricated number. At the wire only Shopify (truly connected) carries a last_sync_at; Meta/Google/Shiprocket/Klaviyo = PENDING_CUTOVER with NULL last-sync (asserted by test). Writes/OAuth/backfill-triggers DEFERRED as disabled affordances.
+
+**Bar met:** workspaceProc/ANALYST READ .query only; RLS fail-closed proven at the wire (foreign x-workspace-id → UnscopedQueryError on team.members + settings.integrations); CF-S10-NO-WRITE-1 (team.invite POST → -32004 NOT_FOUND; team router = exactly ['members']); money minor units; per-SKU GST untouched; @paradigm sql (zero LLM/ML); ZERO new deps; ZERO new metric registry defs (registry + parity gate untouched — lib-metrics 166 unchanged); typecheck 0 (api-gateway + web).
+
+**Tests:** api-gateway 164 (+13 slice-10) + web 45 (+4 no-scaffold) + lib-metrics 166 (unchanged), all green. Real-network smoke (:3051 gateway / :3050 web — :3001 occupied by a non-owned process, not killed): all 9 routes HTTP 200 + real data (analytics realized ₹18.5L/CM2 ₹3.2L; meta ₹3.9L/google ₹2.6L; shiprocket 1247/224; team 3 members; settings GROWTH/IN/INR; integrations Shopify CONNECTED + 4 PENDING_CUTOVER; ad-campaigns acquisition ₹2.6L of ₹6.5L; backfill honest pending).
+
+**Candidate rule:** 9th occurrence of slice-table-shorthand ≠ legacy-behavior (UI-surface instance: /analytics "sessions/funnel" was a phantom; the real deep analytics is store/CM). Strengthens the human-gated `verify-legacy-formula-at-stage1-not-slice-table` candidate — recommend /adopt-rule.
+
+**Deferred (non-goals, honest affordances shipped):** member invite; connector OAuth; backfill triggers; campaign-classification save; live Shopify sessions/conversion; per-campaign Meta/Google rows. All re-trigger connector-cutover and/or compliance review.
+
+**🎉 epic-phase2-feature-parity: NO DEAD STUBS REMAIN — every nav item is a real, runnable, honest page.** Combined with slices 1-9 (analytics parity), Brain is at FULL functional + UI parity with the legacy product. Nothing committed; Founder commits via pending-founder-commit.md.
