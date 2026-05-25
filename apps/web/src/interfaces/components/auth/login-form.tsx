@@ -14,6 +14,7 @@
 
 import { useState, useId } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAppDispatch } from '@/domain/store/hooks.js';
 import { setSession } from '@/domain/store/session-slice.js';
 import { createSupabaseBrowserClient } from '@/infrastructure/supabase/client.js';
@@ -128,9 +129,17 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         </div>
 
         <div className="space-y-1">
-          <label htmlFor={passwordId} className="block text-sm font-medium text-gray-700">
-            Password
-          </label>
+          <div className="flex items-center justify-between">
+            <label htmlFor={passwordId} className="block text-sm font-medium text-gray-700">
+              Password
+            </label>
+            <Link
+              href="/auth/forgot-password"
+              className="text-xs font-medium text-blue-600 hover:text-blue-700"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <input
             id={passwordId}
             type="password"
@@ -175,6 +184,13 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       >
         Sign in with Google
       </button>
+
+      <p className="text-sm text-center text-gray-600">
+        Don&apos;t have an account?{' '}
+        <Link href="/auth/sign-up" className="font-medium text-blue-600 hover:text-blue-700">
+          Sign up
+        </Link>
+      </p>
 
       {/* The stub credential hint is ONLY shown under the local harness flag. */}
       {IS_LOCAL_HARNESS && (
