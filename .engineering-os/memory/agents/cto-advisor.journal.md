@@ -611,3 +611,14 @@
 **Open questions:** Founder dashboard action for confirmed-user/Google live session (mailer_autoconfirm:false; Google redirect allow-list). Slices B/C/D deferred.
 **Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion.
 **Next:** Founder reviews pending-founder-commit.md; STOP after Slice A (do not start Slice B).
+
+## 2026-05-25T23:52:00Z — Rohan (cto-advisor) — feat-auth-supabase-recovery (epic-real-auth-supabase slice B)
+**Stage:** 6 (final review — full pipeline driven single-operator)
+**Action:** Built slice B end-to-end (Stage 2 plan → Stage 3 build → Stage 4 security → Stage 5 verify → Stage 6 PASS).
+**Personas spawned (Stage 1):** n/a (slice already scoped in the epic frame at intake; slice B is a slice-A pattern replication).
+**Decision:** PASS (signed under standing delegation).
+**Rationale:** signup + email-confirm + password-recovery Supabase flows + pages on slice-A's committed clients; ZERO new deps; ZERO backend/DB; carries slice-A posture (generic errors, no PII/secret, noValidate, a11y). typecheck 0; 65/65 web tests; 6 /auth pages render 200 unauth; verifyOtp live-wired (bad token → generic redirect). Full email round-trip blocked on Founder Supabase dashboard config — stated, not faked.
+**Skills loaded:** engineering-discipline, code-review, architecture-patterns, agentic-design, verification-before-completion, india-commerce-economics, cost-routing-paradigms.
+**Open questions:** Founder dashboard: allow redirect URLs /auth/callback + /auth/update-password, Site URL localhost:3000, mailer_autoconfirm for full local e2e.
+**Honest limitation:** Agent tool unavailable in this subagent context → ran each stage's role myself to its real bar (not a 5-agent fan-out). Recorded in the founder-decision JSON + final review.
+**Next:** STOP per directive. Slice C (onboarding/membership/invitations + /api/user/ensure + DbMembershipResolver) NOT started.

@@ -1,0 +1,13 @@
+{
+  "req_id": "feat-auth-supabase-recovery",
+  "slice": "B",
+  "stage": 7,
+  "decision": "approved",
+  "decided_by": "cto-advisor",
+  "delegation_basis": "Founder standing delegation to CTO Advisor (MEMORY: feedback_founder_delegates_to_cto_advisor). Rohan signs every Founder gate on the Founder's behalf.",
+  "stage6_result": "PASS",
+  "hard_rule_deviation": false,
+  "single_operator_pipeline": true,
+  "notes": "Slice B = signup + email confirmation + password recovery (Supabase flows + pages only). Built on slice A's committed clients; ZERO new deps; ZERO backend/DB (slice C). Carries slice-A posture (generic errors, no PII/secret in logs, noValidate, a11y). typecheck 0; 65/65 web tests; all /auth/* pages render 200 unauthenticated; verifyOtp live-wired (bad token -> generic redirect). Full email round-trip blocked on Founder Supabase dashboard (allowed redirect URLs + mailer_autoconfirm) — stated, not faked. Run as a single-operator pass of the high-stakes pipeline (Agent tool unavailable in this subagent context) — recorded honestly. Nothing committed; no secret leaked. STOP after slice B; slice C not started.",
+  "decided_at": "2026-05-25T23:52:00Z"
+}
