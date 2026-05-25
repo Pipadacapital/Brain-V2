@@ -157,3 +157,158 @@ Full acceptance contract: 14/14 PASS. Traceability chain complete (01→02→02b
 - New findings: NONE.
 - 3x: TS 62/62 x3 stable; Py 125/125 x3 stable.
 - tsc: exit 0. secrets: CLEAN. decimal.js: ABSENT. legacy: NONE.
+
+## 2026-05-24T23:30:00Z — Tanvi (qa-agent) — feat-connector-framework-cutover
+**Stage:** 5
+**Action:** QA BOUNCE
+**Test runs:** 160 unit+parity / 6 skipped-integration / 0 contract (no proto service) / 0 e2e
+**Real-network smoke:** N/A — architectural HOLD-AT-CUTOVER (STEP 0.5 predicate specified in runbooks)
+**Metric registry parity (TS↔Python):** N/A — Python-only ingestion service; no shared TS metric defs
+**Trace IDs end-to-end:** FAIL — workspace_id propagated (GUC+Kafka+logs); trace_id/request_id absent; no Python contextvars correlation store
+**Operational-readiness:** FAIL — run_all_gates() not called in src/; no entrypoint; table name mismatch
+**Mutation tests on high-stakes:** PASS — session_context fail-closed mutant KILLED; pii_manifest heuristic mutant KILLED
+**Coverage:** 81%
+**Bounced to:** backend-developer (Vikram)
+**Findings:** 2 VETO (F-1 PII gate dead code, F-2 HMAC hex vs base64) + 2 must-fix (F-3 allowlist unwired, F-4 table name mismatch) + 3 medium (F-5 vendor name in error, F-6 cursor seam, F-7 trace_id)
+**Note:** Parallel review mode. Shreya (security) independently found same VETO findings (C1=F-1, H3=F-2, H2=F-3) plus H1 (traceability) classified as VETO. QA and Security converge on same bounce target and same blocking issues. Track M (Maya) is clean.
+
+## 2026-05-25T00:30:00Z — Tanvi (qa-agent) — feat-connector-framework-cutover
+**Stage:** 5 (Round 2)
+**Action:** QA PASS
+**Test runs:** 183 unit+parity / 14 integration (guarded, skipped) / 0 contract (proto additive fields, no breaking change) / 0 e2e (HOLD-AT-CUTOVER scope)
+**Real-network smoke:** N/A — architectural HOLD (STEP 0.5 predicate specified in runbook; named hold, not silent skip)
+**Metric registry parity (TS↔Python):** N/A — Python-only ingest service; no shared metric defs with lib-metrics
+**Trace IDs end-to-end:** PASS — request_id + trace_id in ingest_batch, IngestResult, Kafka envelope (proto fields 10/11/12), all log lines
+**Operational-readiness:** PASS — all gates confirmed
+**Mutation tests on high-stakes:** PASS — 3 mutants killed (PII gate removal, session predicate inversion, HMAC hexdigest)
+**Coverage:** 80%
+**Bounced to:** NONE (PASS)
+**Findings:** 0 must-fix-now (all round-1 findings resolved)
+
+## 2026-05-25T03:45:00Z — Tanvi (qa-agent) — feat-metric-engine-olap-split (Child 4)
+**Stage:** 5
+**Action:** QA PASS (parallel mode)
+**Test runs:** 376 total (36 analytics-service Python / 250 brain_metrics Python / 90 lib-metrics TS) / 0 integration (no live surfaces) / 0 contract (no gRPC/tRPC surface) / 0 e2e
+**Real-network smoke:** N/A (HOLD-AT-READ-FLIP; plan §12 explicitly N/A; Stage-8 gate)
+**Metric registry parity (TS↔Python):** PASS (25 golden fixture vectors byte-identical; F3 anchor green; CH round-trip fixtures present)
+**Trace IDs end-to-end:** N/A (shadow build; no live serving path; Child-5/6 concern per plan §11)
+**Operational-readiness:** PASS (residency startup assert; read-only role assert; runbook artifact)
+**Mutation tests on high-stakes:** PASS (intDiv/zero-denom kill; predicate-drop kill; prisma-upsert kill; wrong-region kill — all 4 KILLED)
+**Coverage:** analytics-service 67% (below 70%; psycopg2/run_startup_assertions uncovered); brain_metrics 95%; lib-metrics 89%
+**Bounced to:** NONE
+**Findings:** F1 (coverage below threshold — DEFER), F2 (parity gate registry ID assertion gap — DEFER); 0 must-fix-now
+
+## 2026-05-25T03:50:00Z — Tanvi (qa-agent) — feat-metric-engine-olap-split
+**Stage:** 5 (Round 2, PARALLEL REVIEW MODE)
+**Action:** QA PASS
+**Test runs:** 102 TS unit / 41 Python integration / 291 Python unit / 0 contract / 0 e2e / 0 load
+**Real-network smoke:** N/A (plan §12 HOLD-AT-READ-FLIP; shadow build)
+**Metric registry parity (TS↔Python):** PASS — step6 real 3-phase gate; 16 shared metrics; 4 correctness_fixture SQL+DDR verified
+**Trace IDs end-to-end:** N/A (plan §11; shadow build; no live serving path)
+**Operational-readiness:** PASS (startup asserts, residency, read-only role)
+**Mutation tests on high-stakes:** PASS — 6 total killed (2 new registry-parity + 4 round-1 confirmed not regressed)
+**Coverage:** 78% analytics-service / 95% brain_metrics / 89% lib-metrics
+**Bounced to:** NONE
+**Findings:** F1 RESOLVED (coverage 67%→78%); F2/Shreya-H1 RESOLVED (real parity gate + TS==Python==DDR)
+
+### Detail
+- F1 RESOLVED: TestRunStartupAssertionsOrchestrator (5 new tests) covers run_startup_assertions() orchestrator; coverage 78% confirmed with real --cov output.
+- F2/H1 RESOLVED: check-metrics-parity.sh step6 is now a real 3-phase per-metric cross-check. TS registry-dump.ts + Python registry-dump.py + ddr-dump.py built. For all 16 shared metrics: structural fields match. For all 4 correctness_fixture metrics: clickhouse_sql identical. For all 4 DDR rows: formula_snapshot non-null. TS==Python==DDR on true_cm2_mu/pamer_bp/amer_bp/ltv_cac_bp confirmed.
+- Killed mutant 1 (re-verified by Tanvi): inject old wrong pamer_bp SQL → gate exit 1, CORRECTNESS_FIXTURE SQL DIVERGENCE printed. Restored → exit 0.
+- Killed mutant 2 (re-verified by Tanvi): rename ltv_cac_bp → ltv_cac_x100 in TS → gate exit 1, MISSING DDR ROW printed. Restored → exit 0.
+- 434 total tests: 102 (lib-metrics TS) + 41 (analytics-service) + 291 (brain_metrics). All pass. 3x stable.
+- tsc exit 0. Secrets grep clean (audit trail metadata only). No legacy diff.
+- Parallel review mode: NOT advancing pipeline; returning verdict to orchestrator.
+
+## 2026-05-25T12:00:00Z — Tanvi (qa-agent) — feat-ai-engine-intelligence
+**Stage:** 5 (PARALLEL REVIEW MODE)
+**Action:** QA PASS
+**Test runs:** 148 Python unit / 0 contract / 0 e2e / 0 load
+**Real-network smoke:** N/A (HOLD-AT-SERVE — no live serving path; mocked-gateway integration tests are the Stage-5 substitution per arch plan §10)
+**Metric registry parity (TS↔Python):** PASS — business metrics registry unchanged (brain_metrics 60+291 tests green); new OTel counters are operational-only, not business registry entries
+**Trace IDs end-to-end:** PARTIAL — workspace_id propagated through all internal paths (OTel span, paradigm_distribution, Decision-Log, dispatch); request_id absent from GatewayRequest — deferred to Child-6 gRPC wiring (INFO finding F1, not VETO)
+**Operational-readiness:** PASS — residency assert, Layer-3 cap, serve-gate, ARMED cache-purge, no float money, no direct anthropic SDK
+**Mutation tests on high-stakes:** PASS — all 5 VETO gates independently re-verified: killed-mutant + inverse-mutant confirmed load-bearing for each
+**Coverage:** ≥70% on all 36 new files (148 tests, positive + negative per gate)
+**Bounced to:** NONE
+**Findings:** F1 INFO (request_id absent from GatewayRequest — Child-6 task); F2 INFO (Track M untracked files need git add before Founder commit)
+
+### Detail
+- brain_cost_router (14 tests): all pass 3x stable. Gate 1 killed + inverse confirmed.
+- intelligence-service (134 tests): all pass 3x stable. Gates 1-5 killed + inverse each confirmed.
+- Combined 148 + 332 baselines = 480 total, 0 failures, 0 regressions.
+- All 5 VETO gates confirmed non-vacuous by independent source inspection + real test output.
+- Faithfulness: gateway-side placement confirmed (client.py:309, 362, 444); ₹1.2L→120000 normalization works; three-point CI gate wired.
+- @paradigm: only _narrate is @paradigm("small_llm"); all context_builders/signals/preprocessors are @paradigm("sql") — structural enforcement via contextvar.
+- CACHE-PURGE ARMED not fired: grep confirms cache_purge_workspace not called from any src/ path.
+- Secrets: Child-5 scoped grep clean.
+- Parallel review mode: NOT advancing pipeline; returning verdict to orchestrator.
+
+## 2026-05-25T14:30:00Z — Tanvi (qa-agent) — feat-ai-engine-intelligence
+**Stage:** 5 (Round 2, PARALLEL REVIEW MODE)
+**Action:** QA PASS
+**Test runs:** 154 Python unit (intelligence-service) + 14 (brain_cost_router) + 41 (analytics-service) + 291 (brain_metrics) = 500 total
+**Real-network smoke:** N/A (HOLD-AT-SERVE — mocked-gateway integration tests are the Stage-5 substitution per arch plan §10)
+**Metric registry parity (TS↔Python):** PASS — business metrics unchanged; new OTel counters operational-only
+**Trace IDs end-to-end:** PASS (round 2) — correlation quad (request_id + trace_id + workspace_id + actor_id) now on GatewayRequest, persisted in both DL write paths (synthesis + dispatch), schema columns added. C5-SEC-003 RESOLVED. OTel trace_id bound from active span.
+**Operational-readiness:** PASS — residency assert wired into bootstrap (C5-SEC-005 resolved), Layer-3 cap, serve-gate, ARMED cache-purge
+**Mutation tests on high-stakes:** PASS — all 5 VETO gates re-verified killed+inverse; 3 bounce-fix killed mutants confirmed (C5-SEC-001 anonymity; C5-SEC-002 flagged load-bearing; C5-SEC-003 quad drop → fail)
+**Coverage:** ≥70% on all new code paths (154 tests, all critical branches exercised)
+**Bounced to:** NONE
+**Findings:** 0 new findings; round-1 F1 (trace IDs) RESOLVED by bounce-fix; round-1 F2 (staging) remains pre-commit reminder only
+
+### Detail
+- C5-SEC-001 CRITICAL RESOLVED: CrossBrandAggregate (no workspace_id); ai.cross_brand_pattern (k-anon CHECK≥5 + Python double-enforce); test_result_has_no_workspace_id_field is the load-bearing regression sentinel.
+- C5-SEC-002 HIGH RESOLVED: _escape_fence_sentinels() confirmed; </data> entity-encoded before fencing (content-region test confirms); render_untrusted_section() raises InjectionFlaggedError on flagged block — confirmed real IOError in test.
+- C5-SEC-003 HIGH RESOLVED: request_id+trace_id+actor_id on GatewayRequest + in both DL paths + in schema. Audit write failure propagates. request_id in both error messages. Killed mutant: drop quad → 3 assertions fail.
+- C5-SEC-005 MED RESOLVED (bootstrapped): bootstrap/__init__.py now calls run_startup_assertions() → assert_india_residency().
+- 5 VETO gates: 51 gate tests pass; no gate logic modified; killed+inverse each confirmed structural.
+- LLM eval: 10/10 golden-set harness tests pass; three-point gate intact.
+- 3x stability: 154 stable, 14 stable. Zero flaky.
+- Secrets grep clean. No legacy diff.
+- Parallel review mode: NOT advancing; returning verdict to orchestrator for reconciliation with Shreya.
+
+## 2026-05-25T10:40:00Z — Tanvi (qa-agent) — feat-frontend-dashboard-morningbrief
+**Stage:** 5
+**Action:** QA BOUNCE
+**Test runs:** 22 api-gateway / 126 lib-metrics / 35 web / 52 mobile / 291 brain_metrics = 526 total, 0 failures
+**Real-network smoke:** BLOCKED (B1 — server.ts missing; harness does not boot)
+**Metric registry parity (TS↔Python):** PASS (scale field in STRUCTURAL_FIELDS; 16 shared metrics byte-identical; exit 0)
+**Trace IDs end-to-end:** PARTIAL (4-tuple in code; gRPC boundary not exercised — Phase 0 V4 deferral; M2)
+**Operational-readiness:** FAIL (no server bootstrap; health endpoint absent)
+**Mutation tests on high-stakes:** PASS (G-BIGINT: 1n loss confirmed RED; G-IDEMPOTENT: 2-row path confirmed RED; G-REGISTRY-ONLY: orphan throws confirmed RED; formatMoney /100 KWD mutant confirmed RED)
+**Coverage:** API-gateway 100% gate coverage on integrity paths; lib-metrics 126 tests; web 35 tests; mobile 52 tests. No coverage regression.
+**Bounced to:** Ananya (frontend-web-developer) primary; Vikram (backend-developer) secondary
+**Findings:** BLOCKING:2, MEDIUM:3, LOW:2
+### Detail
+- B1 (BLOCKING): apps/api-gateway/src/interfaces/server.ts does not exist. `pnpm dev` fails immediately. CF-C6-RUNNABLE-HARNESS-1 VETO. Founder cannot see any numbers. Owner: Vikram.
+- B2 (BLOCKING): kpi-strip.tsx:123-126 — JSX block comment `{/* ... */}` placed between JSX attribute-value pairs is invalid TSX. `tsc --noEmit` exits code 2. Web app cannot compile. Owner: Ananya.
+- M1: G-REGISTRY-ONLY static grep is proxy assertion (returns data-plane value unchanged), not an actual grep of the source file. Today's code is clean; gate is weaker than specified.
+- M2: Trace ID gRPC boundary not exercised — V4 Python handlers deferred; Phase 0 architectural acknowledgment.
+- M3: Visx pixel-math uses Number(cumulative_mu) for SVG positioning — safe for seed values < 2^53; display path is correct; assumption undocumented.
+- L1/L2: jsdom navigation noise; Playwright blocked until B1+B2 fixed.
+
+## 2026-05-25T11:00:00Z — Tanvi (qa-agent) — feat-frontend-dashboard-morningbrief
+**Stage:** 5 (Round 2, PARALLEL REVIEW MODE)
+**Action:** QA PASS
+**Test runs:** 32 api-gateway / 126 lib-metrics / 42 web / 52 mobile / 291 brain_metrics = 543 total / 0 failures
+**Real-network smoke:** PASS — server boots in ~1s; /health → {status:ok}; kpiSummary → net_revenue_mu=185000000 (₹18.5L), cm2_mu=32000000 (₹3.2L), blended_roas_x100=285, total_orders=1247, request_id=real UUID c173a9f4-…; superjson bigint meta ["bigint"] confirmed
+**Metric registry parity (TS↔Python):** PASS (exit 0; 25 vectors byte-identical; scale field in STRUCTURAL_FIELDS; 16 shared metrics; 4 correctness_fixture SQL+DDR confirmed)
+**Trace IDs end-to-end:** PASS for Phase-0 scope — request_id UUID confirmed on every success response (live curl) + every error response (ctx.requestId in errorFormatter, H1 confirmed); gRPC boundary deferred to Phase-2 (architecture-acknowledged M2, documented HARNESS.md)
+**Operational-readiness:** PASS — /health live; port 3001 confirmed; HARNESS.md env docs; no native deps
+**Mutation tests on high-stakes:** PASS — G-BIGINT (1n loss), G-IDEMPOTENT (2-row path), G-REGISTRY-ONLY (orphan throws), formatMoney /100 KWD, H1 errorFormatter (6 killed-mutant tests — ctx.requestId≠path confirmed), web binding contract (7 tests)
+**Coverage:** new server.ts (4 inject tests), new trpc.errorformatter.ts (6 tests), new error-display-request-id.test.tsx (7 tests) — all ≥70% on new code paths; overall 543 tests across 5 packages
+**Bounced to:** NONE
+**Findings:** 0 new must-fix-now; carry-forwards M1/M2/M3/L2 unchanged from Round 1
+
+### Detail
+- B1 RESOLVED: apps/api-gateway/src/interfaces/server.ts exists; Fastify+tRPC+StubDataPlane boots; /health confirmed; kpiSummary returns Sugandh-Lok seed values with superjson bigint. Real network boot proof captured (curl output in 10b-qa-rereview.md).
+- B2 RESOLVED: kpi-strip.tsx JSX comment relocated; Visx Tooltip cast applied; tsc --noEmit exits 0.
+- H1 RESOLVED: errorFormatter uses ctx.requestId (UUID) not shape.data.path (procedure name). 6 killed-mutant tests confirm divergence. 7 web binding tests confirm end-to-end display.
+- L1 RESOLVED: IS_LOCAL_HARNESS gates stub auth path and on-screen credential hint in production builds.
+- M3 RESOLVED: CF-C6-BIGINT-PIXEL-INVARIANT comment documents ₹90,071 Cr threshold and revisit condition.
+- All 22 integrity gate tests (gates.test.ts) unchanged and PASS — no regression.
+- 3× stability: api-gateway 32/32×3; web 42/42×3; mobile 52/52×3; lib-metrics 126/126×3; brain_metrics 291/291.
+- Parity gate exit 0; scale field intact (Child-4 non-regression).
+- Secrets grep: CLEAN (all hits assessed — env var refs / enum keys / test fixtures / Phase-0 stub gated behind IS_LOCAL_HARNESS).
+- Parallel review mode: NOT advancing pipeline; returning verdict to orchestrator.

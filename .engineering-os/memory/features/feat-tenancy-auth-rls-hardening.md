@@ -146,3 +146,13 @@
 **Consequence — OPEN P0 (mirrored to pending-founder-attention.md):** the live shared Supabase Postgres still has **0 RLS** (45 models / 66 workspaceId refs). The reviewed fix was never deployed (was at Stage 8 awaiting commit) and is now untracked. **Tenant-isolation hole remains open in production** until a Brain-native RLS slice is built and shipped.
 
 **Status:** this requirement's *legacy* implementation is **WITHDRAWN**. Tenant-isolation work to be **re-scoped Brain-native** via a new requirement; Rohan to amend the Child 0 strangler-fig plan so no future slice implements into legacy. RLS *design* (policy shapes, FK-scope map, runbook, cron scoping) preserved on disk as migration reference.
+
+## Stage 3 bounce-fix — 2026-05-25T14:00:00Z — Vikram (backend-developer)
+
+**req_id:** feat-ai-engine-intelligence (Child 5) | **bounce:** C5-SEC-003 HIGH traceability VETO
+
+**Fix:** C5-SEC-003 traceability VETO resolved. Correlation quad (request_id + trace_id + workspace_id + actor_id) added to GatewayRequest (pinned contract — Maya populates call-sites), propagated into both _write_decision_log paths (synthesis in client.py + dropped-tool in graduation_middleware.py), and persisted as 3 new columns in ai.decision_log. OTel trace_id bound from active span at gateway entry. request_id surfaced on error responses (cap exceeded, faithfulness failure). Audit write failures now raise (not swallowed). assert_india_residency() wired into bootstrap.run_startup_assertions() (C5-SEC-005). Per-call cap check made non-vacuous via requested_fraction_bp param (C5-SEC-008). 5 VETO gate logic unchanged.
+
+**Tests:** 154 intelligence-service unit + 14 brain_cost_router = 168 passing. 332 baselines = 0 regressions. 500 total, 0 failures.
+
+**Status:** READY-FOR-SECURITY (round-2 Shreya + Tanvi)

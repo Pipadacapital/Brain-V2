@@ -1,0 +1,57 @@
+{
+  "req_id": "feat-ai-engine-intelligence",
+  "epic_child_id": "child-5-ai-engine",
+  "decision": "APPROVE",
+  "decided_by": "cto-advisor (Rohan) on Founder's behalf",
+  "delegation_basis": "Standing Founder delegation (MEMORY: feedback_founder_delegates_to_cto_advisor — Rohan signs every Founder gate end-to-end). §9 hard-rule deviation check returned NONE (no dependency/Single-Primitive/compliance/paradigm-escalation/gate-skip violation), so auto-approve under delegation is permitted.",
+  "ts": "2026-05-25T15:30:00Z",
+  "stage6_verdict": "PASS",
+  "recommendation": "APPROVE-WITH-CAVEATS",
+  "round": 2,
+  "final_review_artifact": "11-final-review.md",
+  "retro_artifact": "14-retro.md",
+  "independent_reverification": {
+    "test_suites_rerun_by_rohan": {
+      "brain_cost_router": "14 passed (clean venv, py3.13)",
+      "intelligence_service_unit": "154 passed",
+      "brain_metrics_baseline": "291 passed",
+      "analytics_service_baseline": "41 passed",
+      "grand_total": "500 passed, 0 failures"
+    },
+    "own_mutations_by_rohan": [
+      "Gate-1 @paradigm: no-op assert_llm_tier_at_gateway() -> 5 tests RED (3 killed-mutant sql/ml/unset + 1 inverse + 1 async); reverted -> 14 green, diff identical to original",
+      "Gate-3 Iron-Law executor: WriteToolCall extra=ignore->allow + amount_mu field -> 2 tests RED (killed-mutant + inverse, injected magnitude_mu=9999999 stuck); reverted -> 154 green, diff identical to original"
+    ],
+    "five_veto_gates": "ALL REAL — killed-mutant + inverse-mutant confirmed (re-ran gates 1/2/3/4/5 myself, 51+ gate tests green) + 2 independent on-disk mutations caught RED",
+    "round1_fixes_reverified": {
+      "C5-SEC-001_memory_anonymity": "CrossBrandAggregate has NO workspace_id; reads ai.cross_brand_pattern (not RLS fingerprint); k<5 -> None double-enforced; no RLS-relax leak shape",
+      "C5-SEC-002_spotlight": "_escape_fence_sentinels before fencing neutralizes </data>; flagged load-bearing via render_untrusted_section raising InjectionFlaggedError",
+      "C5-SEC-003_traceability": "correlation quad (request_id/trace_id/workspace_id/actor_id) end-to-end in BOTH Decision-Log write paths + ai.decision_log schema + OTel span; audit-write no longer swallowed"
+    },
+    "cost_routing_audit": "PASS — Tier-A (signals/context/memory/eval/injection) all @paradigm(sql), ZERO LLM (Gate-1 enforced, structural); only pnl_insight_agent._narrate is @paradigm(small_llm); NO frontier_llm; LLMs never produce a number (Gate-2); paradigm_distribution + faithfulness_retry_total emitted; per-brand ~Rs440/mo @ Sugandh-Lok, breakeven GMV ~Rs88k/mo @0.5% — %-of-GMV model holds",
+    "plan_binding": "CONFIRMED — Shape 5a (one pnl read-only agent, NOT chat); HOLD-AT-SERVE (no live flip, CACHE-PURGE-C4C5 armed-not-fired, recommendation-only-until-graduated); MIXED paradigm; India-resident tripwire HELD (assert_india_residency wired); no Child-6/7 scope pulled forward; legacy untouched (0 staged, 0 direct anthropic SDK)",
+    "over_engineering_audit": "PASS 7/7 — files map to CF-C5/gates; observability only COST-AUDIT-1 + traceability; no invented deps; write-tool contract built-now is synthesis-required not speculative; no WHAT-comments"
+  },
+  "hard_rule_deviation_check": "NONE — auto-approve under delegation permitted",
+  "founder_gate": "SIGNED-under-delegation",
+  "committed": false,
+  "commit_note": "NO commit — Founder commits at end-review. Mechanical Child-5 paths in pending-founder-commit.md (explicit; NO git add -A; Child-3/4/5 co-staged on feature/feat-tenancy-auth-rls-hardening). Commit manifest MUST add untracked Track-M source/tests and EXCLUDE the duplicate src/infrastructure/db/migrations/ (C5-SEC-007).",
+  "non_blocking_carryovers": [
+    "C5-SEC-004 (MED) — Gate-2 faithfulness unit-binding before action graduation",
+    "C5-SEC-006 (MED) — validate parsed insights against typed contract before graduation",
+    "C5-SEC-009 (LOW) — down.sql omits ai.cross_brand_pattern drop (migration-reversibility)",
+    "C5-SEC-007 (LOW) — duplicate divergent src/infrastructure/db/migrations/ must be excluded/removed",
+    "Track-M git-add — untracked load-bearing source must be staged at commit"
+  ],
+  "held_for_stage8": [
+    "live serving flip (Brain AI reads ClickHouse authoritative)",
+    "CACHE-PURGE-C4C5 firing (post-purge count must = 0)",
+    "per-agent graduation",
+    "real DB readers wired (graduation/cap/daily-aggregate) + residency assertion at live entrypoint",
+    "5b roster: chat agent (stress test) + 07:15 Morning-Brief Pattern-B fan-out + remaining ~12 page agents + AICMO/AICOO/AICFO + AI CX recommenders",
+    "5b India-resident frontier-model tripwire re-check (/escalate predicate)",
+    "Gate-2 unit-binding + C5-SEC-006/007/009 polish"
+  ],
+  "verify_the_verifier_recurrence": "6th occurrence — but FIRST child where the failure class was structurally BEATEN before review (5 VETO gates bound real with killed+inverse mutants at Stage-1; confirmed real by both Stage-4 reviewers + 2 independent Rohan on-disk mutations). Strongest evidence yet for rule-proposal verify-the-verifier-mutation-on-gate; NOT self-adopted (awaits /adopt-rule).",
+  "next": "Stage-8 readiness (platform-devops / Jatin) — runbook-as-artifact; NO commit, NO live flip until Founder commits + Stage-8 gate"
+}

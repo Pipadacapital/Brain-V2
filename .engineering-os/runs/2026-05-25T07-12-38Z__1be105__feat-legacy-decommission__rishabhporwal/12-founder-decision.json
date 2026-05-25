@@ -1,0 +1,57 @@
+{
+  "schema_note": "Written by Rohan (cto-advisor) on the Founder's behalf under standing delegation. The Founder delegated end-to-end pipeline execution to the CTO Advisor, who signs every Founder gate (see MEMORY: feedback_founder_delegates_to_cto_advisor). No hard-rule deviation per 11-final-review.md §9, so delegation is exercisable. This is the FINAL child of the migration epic; the PASS authorizes the runbook as BINDING — it executes nothing (all live action is Stage-8 / Founder-at-console).",
+  "req_id": "feat-legacy-decommission",
+  "epic_child_id": "child-7-decommission",
+  "parent_epic": "chore-migrate-legacy-to-brain",
+  "stage": 7,
+  "decision": "APPROVE-WITH-CAVEATS",
+  "decided_by": "cto-advisor (Rohan)",
+  "delegation_basis": "Standing Founder delegation — Rohan signs the Stage-7 gate on the Founder's behalf; exercisable because 11-final-review.md §9 hard-rule deviation check is CLEAN (no dependency violation, no Single-Primitive violation, no compliance gap, no paradigm escalation, no gate-skip).",
+  "ts": "2026-05-25T13:10:00Z",
+  "verdict_source": "11-final-review.md",
+  "retro": "14-retro.md",
+  "shape": "runbook-only (Child-0 analogue) — no app code build; Rohan's compliance + reversibility design review IS the gate (VETO). Tanvi degraded to artifact-completeness, Shreya to design-level VETO, both folded into 11-final-review.md (no code to review).",
+  "reversibility_review": "PASS — the 8-row PoNR ledger (L0-L7) carries exactly 4 PoNRs (L1 per-connector plaintext-delete, L3 read-decommission, L6 DB shutdown, L7 archive deletion); each names its precondition, a positive-proof verification (NO PoNR passes on a flag-read), and a rollback tree valid until that line; no PoNR crosses before its dependency parity is signed; Shiprocket is last (no replay) — the single highest-irreversibility step in the program.",
+  "compliance_review_dpdp": "PASS — CF-C7-DPDP-ERASURE-1 satisfied: the named archive format is genuinely §12 erasure-scopable AFTER the app is gone (Option ALPHA = legacy Postgres live-but-read-only in ap-south-1, §12 erasure = scoped live DELETE WHERE workspace_id=? AND email=?; Option BETA = S3 Parquet partitioned by workspace_id, §12 erasure = s3:DeleteObject per partition; flat pg_dump REJECTED). ap-south-1 residency asserted (out-of-region = §16). Retention-bounded (shorter-of-5y-or-legal; PII-free audit_log 7y). Archive (L6) and decommission (L7) are TWO dates. §12/§13 close-out + chore-security-governance-hardening-phase handoff present. ARMED tripwire DOES NOT FIRE (§12 format named).",
+  "four_gate_classes_real": {
+    "custody": "CF-C7-CUSTODY-PROOF-1 — real non-stub seal() + Brain call via PRODUCTION custody path returns vendor 200 + parity GREEN, all signed before DELETE (the FIRED escalation, build_gated_on). Rohan independently confirmed seal()/get()/put() ARE NotImplementedError stubs in both backings (aws_secrets_manager_custody.py 56/73/84, supabase_column_custody.py 57/73/86) — the gate guards a real code-grounded hole.",
+    "dwell": "CF-C7-SERVE-READ-COUPLING-1 — min 24h serve-stability dwell explicitly signed before crossing the read-decommission PoNR (#2); prevents destroying the AI rollback tree in one console session.",
+    "ddr": "CF-C7-DDR-GATE-1 — Gate P2 (Brain-Child-3-sourced, post-Shopify-cutover, after Rohan signs total_tax_mu+fx_restatement) is the ONLY gate licensing the read-flip PoNR; L3 references P2 NOT legacy-sourced P1.",
+    "festival": "CF-C7-FESTIVAL-WINDOW-1 — machine query (workspace_festivals 14d-before/7d-after -> ABORT) on every irreversible step; Shiprocket pre-cutover blackout. Rohan confirmed workspace_festivals is a real table (model WorkspaceFestival @@map workspace_festivals)."
+  },
+  "ddr_signoff_sequencing": "CORRECT — the runbook sequences Rohan's signing of the 2 pending Child-4 DDR rows (total_tax_mu + fx_restatement) AFTER Shopify cutover (L1) + BEFORE the read-flip PoNR (L3). Rohan does NOT sign them now (Shopify is not cut over; the rows are unsigned_pending_child_dependency, not measurable on legacy-sourced data). The runbook holds them correctly as a hard precondition on PoNR #2.",
+  "independent_reverification": {
+    "method": "Runbook-child analogue of re-running test gates: independently confirm the runbook's 4 load-bearing external references resolve to real code/schema/tooling.",
+    "legacy_ai_retirement_target": "EXISTS — legacy project/backend/src/module/ai/{chat,context,insights,pipeline,providers,...} + ollamaUrl at schema.prisma:924 (cost-model-defense claim is real)",
+    "custody_seal_stubs": "CONFIRMED stub — NotImplementedError in get/put/seal of both backings (the FIRED escalation is code-grounded, not phantom)",
+    "workspace_festivals_table": "EXISTS — model WorkspaceFestival schema.prisma:96 @@map(\"workspace_festivals\"); RLS-FORCE-protected step-b-force.sql:24 (festival gate has a real target)",
+    "parity_harness": "EXISTS — tools/check-metrics-parity.sh (the L3 verification command is real)"
+  },
+  "over_engineering_audit": "CLEAN — two artifacts only (06-decommission-runbook.md + 07-handoff-to-developer.md); no app code, no @paradigm decorator, no new runtime, no new dependency, no new primitive (§11), no per-child gate re-derived (references + sequences them), legacy untouched (CF-BN-NOLEGACY-1). Plan length proportionate to high-stakes irreversible-decommission risk. Aryan's own 7/7 self-check corroborated.",
+  "single_primitive_sweep": "CLEAN — no new primitive; the PoNR ledger sequences existing per-child gates; no per-channel/connector/region fork; §12 erasure reuses the existing consent withdrawn + canon erasure mechanism.",
+  "hard_rule_deviation_check": "CLEAN — no dependency violation (runbook plans against committed contracts + named holds; the HARD gate is on EXECUTION at Stage-8, which the runbook sequences not executes), no Single-Primitive violation, no compliance gap (DPDP §12 satisfied; ap-south-1; no outbound channel -> DLT/NCPR/9-9/WhatsApp N/A), no paradigm escalation (sql/runbook), no gate-skip (no-Stage-3/4/5-code is the codified Child-0 design-child analogue).",
+  "escalation_disposition": {
+    "fired_custody": "CARRIED — CF-C7-CUSTODY-PROOF-1 build_gated_on: Founder must confirm the chosen Option A/B seal()/get() is a REAL non-NotImplementedError impl BEFORE the Stage-8 plaintext-delete. Mirrored to pending-founder-attention.md as an addendum to the open Child-3 custody escalation (one coherent custody ask, not two threads).",
+    "armed_archive_tripwire": "DOES NOT FIRE — a §12-satisfying archive format is named (Option ALPHA primary). The Founder's ALPHA/BETA pick at Stage-8 is NOT an escalation (both satisfy §12).",
+    "stage8_execution_gate": "By design Founder-at-console — 07-handoff §1 names all five authorization points (AUTH-CUSTODY build_gated_on, AUTH-DELETE per-connector Shiprocket-last, AUTH-READ-DECOMMISSION, AUTH-SHUTDOWN, AUTH-ARCHIVE-DELETE); none delegated."
+  },
+  "recommendation": "APPROVE-WITH-CAVEATS",
+  "caveats": [
+    "The Stage-8 plaintext-DELETE is hard-gated on a REAL seal() implementation (FIRED escalation, build_gated_on CF-C7-CUSTODY-PROOF-1). Confirm the chosen Option A/B custody seal()/get() is a real non-NotImplementedError impl before any connector's plaintext is deleted; Shiprocket last (no replay).",
+    "The read-decommission PoNR (#2) is gated on Rohan's full DDR sign-off (the 2 remaining rows total_tax_mu + fx_restatement), signable only post-Shopify-cutover on Brain-sourced data, plus the 24h serve-dwell signed.",
+    "Archive (L6) and decommission (L7) are TWO dates. Pick Option ALPHA/BETA at Stage-8 (both §12-satisfying).",
+    "Every PoNR requires the Founder at console; the festival machine-gate must be empty before each irreversible step."
+  ],
+  "held_for_stage8": [
+    "Real seal() implementation (Founder, build_gated_on CF-C7-CUSTODY-PROOF-1) — before AUTH-DELETE",
+    "Rohan's full DDR sign-off (2 rows total_tax_mu + fx_restatement) — between L1 and L3, post-Shopify-cutover on Brain-sourced data",
+    "Archive option ALPHA/BETA pick (Founder/Jatin) — both §12-satisfying",
+    "The cutover calendar (Founder/Jatin) — enforced by the festival machine gate",
+    "Every PoNR authorization at console (AUTH-CUSTODY, AUTH-DELETE per-connector, AUTH-READ-DECOMMISSION, AUTH-SHUTDOWN, AUTH-ARCHIVE-DELETE)",
+    "Execution of ALL of Children 1-6's HELD cutovers (FORCE / connector-cutover / read-flip / serve-flip / route-flip) in the runbook's DAG-forced order, each parity-signed"
+  ],
+  "committed": false,
+  "commit_note": "NO commit by any agent. Feature-branch-only commit rule + harness guard: the Founder commits after free-text 'commit it'. Mechanical Child-7-scoped command (explicit run-folder + journal/decision-log/state paths, NO git add -A) in pending-founder-commit.md.",
+  "epic_close_out": "Child 7 is the FINAL child of chore-migrate-legacy-to-brain. ALL 7 children are planned/built end-to-end (Children 1-6 at Stage-8 readiness behind named holds; Child-7 PASS = the runbook sequencing their release). What remains is the Founder-gated Stage-8 production cutover, executed against the Child-7 runbook, with the real-seal() prerequisite and the DDR sign-off as the two named pre-execution gates.",
+  "next": "Stage-8 readiness (Jatin) — readiness-only for the runbook artifact; the actual cutover execution is Founder-at-console against 06-decommission-runbook.md + 07-handoff-to-developer.md."
+}

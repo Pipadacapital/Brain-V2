@@ -1,0 +1,66 @@
+{
+  "ts": "2026-05-25T00:00:00Z",
+  "req_id": "feat-metric-engine-olap-split",
+  "epic_child_id": "child-4-metric-engine-oltp-olap-split",
+  "stage": 7,
+  "actor": "cto-advisor",
+  "on_behalf_of": "founder",
+  "delegation_basis": "Standing Founder delegation (MEMORY: feedback_founder_delegates_to_cto_advisor.md — 'Run EOS pipeline end-to-end; Rohan signs every Founder gate on Founder's behalf'). Applies because Stage-6 hard-rule deviation check (11-final-review.md §9) found NONE: no dependency violation, no Single-Primitive violation, no compliance gap, no paradigm escalation beyond plan, no gate-skip without codified exception.",
+  "decision": "APPROVE-WITH-CAVEATS",
+  "verdict_source": "11-final-review.md (Stage-6 PASS)",
+  "stage6_verdict": "PASS",
+  "independent_reverification": {
+    "parity_gate": "exit 0 (re-run by Rohan)",
+    "test_suites": "434 passed (41 analytics + 291 brain_metrics + 102 lib-metrics), 0 failures; tsc exit 0",
+    "verify_the_verifier_on_disk_mutations": [
+      "mutation A: rename ltv_cac_bp -> ltv_cac_x100 in REAL definitions.ts -> gate exit 1 (RED) -> reverted -> exit 0",
+      "mutation B: revert true_cm2_mu clickhouse_sql to original H-1 flat-per-order -> gate exit 1 (RED) -> reverted -> exit 0"
+    ],
+    "ts_python_ddr_aligned_4_metrics": true,
+    "worked_examples_rederived": "true_cm2=6620000, pamer=16000bp, amer=13240bp, ltv_cac=30000bp, aMER<paMER, Feb28=35714/wrong30=33333",
+    "paradigm_scan": "zero @paradigm:haiku/sonnet/ml in metric path (sql-exclusive)",
+    "single_writer": "zero Brain write path to legacy rollup",
+    "legacy_untouched": true
+  },
+  "ddr_signoff": {
+    "schema": "9-field (CF-C4-DDR-1)",
+    "rows_total": 11,
+    "signed": [
+      "cm2_mu",
+      "misc_expenses_prorated_mu",
+      "cogs_mu",
+      "true_cm2_mu (correctness-fixture; no legacy shadow acknowledged; Phase-0 proxy canon)",
+      "pamer_bp (correctness-fixture)",
+      "amer_bp (correctness-fixture)",
+      "ltv_cac_bp (correctness-fixture)",
+      "blended_roas_x100 (display-only)",
+      "acos_bp (display-only)"
+    ],
+    "unsigned_pending_child_dependency": [
+      {"row": "total_tax_mu", "blocked_on": "child-3-shopify-connector", "reason": "per-SKU GST-2.0 event tax not measurable while shadowing legacy-sourced data"},
+      {"row": "fx_restatement", "blocked_on": "child-3-workspace-cost-currency-migration", "reason": "live FX restatement activates only post cost-currency migration"}
+    ],
+    "structural_rules_confirmed": "Rule 1 (parity_gap never signed as shadow-GREEN) + Rule 2 (child_dependency never signed before dependency GREEN) enforced in DDRRow.assert_signable()",
+    "true_cm2_rto_provision_canon": "true_cm2_mu = cm2_mu - intDiv(rto_orders * (total_ad_spend_mu + variable_costs_mu + cogs_mu), total_orders_count); NULL if total_orders_count<=0. Recorded as Phase-0 proxy canon (cost-base-per-order); refine toward canon forward/reverse/restock/write-down + refund/payment-failure components in a later child."
+  },
+  "plan_binding_confirmed": {
+    "shape_a_hold_at_read_flip": true,
+    "no_live_ddl": true,
+    "no_live_read_flip": true,
+    "single_writer_c2_intact": true,
+    "intdiv_everywhere": true,
+    "paradigm_sql_exclusive": true,
+    "no_child_5_6_scope_pulled_forward": true,
+    "legacy_untouched": true
+  },
+  "caveats": [
+    "DDR partially signed: total_tax_mu + fx_restatement remain UNSIGNED-PENDING until Child-3 lands; live read-source flip HELD; Rohan re-signs at Stage-8 live-flip re-review.",
+    "True-CM2 RTO-provision signed as Phase-0 proxy canon (cost-base-per-order), to be refined to the granular canon cost form in a later child.",
+    "Commit Child-4 product-code paths ONLY (see pending-founder-commit.md); do NOT git add -A (Child-3 files are co-staged)."
+  ],
+  "committed": false,
+  "commit_note": "NO commit performed. Founder commits at end-review with the mechanical command in pending-founder-commit.md (explicit Child-4 paths; no git add -A).",
+  "next": "stage-8-readiness (platform-devops) — runbook-gated ClickHouse DDL + read-only role + ap-south-1 residency provisioning; live flip HELD",
+  "hard_rule_deviation_check": "NONE (11-final-review.md §9)",
+  "verify_the_verifier_recurrence": "In-child round-1 recurrence (materialized) logged as evidence #5 on the human-gated rule proposal verify-the-verifier-mutation-on-gate. NOT self-adopted — awaiting Founder /adopt-rule."
+}
