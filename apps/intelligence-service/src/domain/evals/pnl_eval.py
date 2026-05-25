@@ -172,6 +172,46 @@ GOLDEN_SET: list[GoldenCase] = [
         expected_ok=True,
         description="FALSE-REJECT PASS: ₹1.2Cr → 12,000,000 → PASS.",
     ),
+
+    # -----------------------------------------------------------------------
+    # SLICE-9 (feat-ai-insight-narration) page-narration golden cases.
+    # These mirror the /pnl InsightStrip narration against the Sugandh-Lok seed
+    # (rupee-canonical: cm2 320_000, realized 1_850_000, ad_spend 650_000, rto 1800 bp).
+    # -----------------------------------------------------------------------
+    GoldenCase(
+        case_id="S9-PNL-POS-1",
+        narration=(
+            "On ₹18.5L realized revenue, contribution margin after ads (CM2) is ₹3.2L. "
+            "Ad spend of ₹6.5L is being earned back — CM2 stays positive."
+        ),
+        signals=[
+            Signal("realized_revenue_mu", 1_850_000),
+            Signal("cm2_mu", 320_000),
+            Signal("total_ad_spend_mu", 650_000),
+        ],
+        expected_ok=True,
+        description="S9 PASS: every page-narration number grounded in the /pnl signal set.",
+    ),
+    GoldenCase(
+        case_id="S9-PNL-RTO-POS-1",
+        narration="Return-to-origin is running at 18%, netting out of the ₹18.5L realized base.",
+        signals=[
+            Signal("rto_rate_bp", 1_800),  # 18% → 1800 bp
+            Signal("realized_revenue_mu", 1_850_000),
+        ],
+        expected_ok=True,
+        description="S9 PASS: RTO 18% (1800 bp) + ₹18.5L both grounded.",
+    ),
+    GoldenCase(
+        case_id="S9-PNL-KM-1",
+        narration="On ₹18.5L realized revenue, CM2 is actually ₹4.0L this period.",
+        signals=[
+            Signal("realized_revenue_mu", 1_850_000),
+            Signal("cm2_mu", 320_000),  # ₹3.2L — NOT ₹4.0L (400_000)
+        ],
+        expected_ok=False,
+        description="S9 KILLED MUTANT: narration hallucinates CM2 ₹4.0L (400_000) ∉ signals → RED.",
+    ),
 ]
 
 

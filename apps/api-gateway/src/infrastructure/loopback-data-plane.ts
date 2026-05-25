@@ -24,6 +24,7 @@ import type {
   StoreSummaryRow,
   StoreRevenueLadderStep,
   MorningBrief,
+  PageInsightResult,
   SubmitInsightResult,
   RegisterPushTokenResult,
   DateRange,
@@ -909,6 +910,137 @@ function buildSugandhlokDistributions(filters?: DistributionsFilterInput): Distr
     global_mode_mu: globalMode,
     global_mean_mu: globalMean,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase-2 slice-9 (feat-ai-insight-narration): GROUNDED page-level AI narration.
+// @paradigm small_llm (Haiku) in production; LOCAL harness uses the deterministic
+// grounded narrator below (no live Claude key) BEHIND the same gateway contract.
+//
+// CF-S9 (LLMs NEVER invent numbers): the narration is built from the SAME canonical
+// seed numbers as the /pnl statement (Single source of truth). Every numeric token
+// in the narration body is rendered from a signal value via formatMoney/bp, so the
+// BFF faithfulness gate (assertInsightFaithfulness) finds every number in the signal
+// set. There is NO action/tool field — READ-only (recommendation-only-until-graduated).
+//
+// The signals are the deterministic /pnl ladder (slices 1-2) PLUS the ad-spend &
+// RTO-rate context. The narrator describes the honest CM2/CM3 story (India CM2-first
+// framing) — it never computes; it only narrates the precomputed integers.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// CF-S9-FAITHFULNESS canonical-unit convention (LOCKED, mirrors Child-5 golden set):
+//   The narration cites Indian-lakh strings (e.g. "₹3.2L"). extractNumbers() (BFF)
+//   and extract_numbers() (intelligence-service) normalize lakh with LAKH = 100_000,
+//   i.e. "₹3.2L" → 320_000.  So the grounding signal's value_canonical is the value
+//   in RUPEES (not paise): paise / 100.  This matches the Child-5 golden set
+//   (Signal("net_sales_mu", 120_000) ↔ "₹1.2L").  The seed paise values stay the
+//   single source of truth; we convert paise→rupee for the grounding set only.
+// ---------------------------------------------------------------------------
+
+const PAISE_PER_RUPEE = 100n;
+const RUPEE_PER_LAKH = 100_000n; // 1 lakh = 100_000 ₹
+
+/** Render a RUPEE-canonical value (paise/100) as the Indian lakh string the narrator cites.
+ *  e.g. 320_000 rupee → "₹3.2L".  Matches extractNumbers("₹3.2L") = 320_000. */
+function _lakhStr(rupee: bigint): string {
+  const lakhs = Number(rupee) / Number(RUPEE_PER_LAKH); // rupee → lakh
+  const oneDp = Math.round(lakhs * 10) / 10;            // seed values are clean to 0.1L
+  return `₹${oneDp}L`;
+}
+
+/** Build the deterministic grounding signals for the /pnl page from the canonical seed.
+ *  value_canonical is in RUPEES (paise/100) so "₹3.2L"→320_000 matches the signal set. */
+function buildPnlPageSignals(): PageInsightSignalSeed[] {
+  const c = SUGANDH_LOK_CANONICAL;
+  const head = c.realized_revenue_mu;                 // 185_000_000 paise
+  const cm1 = head - c.cogs_mu - c.variable_costs_mu; // 97_000_000
+  const cm2 = cm1 - c.total_ad_spend_mu;              // 32_000_000
+  const cm3 = cm2 - c.misc_expenses_prorated_mu;      // 28_000_000
+  const toRupee = (paise: bigint): bigint => paise / PAISE_PER_RUPEE;
+  return [
+    { signal_id: 'realized_revenue_mu', value_canonical: toRupee(head), label: 'Realized Revenue' },
+    { signal_id: 'cogs_mu', value_canonical: toRupee(c.cogs_mu), label: 'COGS' },
+    { signal_id: 'total_ad_spend_mu', value_canonical: toRupee(c.total_ad_spend_mu), label: 'Ad Spend' },
+    { signal_id: 'cm1_mu', value_canonical: toRupee(cm1), label: 'CM1 (Gross Contribution)' },
+    { signal_id: 'cm2_mu', value_canonical: toRupee(cm2), label: 'CM2 (After Ads)' },
+    { signal_id: 'cm3_mu', value_canonical: toRupee(cm3), label: 'CM3 (After Overheads)' },
+    // RTO rate is already basis points; the narration cites "18%" → bp 1800 == value_canonical.
+    { signal_id: 'rto_rate_bp', value_canonical: BigInt(c.rto_rate_bp), label: 'RTO Rate' },
+  ];
+}
+
+interface PageInsightSignalSeed {
+  signal_id: string;
+  value_canonical: bigint;
+  label: string;
+}
+
+let _insightCounter = 0;
+function _insightId(): string {
+  _insightCounter += 1;
+  return `insight_${_insightCounter}_${Date.now()}`;
+}
+
+/**
+ * The deterministic grounded narrator (LOCAL harness). Mirrors what the Haiku
+ * gateway produces, but constructs prose ONLY from the signal integers so the
+ * faithfulness gate always passes on real values. CM2-first India framing.
+ * NO action/tool field anywhere.
+ */
+function buildSugandhlokPageInsights(page: string): {
+  signals: PageInsightSignalSeed[];
+  narrations: Array<{
+    insight_id: string;
+    severity: 'critical' | 'warning' | 'opportunity' | 'positive';
+    headline: string;
+    body: string;
+    grounded_signal_ids: string[];
+  }>;
+  model_used: string;
+} {
+  const signals = buildPnlPageSignals();
+  const byId = Object.fromEntries(signals.map((s) => [s.signal_id, s.value_canonical] as const));
+  const cm2 = byId['cm2_mu']!;
+  const cm3 = byId['cm3_mu']!;
+  const adSpend = byId['total_ad_spend_mu']!;
+  const realized = byId['realized_revenue_mu']!;
+  const rtoBp = byId['rto_rate_bp']!;
+
+  // Every numeric token below is an exact echo of a signal integer (Indian-format).
+  // ₹6.5L ad spend leaves CM2 at ₹3.2L → CM3 ₹2.8L. RTO 18.00%.
+  const narrations = [
+    {
+      insight_id: _insightId(),
+      severity: 'positive' as const,
+      headline: `CM2 holds at ${_lakhStr(cm2)} after ${_lakhStr(adSpend)} ad spend`,
+      body:
+        `On ${_lakhStr(realized)} realized revenue, contribution margin after ads (CM2) is ${_lakhStr(cm2)}. ` +
+        `Ad spend of ${_lakhStr(adSpend)} is being earned back — CM2 stays positive.`,
+      grounded_signal_ids: ['realized_revenue_mu', 'cm2_mu', 'total_ad_spend_mu'],
+    },
+    {
+      insight_id: _insightId(),
+      severity: 'warning' as const,
+      headline: `RTO at ${(Number(rtoBp) / 100).toFixed(0)}% is compressing realized revenue`,
+      body:
+        `Return-to-origin is running at ${(Number(rtoBp) / 100).toFixed(0)}%, which already nets out of the ` +
+        `${_lakhStr(realized)} realized base. Lowering RTO flows straight through to CM2 (${_lakhStr(cm2)}).`,
+      grounded_signal_ids: ['rto_rate_bp', 'realized_revenue_mu', 'cm2_mu'],
+    },
+    {
+      insight_id: _insightId(),
+      severity: 'opportunity' as const,
+      headline: `CM3 of ${_lakhStr(cm3)} leaves room after overheads`,
+      body:
+        `After fixed overheads, contribution margin three (CM3) is ${_lakhStr(cm3)} — close to ` +
+        `contribution margin two of ${_lakhStr(cm2)}, so overhead drag is modest. ` +
+        `Profitability is led by the after-ads margin, not ad efficiency alone.`,
+      grounded_signal_ids: ['cm3_mu', 'cm2_mu'],
+    },
+  ];
+
+  return { signals, narrations, model_used: 'deterministic-stub' };
 }
 
 /** Sugandh-Lok Morning Brief seed (registry-derived; NOT LLM numbers). */
@@ -1917,6 +2049,37 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return buildSugandhlokBrief();
+  }
+
+  // Phase-2 slice-9 (feat-ai-insight-narration): GROUNDED small_llm page narration.
+  // READ-ONLY. The LOCAL harness builds the narration from the canonical seed via the
+  // deterministic grounded narrator (no live Claude key) behind the gateway contract;
+  // production flips to the real Haiku gateway by config. Fail-closed on tenancy.
+  async getPageInsights(params: {
+    workspace_id: string;
+    page: string;
+    date_range: DateRange;
+  }): Promise<{ result: PageInsightResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    const { signals, narrations, model_used } = buildSugandhlokPageInsights(params.page);
+    const result: PageInsightResult = {
+      workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+      page: params.page,
+      period: SUGANDH_LOK_CANONICAL.period,
+      data_epoch: DATA_EPOCH,
+      signals,
+      narrations,
+      // faithfulness_ok is the upstream verdict; the deterministic narrator only ever
+      // emits numbers echoed from the signal set, so it is structurally faithful.
+      // The BFF re-asserts via assertInsightFaithfulness before render (defense in depth).
+      faithfulness_ok: true,
+      model_used,
+      cached: false,
+      paradigm: 'small_llm',
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
 
   async submitInsightResponse(params: {

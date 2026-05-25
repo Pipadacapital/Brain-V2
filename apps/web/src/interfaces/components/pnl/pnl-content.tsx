@@ -10,6 +10,7 @@ import { useQueryState, parseAsString } from 'nuqs';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { PnlStatementTable } from '@/interfaces/components/pnl/pnl-statement-table.js';
 import { PnlWaterfallPanel } from '@/interfaces/components/waterfall/pnl-waterfall-panel.js';
+import { InsightStrip } from '@/interfaces/components/insights/insight-strip.js';
 
 export function PnlContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
@@ -73,6 +74,9 @@ export function PnlContent() {
           />
         </div>
       </div>
+
+      {/* Phase-2 slice-9: grounded AI narration overlay — small_llm, faithfulness-gated. */}
+      <InsightStrip page="pnl" date_start={dateStart} date_end={dateEnd} />
 
       <PnlStatementTable date_start={dateStart} date_end={dateEnd} />
 

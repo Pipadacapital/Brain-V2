@@ -45,6 +45,7 @@ import {
   storeIdempotencyResult,
   type IdempotencyStore,
 } from '../domain/idempotency.js';
+import { assertPageInsightGates } from '../domain/insight-gates.js';
 import type { DataPlanePort } from '../domain/proto-types.js';
 
 // ---------------------------------------------------------------------------
@@ -1231,6 +1232,62 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // insights router — Phase-2 slice-9 (feat-ai-insight-narration).
+  // @paradigm small_llm (Haiku) narration; signals are deterministic sql.
+  // 🚨 READ-ONLY: every procedure is a `.query`. There is NO `.mutation`, no
+  //    send/dispatch/execute path. The narration reaches NO write/MCP tool
+  //    (recommendation-only-until-graduated). A structural test asserts no mutation.
+  // CF-S9-FAITHFULNESS-1: assertPageInsightGates re-validates that every narrated
+  //    number is grounded in the deterministic signal set BEFORE render
+  //    (defense in depth over the intelligence-service gateway).
+  // CF-S9-NO-TOOL-REACH-1 + CF-S9-INJECTION-1 enforced in the same gate.
+  // -------------------------------------------------------------------
+  const insightsRouter = router({
+    /** Grounded AI narration for a page (READ). requireRole(ANALYST). */
+    forPage: workspaceProc
+      .input(
+        z.object({
+          page: z.enum(['pnl', 'store', 'dashboard']),
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `insights.forPage requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        const { result } = await dataPlane.getPageInsights({
+          workspace_id: ctx.workspaceId,
+          page: input.page,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+
+        // CF-S9: fail-closed BEFORE render — faithfulness + injection + no-tool-reach.
+        // Throws (→ INTERNAL error, no narration leaves the BFF) if ANY number in a
+        // narration is not in the deterministic signal set, if a fence/role-control
+        // sequence survived into output, or if any narration exposes an executable field.
+        assertPageInsightGates(result);
+
+        return {
+          page: result.page,
+          period: result.period,
+          signals: result.signals,
+          narrations: result.narrations,
+          faithfulness_ok: result.faithfulness_ok,
+          model_used: result.model_used,
+          cached: result.cached,
+          paradigm: result.paradigm,
+          data_epoch: result.data_epoch, // CF-C6-AS-OF-STAMP-1
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // Root router
   // -------------------------------------------------------------------
   return router({
@@ -1248,6 +1305,7 @@ export function createBrainRouter(
     calendar: calendarRouter,
     lifecycle: lifecycleRouter,
     morningBrief: morningBriefRouter,
+    insights: insightsRouter,
     device: deviceRouter,
   });
 }

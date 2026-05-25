@@ -832,6 +832,15 @@ export type InsightSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
 
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
+/**
+ * Phase-2 slice-9 page-narration severity scale (DISTINCT from the Morning Brief
+ * InsightSeverity). Mirrors the legacy page-insight prompt's 4-value scale
+ * (critical → warning → opportunity → positive). Kept separate per the
+ * Single-Primitive Rule — narration severity and Morning-Brief severity are
+ * different domains; overloading one enum would couple them.
+ */
+export type PageInsightSeverity = 'critical' | 'warning' | 'opportunity' | 'positive';
+
 /** Server-driven graduation status. CF-C6-MB-GRADUATED-LABEL-1. */
 export type GraduationStatus = 'LOGGED_AS_VOTE' | 'QUEUED_FOR_EXECUTION';
 
@@ -875,6 +884,60 @@ export interface MorningBrief {
   items: InsightItem[];
   data_epoch: Date;
   freshness_label: string;
+}
+
+// ---------------------------------------------------------------------------
+// Phase-2 slice-9 (feat-ai-insight-narration) — page-level AI narration.
+// @paradigm small_llm (Haiku) for narration; the SIGNALS are deterministic sql.
+// CF-S9: narration is GROUNDED in the deterministic registry numbers (slices 1-8);
+//   the LLM may only DESCRIBE the signals, NEVER produce a metric value.
+//   Every number in the narration is a `grounded_value_mu` echoed verbatim from
+//   the deterministic signal set — the BFF faithfulness gate set-compares them.
+// READ-ONLY: this surface reaches NO write/MCP tool (recommendation-only-until-graduated).
+// ---------------------------------------------------------------------------
+
+/**
+ * One deterministic grounding signal that the narration is allowed to cite.
+ * value_canonical is ALWAYS an integer minor unit (paise / bp / count) — NEVER float.
+ * Mirrors intelligence-service domain.faithfulness.validator.Signal.
+ */
+export interface InsightSignal {
+  signal_id: string;
+  value_canonical: bigint;   // paise / bp / count — NEVER float
+  label: string;             // human label for render (e.g. "CM2 (After Ads)")
+}
+
+/**
+ * One grounded narrated insight. The `body` is the small_llm narration; every
+ * numeric token in `body` MUST appear in `grounded_signal_ids` (faithfulness).
+ * severity is a closed enum; there is NO executable action field (READ-only).
+ */
+export interface PageInsightNarration {
+  insight_id: string;
+  severity: PageInsightSeverity;    // critical | warning | opportunity | positive (closed)
+  headline: string;                 // <= ~10 words, numbers grounded
+  body: string;                     // 1-2 sentence narration, numbers grounded
+  /** The signal_ids this narration cites — every body number traces to one of these. */
+  grounded_signal_ids: string[];
+}
+
+/**
+ * The /page narration payload. `signals` is the deterministic ground truth set;
+ * `narrations` is the small_llm output, faithfulness-validated against `signals`.
+ * `faithfulness_ok` is the gateway/BFF verdict (true required before render).
+ * `model_used` + `cached` make the cost path observable.
+ */
+export interface PageInsightResult {
+  workspace_id: string;
+  page: string;
+  period: string;
+  data_epoch: Date;
+  signals: InsightSignal[];
+  narrations: PageInsightNarration[];
+  faithfulness_ok: boolean;
+  model_used: string;               // e.g. "anthropic/claude-haiku-3-5" or "deterministic-stub"
+  cached: boolean;                  // filtersHash cache hit (cost: zero LLM call)
+  paradigm: 'small_llm';            // pinned: never frontier per page
 }
 
 export interface SubmitInsightResult {
@@ -1081,6 +1144,19 @@ export interface DataPlanePort {
     workspace_id: string;
     date: string;
   }): Promise<MorningBrief>;
+
+  /**
+   * Phase-2 slice-9 (feat-ai-insight-narration): page-level AI narration.
+   * CF-S9: small_llm (Haiku) narration GROUNDED in the deterministic signals.
+   * READ-ONLY — no write/MCP-tool reach. Additive method on the SAME port.
+   * In the LOCAL harness this routes to the deterministic grounded narrator
+   * (no live Claude key); production flips to the real Haiku gateway by config.
+   */
+  getPageInsights(params: {
+    workspace_id: string;
+    page: string;
+    date_range: DateRange;
+  }): Promise<{ result: PageInsightResult; data_epoch: Date }>;
 
   submitInsightResponse(params: {
     workspace_id: string;
