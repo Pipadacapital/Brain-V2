@@ -479,3 +479,14 @@
 **Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion
 **Open questions:** None. Candidate rule surfaced to Founder (/adopt-rule verify-the-verifier-mutation-on-gate).
 **Next:** Founder commit gate (free-text "commit it"); then slice 3 (feat-rto-cod-economics) — NOT auto-started.
+
+## 2026-05-25T14:32:17Z — Rohan (cto-advisor) — feat-rto-cod-economics
+**Stage:** 1 (intake) + 6 (final review) — full high-stakes pipeline driven end-to-end (slice 3 of 9)
+**Action:** ADVANCE at Stage 1 (1 persona: india-rto-cod-numeric-realist:haiku) → PASS at Stage 6 (signed under standing delegation)
+**Personas spawned (Stage 1):** india-rto-cod-numeric-realist:haiku (4 concerns, all bound)
+**Decision:** PASS → /approve-equivalent under delegation; Stage 8 readiness (no commit, no deploy)
+**Rationale:** Ported RTO/COD/logistics/pincode legacy economics Brain-native. READ the actual legacy break-even formula and found the ratified slice table's r*=M/(M+C) was WRONG — bound the FULL legacy formula (500bp, not naive 9493bp) with a non-vacuous cross-language anchor + DDR. 5 metric defs TS<->Python byte-identical; 4 fail-closed use-cases; 4 tRPC procedures; 4 real pages. SQL-only, zero new dep, per-SKU GST untouched, no outbound channel.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion
+**Independent Stage-6 verification:** re-ran parity gate (PASS, non-vacuous), 31 use-case tests, 10 router tests, live wire re-smoke (break-even=500≠9493), hand re-derivation (pincode 6938).
+**Open questions:** NDR metric deferred (no honest pre-Child-3 source); rto_cost_mu/rto_revenue_lost_mu DDR rows UNSIGNED-PENDING child-3-shopify-connector.
+**Next:** orchestrator commits slice-scoped paths (pending-founder-commit.md), then slice 4 (feat-marketing-acquisition) on its turn.

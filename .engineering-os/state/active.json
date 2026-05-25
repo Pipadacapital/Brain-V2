@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-25T14:30:00Z",
-  "updated_by": "cto-advisor",
+  "updated_at": "2026-05-25T14:32:17Z",
+  "updated_by": "cto-advisor (Rohan) \u2014 slice-3 Stage-6 PASS",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3025,6 +3025,42 @@
       "updated_at": "2026-05-25T14:30:00Z",
       "stage6": "PASS",
       "founder_gate": "APPROVE (delegated; not committed)"
+    },
+    {
+      "req_id": "feat-rto-cod-economics",
+      "parent_epic": "epic-phase2-feature-parity",
+      "slice": 3,
+      "title": "RTO + COD/prepaid economics + logistics + pincode",
+      "status": "approved",
+      "stage": 8,
+      "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Trigger surfaces: multi-tenancy + money-financial + schema-proto (5 registry defs + DDR) + india-compliance-data (RTO/COD moat); inherited high-stakes from epic.",
+      "trigger_surfaces_touched": [
+        "multi-tenancy",
+        "money-financial",
+        "schema-proto",
+        "india-compliance-data"
+      ],
+      "blocks": [
+        "feat-store-order-fact-layer"
+      ],
+      "dependency_check": "blocks satisfied (feat-store-order-fact-layer approved)",
+      "paradigm": "sql",
+      "pages": [
+        "/rto-analytics",
+        "/cod-prepaid",
+        "/logistics",
+        "/pincode-intelligence"
+      ],
+      "run_folder": ".engineering-os/runs/2026-05-25T14-32-17Z__c3a9f1__feat-rto-cod-economics__rishabhporwal",
+      "decision": "ADVANCE -> PASS (Stage-6, signed under delegation)",
+      "needs_personas": [
+        "india-rto-cod-numeric-realist:haiku"
+      ],
+      "ddr_signoff": "breakeven_cod_rto_rate_bp + pincode_reliability_score SIGNED (correctness-fixture); rto_cost_mu/rto_revenue_lost_mu UNSIGNED-PENDING child-3-shopify-connector",
+      "commit": "pending-founder-commit.md (nothing committed)",
+      "updated_at": "2026-05-25T14:32:17Z"
     }
   ]
 }
