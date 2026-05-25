@@ -644,3 +644,15 @@
 **Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, integration-connectors.
 **Open questions:** none blocking. Founder must register 3 redirect URIs for live e2e + authorize the commit. pool-isolation.test.ts (Child-1) needs a pgbouncer :5433 container (pre-existing env gap).
 **Next:** Founder — register redirect URIs + 'commit it' (sliceD-pending-founder-commit.md, explicit paths, real .env excluded).
+
+## 2026-05-25T21:37:00Z — Rohan (cto-advisor) — feat-connector-data-ingestion (epic-real-auth-supabase slice E)
+**Stage:** 1→6 (full high-stakes pipeline, single-operator; Agent tool unavailable in subagent context)
+**Action:** Built slice E — connector data ingestion (Shopify orders/products + Meta/Google ad spend) → real analytics; Stage-6 PASS.
+**Personas (Stage 1):** 1 — connector-ingest-to-analytics-parity-realist:sonnet (P-001..P-007, all ACCEPTED + PROVEN at the analytics layer).
+**Decision:** PASS → Founder gate SIGNED under standing delegation (no hard-rule deviation per §9).
+**Rationale:** WIRED two already-stress-tested primitives (Child-3 ingest contract + slice-D custody) — NOT a rebuild. New work = per-vendor fetch seam (fixture in tests / live-needs-consent in prod), an ACL (decimal-string/micros → BIGINT minor units WITHOUT float; per-SKU GST; COD/Prepaid; opaque customer_ref — DPDP), idempotent fact UPSERT keyed on a UNIQUE business key (re-sync byte-identical at the AGGREGATE layer), and a DispatchingDataPlane routing Sugandh→seed / others→LocalDbDataPlane reading their OWN facts. Honest-empty (18 factories) for non-fed surfaces — NEVER the seed. @paradigm sql/io, ZERO LLM. RLS FORCE on all 4 fact tables; token never logged; READ-only (no outbound → no DLT/NCPR surface). ZERO new deps. Key architectural reframe at S1: the analytics read from a SEED, not a table — the slice's hardest work is the read-seam + dispatcher, not the writer.
+**Verify-the-verifier:** the verification caught 2 real build-time bugs (a wrong micros→minor-units test expectation+fixture; a BigInt JSON.stringify). Gates real.
+**Tests:** core 21 unit + 6 integration (live local Postgres, P-001..P-007 captured); regression gateway 225, core 245/30-skip, web 89 — all green; typecheck 0×3; live wire smoke (Sugandh→₹18.5L seed, non-Sugandh→honest empty 0); token-leak gate PASS; .env git-ignored+untracked (proven).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, integration-connectors, idempotency-handling.
+**Open questions:** LIVE pull verified-by-fixture (Founder has only app creds — needs interactive OAuth consent to mint per-account tokens); COGS/RTO/Shiprocket/cohorts not connector-fed → honest empty. Both stated, not faked.
+**Next:** Founder registers 3 redirect URIs + consent + "Sync now" to confirm LIVE pull; then 'commit it' (pending-founder-commit.md, exact paths, real .env excluded). STOP after slice E.

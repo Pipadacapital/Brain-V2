@@ -3396,6 +3396,28 @@
       "founder_gate": "signed-delegated",
       "updated_at": "2026-05-25T20-25-53Z",
       "notes": "DB-backed onboarding/membership on LOCAL dev Postgres (docker brain_dev) with Brain-native FORCE RLS. DbMembershipResolver replaces LocalSeed on real-auth path. Deferred to slice D: Shopify/Woo live connect, invite email send. Nothing committed; sliceC-pending-founder-commit.md produced."
+    },
+    {
+      "req_id": "feat-connector-data-ingestion",
+      "title": "Connector data ingestion — Shopify/Meta/Google pull → real analytics (epic-real-auth-supabase slice E)",
+      "parent_epic": "epic-real-auth-supabase",
+      "slice": "E",
+      "status": "awaiting-founder-commit",
+      "stage": 7,
+      "current_owner": "founder",
+      "run_folder": ".engineering-os/runs/2026-05-25T21-23-13Z__b6dd6d__feat-connector-data-ingestion__rishabhporwal",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Trigger surfaces: connectors (live pull), pii (Shopify customer fields minimized to opaque ref + pincode/city), multi-tenancy (workspace_id RLS on 4 new fact tables), secrets (custody token used to call providers), money (orders/spend BIGINT minor units), schema (new fact tables). No carve-out (live multi-tenant money+PII+token use). Inherited high-stakes from epic.",
+      "trigger_surfaces_touched": ["connectors", "pii", "multi-tenancy", "secrets", "money", "schema-proto"],
+      "paradigm": "sql/io",
+      "personas": ["connector-ingest-to-analytics-parity-realist:sonnet"],
+      "intake_decision": "ADVANCE",
+      "stage6_decision": "PASS",
+      "founder_gate": "signed-delegated",
+      "hard_rule_deviation": "none",
+      "delegation_basis": "Founder standing delegation to CTO Advisor (MEMORY: feedback_founder_delegates_to_cto_advisor).",
+      "updated_at": "2026-05-25T21-37-00Z",
+      "notes": "Sync now pulls real orders/products + ad spend using slice-D custody token; ACL converts decimal-string/micros to BIGINT minor units WITHOUT float, per-SKU GST, COD/Prepaid, opaque customer_ref (DPDP); idempotent fact UPSERT (re-sync byte-identical at aggregate layer) under FORCE RLS; DispatchingDataPlane serves connected workspace its OWN facts, Sugandh keeps seed, non-fed surfaces honest-empty. READ-only (no outbound), zero LLM, token never logged. Verified by fixtures (real API shapes) + live local Postgres P-001..P-007. 21 unit + 6 integration + 225/245/89 suites; typecheck 0x3; ZERO new deps. LIVE pull needs Founder OAuth consent. Nothing committed; pending-founder-commit.md produced. epic-real-auth-supabase slices A-E COMPLETE."
     }
   ]
 }
