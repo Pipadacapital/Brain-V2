@@ -1158,6 +1158,139 @@ def _goal_rag_count(
 
 
 # ---------------------------------------------------------------------------
+# Lifecycle + Timings + Email/SMS performance (Phase-2 slice-8: feat-lifecycle-timings-email)
+# READ/ANALYTICS ONLY — REPORTING on past performance, NEVER an outbound send.
+# Byte-identical pairs with packages/lib-metrics/src/registry/definitions.ts.
+#
+# LEGACY GROUND TRUTH (read at Stage 1, NOT the slice-table shorthand — Rohan Findings;
+# the standing lesson bit an 8th time):
+#   F1. Lifecycle is NOT classic RFM. lib/metrics/customer-lifecycle.ts classifies
+#       new/active/at_risk/churned from recency (calendar days since last order) vs the
+#       workspace's EMPIRICAL repeat-gap percentiles p40/p80 (churn-thresholds.ts), with
+#       fixed fallbacks 45/120 when <20 gaps. NO recency/frequency/monetary quintile SCORING
+#       exists. "RFM scores/segments" would be a phantom. The classifier + the p40/p80
+#       percentile are use-case logic (LifecycleStatesQuery), like compute_goal_rag — NOT a
+#       registry scalar. Monetary enters only as revenue-by-bucket attribution.
+#   F2. Timings is NOT "best hours/days" (best_send_time). lib/timings/compute.ts computes
+#       INTER-ORDER GAP intervals (days 1→2, 2→3, 3→4 median/mean) + 2nd/3rd/4th repeat % +
+#       reactivationDays = 0.8 × median(1→2 gap). NO hour-of-day / day-of-week analysis.
+#       best_send_time is a phantom (5th decommission-before-birth lineage:
+#       pamer_bp/cac_payback_months/product_cm1_mu/festival_lift).
+#   F3. Timings 2nd-order% is a WINDOWED first-order cohort (all-product), DISTINCT from
+#       slice-6 first_product_second_order_rate_bp (lifetime ≥2 / per-first-product cohort).
+#       De-conflated — NOT reused.
+#   F4. email_cm2_mu is a PHANTOM (6th decommission-before-birth). lib/email-performance/
+#       compute.ts computes NO CM2 — only revenue + open/click/rev-per-recipient/rev-per-open/
+#       unsub/spam rates from Klaviyo emailPerformance rows. There is no margin attribution to
+#       email. Port revenue + the rates only.
+#
+# COMPLIANCE BOUNDARY (epic flag, Shreya S4): zero outbound-channel surface. sendDate is a
+# READ column on already-sent Klaviyo rows. open/click/revenue = REPORTING, not sending.
+# ---------------------------------------------------------------------------
+
+# ── Reactivation window (days) — Brain-native integerized ──────────────────
+# Legacy lib/timings/compute.ts: REACTIVATION_PCT_OF_1TO2 = 0.8; reactivationDays =
+#   0.8 × typical(1→2 gap). Brain integer half-up: round(0.8 × median_days) =
+#   (median_days * 8 + 5) // 10  (half-up, positive ints; median_days already integer days).
+# This is the recommended re-engagement timing, NOT a send trigger. correctness_fixture
+# (Brain-native integerized; legacy float is not a byte comparand). NULL on median<=0.
+# WORKED ANCHOR (CF-S8-REACT-1): median_1to2=30 → (30*8+5)//10 = 245//10 = 24 days.
+#   A "× whole interval (no 0.8)" mutant → 30 — KILLED.
+def _reactivation_window_days(median_1to2_days: int) -> int | None:
+    """Recommended reactivation window = 0.8 × median 1→2 gap (days), integer half-up.
+
+    @paradigm: sql — integer arithmetic only. NULL when median_1to2_days <= 0.
+    Brain-native integerized (legacy 0.8 float factor) → correctness_fixture + DDR.
+    REPORTING/recommendation only — never triggers an outbound send (compliance boundary).
+    """
+    if median_1to2_days <= 0:
+        return None
+    return (median_1to2_days * 8 + 5) // 10  # round(0.8 × m), half-up
+
+
+reactivation_window_days = MetricDefinition(
+    id="reactivation_window_days",
+    kind="count",
+    unit="count",
+    formula_py=_reactivation_window_days,
+    clickhouse_sql=(
+        "if(median_1to2_days > 0, intDiv(median_1to2_days * 8 + 5, 10), NULL)"
+    ),
+    parity_class="correctness_fixture",  # parity_gap:true — Brain-native integerized 0.8 factor
+    scale=1,
+)
+
+
+# ── Email open rate (basis points) ─────────────────────────────────────────
+# Legacy lib/email-performance/compute.ts: openRate = unique_opens / delivered (0 if del=0).
+# Klaviyo emailPerformance rows are an EXACT integer comparand → shadow_compare. Brain = bp FLOOR.
+# WORKED ANCHOR (CF-S8-EMAIL-OPEN-1): unique_opens=450, delivered=1000 →
+#   intDiv(450*10000,1000)=4500bp (45.00%). A "÷ unique_opens (rev-per-open denominator)"
+#   mutant → intDiv(450*10000,450)=10000bp — KILLED.
+def _email_open_rate_bp(unique_opens: int, delivered: int) -> int | None:
+    """Email open rate = unique_opens / delivered in bp. @paradigm: sql — FLOOR. NULL on delivered<=0."""
+    return _ratio_bp(unique_opens, delivered)
+
+
+email_open_rate_bp = MetricDefinition(
+    id="email_open_rate_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_email_open_rate_bp,
+    clickhouse_sql="if(delivered > 0, intDiv(unique_opens * 10000, delivered), NULL)",
+    parity_class="shadow_compare",
+    scale=10000,
+)
+
+
+# ── Email click rate (basis points) ────────────────────────────────────────
+# Legacy: clickRate = unique_clicks / delivered. shadow_compare. Brain = bp FLOOR.
+# WORKED ANCHOR (CF-S8-EMAIL-CLICK-1): unique_clicks=120, delivered=1000 →
+#   intDiv(120*10000,1000)=1200bp (12.00%). A "÷ unique_opens not delivered" mutant
+#   (delivered=1000, opens=450) → intDiv(120*10000,450)=2666bp — KILLED.
+def _email_click_rate_bp(unique_clicks: int, delivered: int) -> int | None:
+    """Email click rate = unique_clicks / delivered in bp. @paradigm: sql — FLOOR. NULL on delivered<=0."""
+    return _ratio_bp(unique_clicks, delivered)
+
+
+email_click_rate_bp = MetricDefinition(
+    id="email_click_rate_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_email_click_rate_bp,
+    clickhouse_sql="if(delivered > 0, intDiv(unique_clicks * 10000, delivered), NULL)",
+    parity_class="shadow_compare",
+    scale=10000,
+)
+
+
+# ── Email revenue per recipient (minor units) ──────────────────────────────
+# Legacy: revenuePerRecipient = revenue / delivered (0 if del=0). revenue is a Klaviyo-synced
+# money column → BIGINT minor units. shadow_compare. Brain = intDiv(revenue_mu, delivered).
+# WORKED ANCHOR (CF-S8-EMAIL-RPR-1): revenue_mu=5000000 (₹50,000), delivered=1000 →
+#   intDiv(5000000,1000)=5000µ (₹50.00 per recipient). A "÷ unique_opens (rev-per-open)"
+#   mutant (opens=450) → intDiv(5000000,450)=11111µ — KILLED.
+def _email_revenue_per_recipient_mu(revenue_mu: int, delivered: int) -> int | None:
+    """Email revenue per recipient = revenue / delivered in minor units.
+
+    @paradigm: sql — integer FLOOR. NULL on delivered<=0. revenue is attributed past
+    performance (REPORTING) — never a send. shadow_compare (Klaviyo comparand exists).
+    """
+    return _int_floor_div_or_null(revenue_mu, delivered)
+
+
+email_revenue_per_recipient_mu = MetricDefinition(
+    id="email_revenue_per_recipient_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_email_revenue_per_recipient_mu,
+    clickhouse_sql="if(delivered > 0, intDiv(revenue_mu, delivered), NULL)",
+    parity_class="shadow_compare",
+    scale=1,
+)
+
+
+# ---------------------------------------------------------------------------
 # RTO / COD / Logistics / Pincode economics (Phase-2 slice-3: feat-rto-cod-economics)
 # The single largest controllable Indian-D2C margin leak. rto_rate_bp / prepaid_rate_bp
 # are REUSED from Child-4 — these are the COST / ECONOMICS layer on top.
@@ -1389,6 +1522,15 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     # use-case classification, NOT a registry metric). festival_lift DECOMMISSIONED before birth
     # (no legacy comparand — Rohan Stage-1 Finding 2).
     "goal_attainment_bp":                 goal_attainment_bp,
+    # Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY (no outbound surface).
+    # Lifecycle classification + p40/p80 percentile are use-case logic (LifecycleStatesQuery),
+    # NOT registry scalars (Finding 1). best_send_time (Finding 2) + email_cm2_mu (Finding 4)
+    # DECOMMISSIONED before birth — no legacy comparand. Timings 2nd-order% is windowed cohort,
+    # distinct from slice-6 first_product_second_order_rate_bp (Finding 3) — NOT reused.
+    "reactivation_window_days":           reactivation_window_days,
+    "email_open_rate_bp":                 email_open_rate_bp,
+    "email_click_rate_bp":                email_click_rate_bp,
+    "email_revenue_per_recipient_mu":     email_revenue_per_recipient_mu,
 }
 
 

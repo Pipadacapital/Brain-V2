@@ -958,6 +958,116 @@ export const _CF_S7_RAG_LOWER_BETTER_RED_ANCHOR = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY.
+// REPORTING on past lifecycle/timing/email performance — NEVER an outbound send.
+//
+// LEGACY GROUND TRUTH (read at Stage 1 — Rohan Findings; the standing lesson bit an 8th time):
+//   F1. Lifecycle is NOT classic RFM — it is recency-vs-empirical-churn-percentile classification
+//       (new/active/at_risk/churned vs p40/p80 repeat-gap percentiles). The classifier + percentile
+//       are use-case logic (LifecycleStatesQuery), like computeGoalRag — NOT registry scalars.
+//   F2. Timings is NOT "best hours/days" — it is inter-order gap medians + repeat % +
+//       reactivationDays = 0.8 × median(1→2). best_send_time DECOMMISSIONED before birth (phantom).
+//   F3. Timings 2nd-order% is a windowed first-order cohort, DISTINCT from slice-6
+//       first_product_second_order_rate_bp — NOT reused.
+//   F4. email_cm2_mu DECOMMISSIONED before birth (phantom) — legacy email-performance has NO CM2,
+//       only revenue + open/click/rev-per-recipient/rev-per-open/unsub/spam rates.
+//
+// COMPLIANCE BOUNDARY (Shreya S4): sendDate is a READ column on already-sent Klaviyo rows;
+// open/click/revenue are REPORTING, not sending. Zero outbound-channel surface added.
+// ---------------------------------------------------------------------------
+
+// Reactivation window (days) — Brain-native integerized 0.8 × median(1→2 gap), half-up.
+// = (median_1to2_days * 8 + 5) / 10. A recommendation timing, NOT a send trigger.
+// WORKED ANCHOR (CF-S8-REACT-1): median=30 → (30*8+5)/10 = 245/10 = 24. "× whole interval"
+//   mutant → 30 (killed).
+export const REACTIVATION_WINDOW_DAYS: MetricDefinition = {
+  id: 'reactivation_window_days',
+  kind: 'count',
+  unit: 'count',
+  scale: 1,
+  // Caller guards: NULL if median_1to2_days <= 0.
+  formula_ts: (median_1to2_days: bigint): bigint =>
+    median_1to2_days > 0n ? (median_1to2_days * 8n + 5n) / 10n : 0n,
+  clickhouse_sql:
+    'if(median_1to2_days > 0, intDiv(median_1to2_days * 8 + 5, 10), NULL)',
+  display_only: false,
+  parity_class: 'correctness_fixture',
+};
+
+// Email open rate (bp) = unique_opens / delivered. shadow_compare (Klaviyo comparand).
+// WORKED ANCHOR (CF-S8-EMAIL-OPEN-1): opens=450, delivered=1000 → 4500bp. "÷ unique_opens"
+//   mutant → 10000bp (killed).
+export const EMAIL_OPEN_RATE_BP: MetricDefinition = {
+  id: 'email_open_rate_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  formula_ts: (unique_opens: bigint, delivered: bigint): number =>
+    ratioToBasisPoints(unique_opens, delivered),
+  clickhouse_sql: 'if(delivered > 0, intDiv(unique_opens * 10000, delivered), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Email click rate (bp) = unique_clicks / delivered. shadow_compare.
+// WORKED ANCHOR (CF-S8-EMAIL-CLICK-1): clicks=120, delivered=1000 → 1200bp. "÷ unique_opens(450)"
+//   mutant → 2666bp (killed).
+export const EMAIL_CLICK_RATE_BP: MetricDefinition = {
+  id: 'email_click_rate_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  formula_ts: (unique_clicks: bigint, delivered: bigint): number =>
+    ratioToBasisPoints(unique_clicks, delivered),
+  clickhouse_sql: 'if(delivered > 0, intDiv(unique_clicks * 10000, delivered), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Email revenue per recipient (mu) = revenue / delivered (BigInt FLOOR). shadow_compare.
+// revenue = ATTRIBUTED PAST performance (REPORTING), never a send. NULL on delivered<=0.
+// WORKED ANCHOR (CF-S8-EMAIL-RPR-1): revenue=5000000µ, delivered=1000 → 5000µ. "÷ unique_opens(450)"
+//   mutant → 11111µ (killed).
+export const EMAIL_REVENUE_PER_RECIPIENT_MU: MetricDefinition = {
+  id: 'email_revenue_per_recipient_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (revenue_mu: bigint, delivered: bigint): bigint =>
+    delivered > 0n ? revenue_mu / delivered : 0n,
+  clickhouse_sql: 'if(delivered > 0, intDiv(revenue_mu, delivered), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// CF-S8 NON-VACUOUS FORMULA ANCHORS (slice-8; exported for the cross-language anchor test).
+export const _CF_S8_REACTIVATION_ANCHOR = {
+  median_1to2_days: 30n,
+  expected_days: 24, // round(0.8 × 30); "× whole interval (no 0.8)" mutant → 30 (killed)
+  mutant_no_factor_days: 30,
+} as const;
+export const _CF_S8_EMAIL_OPEN_ANCHOR = {
+  unique_opens: 450n,
+  delivered: 1000n,
+  expected_bp: 4500, // 45.00%; "÷ unique_opens" mutant → 10000bp (killed)
+  mutant_bp: 10000,
+} as const;
+export const _CF_S8_EMAIL_CLICK_ANCHOR = {
+  unique_clicks: 120n,
+  delivered: 1000n,
+  unique_opens: 450n,
+  expected_bp: 1200, // 12.00%; "÷ unique_opens" mutant → 2666bp (killed)
+  mutant_bp: 2666,
+} as const;
+export const _CF_S8_EMAIL_RPR_ANCHOR = {
+  revenue_mu: 5000000n,
+  delivered: 1000n,
+  unique_opens: 450n,
+  expected_mu: 5000n, // ₹50.00/recipient; "÷ unique_opens" mutant → 11111µ (killed)
+  mutant_mu: 11111n,
+} as const;
+
+// ---------------------------------------------------------------------------
 // Registry export (all definitions indexed by id)
 // ---------------------------------------------------------------------------
 
@@ -1009,6 +1119,14 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   // is a use-case classification, NOT a registry metric). festival_lift DECOMMISSIONED
   // before birth (no legacy comparand — Rohan Stage-1 Finding 2).
   goal_attainment_bp: GOAL_ATTAINMENT_BP,
+  // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY (no outbound surface).
+  // Lifecycle classification + p40/p80 percentile are use-case logic, NOT registry scalars (F1).
+  // best_send_time (F2) + email_cm2_mu (F4) DECOMMISSIONED before birth — no legacy comparand.
+  // Timings 2nd-order% is windowed cohort, distinct from first_product_second_order_rate_bp (F3).
+  reactivation_window_days: REACTIVATION_WINDOW_DAYS,
+  email_open_rate_bp: EMAIL_OPEN_RATE_BP,
+  email_click_rate_bp: EMAIL_CLICK_RATE_BP,
+  email_revenue_per_recipient_mu: EMAIL_REVENUE_PER_RECIPIENT_MU,
 } as const;
 
 /** All metric ids that are display_only (must never appear in decision thresholds). */

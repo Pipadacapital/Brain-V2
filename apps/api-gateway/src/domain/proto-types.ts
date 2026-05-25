@@ -721,6 +721,102 @@ export interface CalendarReportFilterInput {
 }
 
 // ---------------------------------------------------------------------------
+// Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY.
+// Lifecycle states (recency-vs-percentile), order timings (inter-order gaps),
+// email/SMS PERFORMANCE reporting. NO outbound-channel surface (Shreya S4).
+// best_send_time + email_cm2 are phantoms (Findings 2, 4) — not modelled.
+// ---------------------------------------------------------------------------
+
+export type LifecycleBucketName = 'new' | 'active' | 'at_risk' | 'churned';
+
+export interface LifecycleBucketRow {
+  bucket: LifecycleBucketName;
+  customer_count: bigint;
+  revenue_mu: bigint;       // trailing-window revenue attributed to the bucket
+  order_count: bigint;
+}
+
+export interface LifecycleStatesResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  p40_days: number;
+  p80_days: number;
+  used_fallback: boolean;
+  buckets: LifecycleBucketRow[];
+  net_active: bigint;          // new + active
+  total_customers: bigint;
+  unattributed_revenue_mu: bigint;
+  unattributed_order_count: bigint;
+  currency_code: string;
+}
+
+export type TimingsMetric = 'median' | 'mean';
+export type TimingsGroupByName = 'product' | 'variant' | 'vendor' | 'productType';
+
+export interface TimingsRow {
+  group_id: string;
+  label: string;
+  group_by: string;
+  first_orders: bigint;
+  second_orders_bp: number;
+  third_orders_bp: number;
+  fourth_orders_bp: number;
+  days_1to2: number | null;
+  days_2to3: number | null;
+  days_3to4: number | null;
+  reactivation_window_days: number | null;  // 0.8 × median(1→2); a RECOMMENDATION, never a send
+}
+
+export interface OrderTimingsResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  metric: TimingsMetric;
+  summary: TimingsRow;
+  groups: TimingsRow[];
+  currency_code: string;
+}
+
+export interface TimingsFilterInput {
+  metric?: TimingsMetric;
+  group_by?: TimingsGroupByName;
+}
+
+export type EmailPerfGroupByName = 'campaign' | 'flow' | 'date' | 'channel' | 'dow';
+
+export interface EmailPerfRow {
+  key: string;
+  label: string;
+  channel: string;                  // "email" | "sms" — REPORTING tag, not a send target
+  delivered: bigint;
+  unique_opens: bigint;
+  unique_clicks: bigint;
+  orders: bigint;
+  revenue_mu: bigint;               // attributed past performance (REPORTING, never a send)
+  unsubscribes: bigint;
+  spam_complaints: bigint;
+  open_rate_bp: number | null;
+  click_rate_bp: number | null;
+  revenue_per_recipient_mu: bigint | null;
+}
+
+export interface EmailSmsPerformanceResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  group_by: EmailPerfGroupByName;
+  rows: EmailPerfRow[];
+  total_delivered: bigint;
+  total_revenue_mu: bigint;
+  currency_code: string;
+}
+
+export interface EmailSmsFilterInput {
+  group_by?: EmailPerfGroupByName;
+}
+
+// ---------------------------------------------------------------------------
 // Intelligence proto types (brain.intelligence.v1)
 // ---------------------------------------------------------------------------
 
@@ -961,6 +1057,25 @@ export interface DataPlanePort {
     date_range: DateRange;
     filters?: CalendarReportFilterInput;
   }): Promise<{ result: CalendarReportResult; data_epoch: Date }>;
+
+  // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. Additive read methods
+  // on the SAME port (CF-C6-DATA-SEAM-1). NO send/dispatch method is added — Shreya S4.
+  getLifecycleStates(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: LifecycleStatesResult; data_epoch: Date }>;
+
+  getOrderTimings(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: TimingsFilterInput;
+  }): Promise<{ result: OrderTimingsResult; data_epoch: Date }>;
+
+  getEmailSmsPerformance(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: EmailSmsFilterInput;
+  }): Promise<{ result: EmailSmsPerformanceResult; data_epoch: Date }>;
 
   getMorningBrief(params: {
     workspace_id: string;

@@ -72,6 +72,14 @@ import type {
   CalendarReportRow,
   CalendarCell,
   CalendarReportFilterInput,
+  LifecycleStatesResult,
+  LifecycleBucketRow,
+  OrderTimingsResult,
+  TimingsRow,
+  TimingsFilterInput,
+  EmailSmsPerformanceResult,
+  EmailPerfRow,
+  EmailSmsFilterInput,
 } from '../domain/proto-types.js';
 import {
   INVENTORY_DAYS_LEFT,
@@ -83,6 +91,11 @@ import {
   computeGoalRag,
   goalHigherBetter,
   type GoalRag,
+  // Phase-2 slice-8: READ/ANALYTICS ONLY
+  REACTIVATION_WINDOW_DAYS,
+  EMAIL_OPEN_RATE_BP,
+  EMAIL_CLICK_RATE_BP,
+  EMAIL_REVENUE_PER_RECIPIENT_MU,
 } from '@brain/lib-metrics';
 
 // ---------------------------------------------------------------------------
@@ -1441,6 +1454,167 @@ class InMemoryGoalStore {
 }
 
 // ---------------------------------------------------------------------------
+// Phase-2 slice-8 (feat-lifecycle-timings-email) seeded builders — READ/ANALYTICS ONLY.
+// Every derived value is computed through the canonical registry formula (one source of
+// truth). NO outbound send / dispatch / audience push anywhere in these builders (Shreya S4).
+// ---------------------------------------------------------------------------
+
+// Customer-lifecycle report: recency-vs-empirical-percentile buckets (NOT RFM scoring).
+function buildSugandhlokLifecycleStates(): LifecycleStatesResult {
+  // Sugandh Lok empirical churn thresholds (from repeat-gap percentiles): p40=30, p80=75.
+  const buckets: LifecycleBucketRow[] = [
+    { bucket: 'new',     customer_count: 120n, revenue_mu: 3_600_000n, order_count: 120n },
+    { bucket: 'active',  customer_count: 340n, revenue_mu: 18_500_000n, order_count: 520n },
+    { bucket: 'at_risk', customer_count: 180n, revenue_mu: 4_200_000n, order_count: 190n },
+    { bucket: 'churned', customer_count: 260n, revenue_mu: 0n,          order_count: 0n },
+  ];
+  const netActive =
+    (buckets.find((b) => b.bucket === 'new')?.customer_count ?? 0n) +
+    (buckets.find((b) => b.bucket === 'active')?.customer_count ?? 0n);
+  const total = buckets.reduce((s, b) => s + b.customer_count, 0n);
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    p40_days: 30,
+    p80_days: 75,
+    used_fallback: false,
+    buckets,
+    net_active: netActive,
+    total_customers: total,
+    unattributed_revenue_mu: 850_000n,
+    unattributed_order_count: 14n,
+    currency_code: 'INR',
+  };
+}
+
+// Order-timings: inter-order gap medians + repeat % + reactivation window (0.8×median(1→2)).
+function buildSugandhlokOrderTimings(filters?: TimingsFilterInput): OrderTimingsResult {
+  const metric = filters?.metric === 'mean' ? 'mean' : 'median';
+  const rateBp = (count: number, cohort: number): number =>
+    cohort > 0 ? Math.trunc((count * 10000) / cohort) : 0;
+  const react = (median1to2: number | null): number | null =>
+    median1to2 !== null && median1to2 > 0
+      ? Number(REACTIVATION_WINDOW_DAYS.formula_ts(BigInt(median1to2)))
+      : null;
+
+  const summaryMedian1to2 = 32;
+  const summary: TimingsRow = {
+    group_id: '',
+    label: 'All products',
+    group_by: filters?.group_by ?? 'product',
+    first_orders: 700n,
+    second_orders_bp: rateBp(308, 700),  // 44.00%
+    third_orders_bp: rateBp(126, 700),   // 18.00%
+    fourth_orders_bp: rateBp(49, 700),   // 7.00%
+    days_1to2: summaryMedian1to2,
+    days_2to3: 58,
+    days_3to4: 85,
+    reactivation_window_days: react(summaryMedian1to2),  // round(0.8×32)=26
+  };
+
+  const groupsRaw: Array<{ id: string; label: string; first: number; c2: number; c3: number; c4: number; m12: number; m23: number | null; m34: number | null }> = [
+    { id: 'p-oud', label: 'Royal Oud Attar', first: 260, c2: 130, c3: 60, c4: 25, m12: 28, m23: 50, m34: 80 },
+    { id: 'p-musk', label: 'White Musk', first: 180, c2: 72, c3: 27, c4: 9, m12: 35, m23: 62, m34: null },
+    { id: 'p-rose', label: 'Gulab Rose Mist', first: 120, c2: 42, c3: 12, c4: 0, m12: 40, m23: null, m34: null },
+  ];
+  const groups: TimingsRow[] = groupsRaw
+    .map((g) => ({
+      group_id: g.id,
+      label: g.label,
+      group_by: filters?.group_by ?? 'product',
+      first_orders: BigInt(g.first),
+      second_orders_bp: rateBp(g.c2, g.first),
+      third_orders_bp: rateBp(g.c3, g.first),
+      fourth_orders_bp: rateBp(g.c4, g.first),
+      days_1to2: g.m12,
+      days_2to3: g.m23,
+      days_3to4: g.m34,
+      reactivation_window_days: react(g.m12),
+    }))
+    .sort((a, b) => (a.first_orders === b.first_orders ? a.group_id.localeCompare(b.group_id) : Number(b.first_orders - a.first_orders)));
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    metric,
+    summary,
+    groups,
+    currency_code: 'INR',
+  };
+}
+
+// Email/SMS PERFORMANCE report — REPORTING on past Klaviyo performance, NEVER sending.
+function buildSugandhlokEmailSmsPerformance(filters?: EmailSmsFilterInput): EmailSmsPerformanceResult {
+  const groupBy = (['campaign', 'flow', 'date', 'channel', 'dow'] as const).includes(
+    (filters?.group_by ?? 'campaign') as 'campaign',
+  )
+    ? (filters?.group_by ?? 'campaign')
+    : 'campaign';
+
+  type Seed = { key: string; label: string; channel: string; delivered: number; opens: number; clicks: number; orders: number; revenue_mu: bigint; unsub: number; spam: number };
+  const seedByGroup: Record<string, Seed[]> = {
+    campaign: [
+      { key: 'c:diwali', label: 'Diwali Dhamaka', channel: 'email', delivered: 12000, opens: 5400, clicks: 1440, orders: 320, revenue_mu: 96_00_000n, unsub: 36, spam: 6 },
+      { key: 'c:winter', label: 'Winter Attar Drop', channel: 'email', delivered: 8000, opens: 3120, clicks: 720, orders: 150, revenue_mu: 42_00_000n, unsub: 20, spam: 3 },
+      { key: 'c:sms-flash', label: 'Flash Sale SMS', channel: 'sms', delivered: 5000, opens: 0, clicks: 250, orders: 80, revenue_mu: 24_00_000n, unsub: 10, spam: 0 },
+    ],
+    flow: [
+      { key: 'f:welcome', label: 'Welcome Flow', channel: 'email', delivered: 6000, opens: 3600, clicks: 900, orders: 140, revenue_mu: 49_00_000n, unsub: 8, spam: 1 },
+      { key: 'f:abandoned', label: 'Abandoned Cart', channel: 'email', delivered: 4200, opens: 1890, clicks: 630, orders: 110, revenue_mu: 38_50_000n, unsub: 12, spam: 2 },
+    ],
+    channel: [
+      { key: 'ch:email', label: 'EMAIL', channel: 'email', delivered: 30200, opens: 13110, clicks: 3690, orders: 720, revenue_mu: 225_50_000n, unsub: 76, spam: 12 },
+      { key: 'ch:sms', label: 'SMS', channel: 'sms', delivered: 5000, opens: 0, clicks: 250, orders: 80, revenue_mu: 24_00_000n, unsub: 10, spam: 0 },
+    ],
+    date: [
+      { key: 'd:2026-04-12', label: '2026-04-12', channel: 'email', delivered: 12000, opens: 5400, clicks: 1440, orders: 320, revenue_mu: 96_00_000n, unsub: 36, spam: 6 },
+      { key: 'd:2026-04-20', label: '2026-04-20', channel: 'email', delivered: 8000, opens: 3120, clicks: 720, orders: 150, revenue_mu: 42_00_000n, unsub: 20, spam: 3 },
+    ],
+    dow: [
+      { key: 'w:1', label: 'Mon', channel: 'email', delivered: 9000, opens: 4050, clicks: 1080, orders: 210, revenue_mu: 63_00_000n, unsub: 24, spam: 4 },
+      { key: 'w:3', label: 'Wed', channel: 'email', delivered: 7000, opens: 2940, clicks: 700, orders: 140, revenue_mu: 42_00_000n, unsub: 16, spam: 2 },
+      { key: 'w:5', label: 'Fri', channel: 'email', delivered: 11000, opens: 5060, clicks: 1430, orders: 300, revenue_mu: 89_00_000n, unsub: 32, spam: 5 },
+    ],
+  };
+  const seeds = seedByGroup[groupBy] ?? seedByGroup.campaign;
+
+  const rows: EmailPerfRow[] = seeds.map((s) => ({
+    key: s.key,
+    label: s.label,
+    channel: s.channel,
+    delivered: BigInt(s.delivered),
+    unique_opens: BigInt(s.opens),
+    unique_clicks: BigInt(s.clicks),
+    orders: BigInt(s.orders),
+    revenue_mu: s.revenue_mu,
+    unsubscribes: BigInt(s.unsub),
+    spam_complaints: BigInt(s.spam),
+    open_rate_bp: s.delivered > 0 ? (EMAIL_OPEN_RATE_BP.formula_ts(BigInt(s.opens), BigInt(s.delivered)) as number) : null,
+    click_rate_bp: s.delivered > 0 ? (EMAIL_CLICK_RATE_BP.formula_ts(BigInt(s.clicks), BigInt(s.delivered)) as number) : null,
+    revenue_per_recipient_mu: s.delivered > 0 ? (EMAIL_REVENUE_PER_RECIPIENT_MU.formula_ts(s.revenue_mu, BigInt(s.delivered)) as bigint) : null,
+  }));
+
+  if (groupBy === 'dow') {
+    rows.sort((a, b) => a.key.localeCompare(b.key));
+  } else {
+    rows.sort((a, b) => (a.revenue_mu === b.revenue_mu ? Number(b.delivered - a.delivered) : Number(b.revenue_mu - a.revenue_mu)));
+  }
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    group_by: groupBy,
+    rows,
+    total_delivered: rows.reduce((s, r) => s + r.delivered, 0n),
+    total_revenue_mu: rows.reduce((s, r) => s + r.revenue_mu, 0n),
+    currency_code: 'INR',
+  };
+}
+
+// ---------------------------------------------------------------------------
 // StubDataPlane — the LOCAL harness + test implementation of DataPlanePort.
 // Accepts an optional InMemoryDecisionLog for G-IDEMPOTENT gate testing.
 // ---------------------------------------------------------------------------
@@ -1699,6 +1873,40 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { result: buildSugandhlokCalendarReport(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. Fail-closed on tenancy.
+  async getLifecycleStates(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: LifecycleStatesResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokLifecycleStates(), data_epoch: DATA_EPOCH };
+  }
+
+  async getOrderTimings(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: TimingsFilterInput;
+  }): Promise<{ result: OrderTimingsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokOrderTimings(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  async getEmailSmsPerformance(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: EmailSmsFilterInput;
+  }): Promise<{ result: EmailSmsPerformanceResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    // REPORTING ONLY — no send/dispatch path; reads past Klaviyo performance rows.
+    return { result: buildSugandhlokEmailSmsPerformance(params.filters), data_epoch: DATA_EPOCH };
   }
 
   async getMorningBrief(params: {

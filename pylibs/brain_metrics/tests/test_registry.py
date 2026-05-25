@@ -850,3 +850,94 @@ class TestSliceSevenDirectionalRag:
 
     def test_parity_class_shadow(self):
         assert METRIC_REGISTRY["first_product_second_order_rate_bp"].parity_class == "shadow_compare"
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY.
+# NON-VACUOUS anchors — every positive case paired with a killed mutant.
+# Byte-identity twin: packages/lib-metrics/src/registry/registry.test.ts (slice-8 block).
+# ---------------------------------------------------------------------------
+
+class TestSliceEightReactivationWindow:
+    """reactivation_window_days = round(0.8 × median 1→2 gap), integer half-up. correctness_fixture."""
+
+    def test_worked_example_cf_s8_react_1(self):
+        """median_1to2=30 → (30×8+5)//10 = 245//10 = 24 days."""
+        f = METRIC_REGISTRY["reactivation_window_days"].formula_py
+        assert f(median_1to2_days=30) == 24
+
+    def test_kill_no_factor_mutant(self):
+        """A '× whole interval (drop the 0.8 factor)' mutant → 30 — KILLED."""
+        f = METRIC_REGISTRY["reactivation_window_days"].formula_py
+        canon = f(median_1to2_days=30)
+        mutant = 30  # the full interval, no 0.8 factor
+        assert canon == 24
+        assert canon != mutant
+
+    def test_zero_median_returns_null(self):
+        f = METRIC_REGISTRY["reactivation_window_days"].formula_py
+        assert f(median_1to2_days=0) is None
+
+    def test_parity_class_correctness_fixture(self):
+        assert METRIC_REGISTRY["reactivation_window_days"].parity_class == "correctness_fixture"
+
+
+class TestSliceEightEmailRates:
+    """email open/click rate (bp) + revenue per recipient (mu). shadow_compare. READ-ONLY reporting."""
+
+    def test_open_rate_cf_s8_email_open_1(self):
+        """opens=450, delivered=1000 → 4500bp (45.00%)."""
+        f = METRIC_REGISTRY["email_open_rate_bp"].formula_py
+        assert f(unique_opens=450, delivered=1000) == 4500
+
+    def test_kill_open_rate_divide_by_opens_mutant(self):
+        """A '÷ unique_opens (rev-per-open denominator)' mutant → 10000bp — KILLED."""
+        f = METRIC_REGISTRY["email_open_rate_bp"].formula_py
+        canon = f(unique_opens=450, delivered=1000)
+        mutant = _ratio_bp(450, 450)  # wrong denominator
+        assert canon == 4500
+        assert mutant == 10000
+        assert canon != mutant
+
+    def test_click_rate_cf_s8_email_click_1(self):
+        """clicks=120, delivered=1000 → 1200bp (12.00%)."""
+        f = METRIC_REGISTRY["email_click_rate_bp"].formula_py
+        assert f(unique_clicks=120, delivered=1000) == 1200
+
+    def test_kill_click_rate_divide_by_opens_mutant(self):
+        """A '÷ unique_opens(450) not delivered(1000)' mutant → 2666bp — KILLED."""
+        f = METRIC_REGISTRY["email_click_rate_bp"].formula_py
+        canon = f(unique_clicks=120, delivered=1000)
+        mutant = _ratio_bp(120, 450)
+        assert canon == 1200
+        assert mutant == 2666
+        assert canon != mutant
+
+    def test_rpr_cf_s8_email_rpr_1(self):
+        """revenue=5000000µ, delivered=1000 → 5000µ (₹50.00/recipient)."""
+        f = METRIC_REGISTRY["email_revenue_per_recipient_mu"].formula_py
+        assert f(revenue_mu=5_000_000, delivered=1000) == 5000
+
+    def test_kill_rpr_divide_by_opens_mutant(self):
+        """A '÷ unique_opens(450) (rev-per-open)' mutant → 11111µ — KILLED."""
+        f = METRIC_REGISTRY["email_revenue_per_recipient_mu"].formula_py
+        canon = f(revenue_mu=5_000_000, delivered=1000)
+        mutant = _int_floor_div_or_null(5_000_000, 450)
+        assert canon == 5000
+        assert mutant == 11111
+        assert canon != mutant
+
+    def test_zero_delivered_returns_null(self):
+        assert METRIC_REGISTRY["email_open_rate_bp"].formula_py(unique_opens=10, delivered=0) is None
+        assert METRIC_REGISTRY["email_click_rate_bp"].formula_py(unique_clicks=5, delivered=0) is None
+        assert METRIC_REGISTRY["email_revenue_per_recipient_mu"].formula_py(revenue_mu=99, delivered=0) is None
+
+    def test_email_cm2_is_not_in_registry(self):
+        """Finding 4: email_cm2_mu is a phantom (legacy has NO CM2 attribution to email)."""
+        assert "email_cm2_mu" not in METRIC_REGISTRY
+        assert "best_send_time" not in METRIC_REGISTRY  # Finding 2 phantom
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["email_open_rate_bp"].parity_class == "shadow_compare"
+        assert METRIC_REGISTRY["email_click_rate_bp"].parity_class == "shadow_compare"
+        assert METRIC_REGISTRY["email_revenue_per_recipient_mu"].parity_class == "shadow_compare"

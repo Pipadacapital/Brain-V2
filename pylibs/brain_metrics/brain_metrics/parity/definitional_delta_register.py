@@ -1044,6 +1044,48 @@ _ROW_GOAL_ATTAINMENT = DDRRow(
 )
 
 
+# ── Phase-2 slice-8 (feat-lifecycle-timings-email) — READ/ANALYTICS ONLY ────
+# reactivation_window_days is the only correctness_fixture def this slice; the 3 email
+# rate/revenue-per-recipient defs are shadow_compare (Klaviyo comparand exists). The
+# lifecycle classifier + p40/p80 percentile are use-case logic, NOT registry scalars
+# (Finding 1). best_send_time (Finding 2) + email_cm2_mu (Finding 4) DECOMMISSIONED before
+# birth — no DDRRow; audit trail in the .md register.
+_ROW_REACTIVATION_WINDOW = DDRRow(
+    legacy_formula=(
+        "lib/timings/compute.ts:11 REACTIVATION_PCT_OF_1TO2 = 0.8; "
+        "reactivationDays = 0.8 × pickMetric(days1to2, metric) [float multiply]"
+    ),
+    brain_formula="reactivation_window_days",
+    reason=(
+        "Recommended re-engagement timing = 0.8 × median(1→2 inter-order gap), in days. "
+        "Brain-native integerized: round(0.8 × m) computed as (m×8 + 5)//10 [half-up, "
+        "positive ints] — no float, no legacy byte comparand (legacy is a 0.8 float multiply). "
+        "Rohan Stage-1 Finding 2: the slice-table's 'best_send_time' / 'best hours/days' is a "
+        "PHANTOM (legacy timings has NO hour/day-of-week analysis) — decommissioned before birth; "
+        "the real timings signal is the inter-order gap medians + this reactivation window. "
+        "COMPLIANCE: this is a REPORTED recommendation, NEVER an outbound send trigger."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not a byte comparand — legacy 0.8 float multiply, Brain integer half-up. Anchor "
+        "CF-S8-REACT-1: median_1to2_days=30 → (30×8+5)//10 = 245//10 = 24 days. A "
+        "'× whole interval (drop the 0.8 factor)' mutant → 30 — killed. NULL when median<=0."
+    ),
+    business_impact=(
+        "Drives the recommended win-back timing surfaced on /timings. Dropping the 0.8 factor "
+        "(reactivate at the FULL typical interval, not 80% of it) would tell the brand to wait "
+        "too long, re-engaging customers only once they have already slipped toward churn. "
+        "It is a recommendation only — the operator acts; Brain never sends."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "reactivation_window_days = (median_1to2_days × 8 + 5) // 10 [round(0.8×m), half-up]; "
+        "NULL if median_1to2_days <= 0"
+    ),
+)
+
+
 # ---------------------------------------------------------------------------
 # The canonical register (ordered by waterfall / priority)
 # ---------------------------------------------------------------------------
@@ -1080,6 +1122,10 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     # Phase-2 slice-7 (feat-finance-settings-goals): goal attainment + directional RAG
     # (festival learned-lift DECOMMISSIONED before birth — no DDRRow; audit in the .md register)
     "goal_attainment_bp":                 _ROW_GOAL_ATTAINMENT,
+    # Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. reactivation_window_days
+    # is the only correctness_fixture (email rates/rpr are shadow_compare — no DDRRow needed).
+    # best_send_time + email_cm2_mu DECOMMISSIONED before birth — no DDRRow; audit in the .md register.
+    "reactivation_window_days":           _ROW_REACTIVATION_WINDOW,
 }
 
 

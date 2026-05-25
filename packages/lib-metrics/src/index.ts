@@ -58,4 +58,9 @@ export {
   GOAL_ATTAINMENT_BP,
   computeGoalRag,
   goalHigherBetter,
+  // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY
+  REACTIVATION_WINDOW_DAYS,
+  EMAIL_OPEN_RATE_BP,
+  EMAIL_CLICK_RATE_BP,
+  EMAIL_REVENUE_PER_RECIPIENT_MU,
 } from './registry/index.js';

@@ -348,6 +348,35 @@ export function assertSettingsDefinitionId(definitionId: string): void {
   }
 }
 
+// LIFECYCLE_DEFINITION_IDS: registry ids on the slice-8 lifecycle/timings/email surfaces.
+// Phase-2 slice-8 (feat-lifecycle-timings-email) — READ/ANALYTICS ONLY. reactivation_window_days
+// is the timings recommendation; email_open/click_rate_bp + email_revenue_per_recipient_mu are the
+// email/SMS PERFORMANCE rates. best_send_time + email_cm2_mu are PHANTOMS and must NOT appear here
+// (Rohan Findings 2, 4). Lifecycle buckets + p40/p80 are use-case scalars, not registry metrics.
+export const LIFECYCLE_DEFINITION_IDS = [
+  'reactivation_window_days',
+  'email_open_rate_bp',
+  'email_click_rate_bp',
+  'email_revenue_per_recipient_mu',
+] as const;
+
+/**
+ * Validate that a lifecycle/timings/email definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived field in the BFF.
+ * Mutant probe: id "best_send_time" or "email_cm2_mu" (phantoms) → this throws.
+ */
+export function assertLifecycleDefinitionId(definitionId: string): void {
+  const isKnown =
+    LIFECYCLE_DEFINITION_IDS.includes(definitionId as (typeof LIFECYCLE_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: lifecycle definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
 /**
  * Look up a MetricDefinition by id. Returns undefined for count metrics (no registry entry).
  */

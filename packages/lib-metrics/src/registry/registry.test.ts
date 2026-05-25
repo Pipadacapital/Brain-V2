@@ -51,6 +51,15 @@ import {
   _CF_S7_RAG_HIGHER_BETTER_ANCHOR,
   _CF_S7_RAG_LOWER_BETTER_ANCHOR,
   _CF_S7_RAG_LOWER_BETTER_RED_ANCHOR,
+  // Phase-2 slice-8: lifecycle + timings + email/SMS performance (READ/ANALYTICS ONLY)
+  REACTIVATION_WINDOW_DAYS,
+  EMAIL_OPEN_RATE_BP,
+  EMAIL_CLICK_RATE_BP,
+  EMAIL_REVENUE_PER_RECIPIENT_MU,
+  _CF_S8_REACTIVATION_ANCHOR,
+  _CF_S8_EMAIL_OPEN_ANCHOR,
+  _CF_S8_EMAIL_CLICK_ANCHOR,
+  _CF_S8_EMAIL_RPR_ANCHOR,
 } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -272,6 +281,61 @@ describe('METRIC_REGISTRY completeness', () => {
     expect(goalHigherBetter('MAXIMUM', true)).toBe(false);
     expect(goalHigherBetter('TARGET', true)).toBe(true);
     expect(goalHigherBetter('TARGET', false)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY.
+// NON-VACUOUS cross-language anchors (byte-identity twin: test_registry.py slice-8 block).
+// ---------------------------------------------------------------------------
+
+describe('formula_ts: slice-8 lifecycle/timings/email anchors', () => {
+  it('phantoms NOT in registry: best_send_time + email_cm2_mu (Findings 2, 4)', () => {
+    expect(METRIC_REGISTRY).not.toHaveProperty('best_send_time');
+    expect(METRIC_REGISTRY).not.toHaveProperty('email_cm2_mu');
+  });
+
+  it('slice-8 CF-S8-REACT-1: reactivation = 0.8×median, NOT the full interval', () => {
+    const a = _CF_S8_REACTIVATION_ANCHOR;
+    // Canon: round(0.8 × 30) = 24.
+    expect(REACTIVATION_WINDOW_DAYS.formula_ts(a.median_1to2_days)).toBe(BigInt(a.expected_days));
+    // Mutant: full interval (drop 0.8 factor) → 30 — KILLED.
+    expect(a.expected_days).not.toBe(a.mutant_no_factor_days);
+  });
+
+  it('slice-8 reactivation: zero median → 0 (caller surfaces null)', () => {
+    expect(REACTIVATION_WINDOW_DAYS.formula_ts(0n)).toBe(0n);
+  });
+
+  it('slice-8 CF-S8-EMAIL-OPEN-1: open rate ÷ delivered, NOT ÷ opens', () => {
+    const a = _CF_S8_EMAIL_OPEN_ANCHOR;
+    expect(EMAIL_OPEN_RATE_BP.formula_ts(a.unique_opens, a.delivered)).toBe(a.expected_bp);
+    // Mutant: ÷ unique_opens → 10000bp — KILLED.
+    expect(EMAIL_OPEN_RATE_BP.formula_ts(a.unique_opens, a.unique_opens)).toBe(a.mutant_bp);
+    expect(a.expected_bp).not.toBe(a.mutant_bp);
+  });
+
+  it('slice-8 CF-S8-EMAIL-CLICK-1: click rate ÷ delivered, NOT ÷ opens', () => {
+    const a = _CF_S8_EMAIL_CLICK_ANCHOR;
+    expect(EMAIL_CLICK_RATE_BP.formula_ts(a.unique_clicks, a.delivered)).toBe(a.expected_bp);
+    // Mutant: ÷ unique_opens → 2666bp — KILLED.
+    expect(EMAIL_CLICK_RATE_BP.formula_ts(a.unique_clicks, a.unique_opens)).toBe(a.mutant_bp);
+    expect(a.expected_bp).not.toBe(a.mutant_bp);
+  });
+
+  it('slice-8 CF-S8-EMAIL-RPR-1: revenue per recipient ÷ delivered, NOT ÷ opens', () => {
+    const a = _CF_S8_EMAIL_RPR_ANCHOR;
+    expect(EMAIL_REVENUE_PER_RECIPIENT_MU.formula_ts(a.revenue_mu, a.delivered)).toBe(a.expected_mu);
+    // Mutant: ÷ unique_opens → 11111µ — KILLED.
+    expect(EMAIL_REVENUE_PER_RECIPIENT_MU.formula_ts(a.revenue_mu, a.unique_opens)).toBe(a.mutant_mu);
+    expect(a.expected_mu).not.toBe(a.mutant_mu);
+  });
+
+  it('slice-8 email defs are shadow_compare; reactivation is correctness_fixture', () => {
+    expect(EMAIL_OPEN_RATE_BP.parity_class).toBe('shadow_compare');
+    expect(EMAIL_CLICK_RATE_BP.parity_class).toBe('shadow_compare');
+    expect(EMAIL_REVENUE_PER_RECIPIENT_MU.parity_class).toBe('shadow_compare');
+    expect(REACTIVATION_WINDOW_DAYS.parity_class).toBe('correctness_fixture');
   });
 });
 
