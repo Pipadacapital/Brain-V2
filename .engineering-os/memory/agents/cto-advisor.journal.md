@@ -587,3 +587,27 @@
 **Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, architecture-patterns, india-commerce-economics, verification-before-completion
 **Open questions:** smoke harness should not assume :3001/:3000 free; client-rendered pages would benefit from a headless-browser smoke gate
 **Next:** Founder commit via pending-founder-commit.md. epic-phase2-feature-parity parity gap CLOSED — no dead stubs remain.
+
+## 2026-05-25T19:14:00Z — Rohan (cto-advisor) — epic-real-auth-supabase
+**Stage:** 1 (intake — EPIC frame + slice-A scope)
+**Action:** ADVANCE. Framed the real-auth epic; decomposed into slices A/B/C/D; scoped slice A (identity-only) for the full high-stakes pipeline. Requested 2 personas (NOT spawned — returned in HANDOFF).
+**Personas requested (Stage 1):** auth-secret-leak-realist:sonnet, session-to-claim-tenancy-realist:sonnet (2 = high-stakes cap; two distinct dominant dimensions: secret/PII/prod-gating + tenancy-mapping architecture)
+**Decision:** ADVANCE (no CHALLENGE-BACK, no KILL)
+**Rationale:** Read the ACTUAL legacy auth code (not the directive shorthand). Key reframe: this is a CUTOVER onto Child-1's prebuilt seam, NOT a rebuild. server.ts already documents the exact Phase-2 cutover ("verify Bearer JWT, derive workspace_id from verified claim, not a spoofable header"); brain-claim.ts/trpc.ts/tenancy.ts already consume BrainClaim + assert workspaceId===claim.workspaceId. Slice A only adds the FRONT of the pipe: Supabase identity (signInWithPassword + signInWithOAuth google) + JWKS verify (jose, issuer ${SUPABASE_URL}/auth/v1, aud authenticated, sub→userId) → assembleClaim → real tRPC claim + Next middleware route-protection (→/auth/login) + Bearer on tRPC. Bound 5 mandates: (1) legacy 4-role (OWNER/ADMIN/EDITOR/VIEWER) → Brain 5-role (EDITOR→MANAGER) map must be explicit+tested, no 6th role; (2) @brain/core-auth is a tsconfig alias → reuse the SAME assembleClaim; (3) ONLY 3 new deps allowed (jose gateway; @supabase/ssr + @supabase/supabase-js web); (4) membership lookup is core-service's, gateway gets a thin flag-gated LocalSeedMembershipResolver for slice A (DbMembershipResolver = slice C); (5) x-workspace-id header is a spoof vector once real auth exists → workspace_id MUST come from the resolver keyed on verified sub, header demoted to harness-only.
+**4 Founder risks dispositioned:** (a) OPEN-P0 live-DB-zero-RLS → slice A uses Supabase Auth IDENTITY ONLY, never the live RLS-less Postgres data plane; (b) StubDataPlane keyed 00000…01 → LocalSeedMembershipResolver maps any authed user → seeded Sugandh-Lok OWNER (honest: one seeded workspace); (c) dashboard prereqs (redirect-URL allow-list localhost:3000/auth/callback + Google provider + Site URL) = Founder action items, email/pw proves the path if Google blocked; (d) PII/secret VETO → .env untracked+git-ignored-proven (verified at S1 via git check-ignore), .env.example key-names-only, no secret values anywhere, prod cannot stub-auth (flag-gated), email/token never logged.
+**Lane:** high-stakes (5 trigger surfaces); 2 personas; @paradigm sql (zero ML/LLM — deterministic JWT verify + membership lookup + role compare).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, agentic-design, verification-before-completion
+**Dependency pre-flight:** PASS — only hard dep is Child-1 (committed-on-feature-branch; contract in-tree + imported). Slice-D connector dep is not slice A.
+**Open questions:** Supabase dashboard config (Founder) gates the live-Google path; path-naming reconciled to /auth/* per Founder bar; legacy→Brain role-map mechanics for Aryan.
+**Next:** persona round-trip (orchestrator spawns 2 :sonnet personas → re-invokes me to synthesize) → Aryan Stage 2 binding plan for slice A.
+
+## 2026-05-25T19:42:00Z — Rohan (cto-advisor) — feat-auth-supabase-identity
+**Stage:** drove S2→S6 end-to-end (epic-real-auth-supabase, Slice A)
+**Action:** Synthesized 2 persona stress-tests; built+verified real Supabase identity cutover.
+**Personas synthesized:** auth-secret-leak-realist, session-to-claim-tenancy-realist (B1-B4, S1-S5, N1).
+**Decision:** Stage 6 PASS → Founder gate signed under delegation → Stage 8 HOLD.
+**Rationale:** Cutover filled the documented JWT seam; Child-1 BrainClaim reused; all persona findings implemented+tested; typecheck 0 (4 apps); 196 gateway + 45 web tests green; live real-auth gateway rejects unauth/forged/spoof.
+**Key finding (Stage 5):** live project JWKS is ES256, not RS256 → B2 amended to pin {RS256,ES256} (HS*/none still rejected). This is exactly why Stage-5 real-network verification is a VETO gate.
+**Open questions:** Founder dashboard action for confirmed-user/Google live session (mailer_autoconfirm:false; Google redirect allow-list). Slices B/C/D deferred.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion.
+**Next:** Founder reviews pending-founder-commit.md; STOP after Slice A (do not start Slice B).

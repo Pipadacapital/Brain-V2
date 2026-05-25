@@ -1,0 +1,12 @@
+{
+  "req_id": "feat-auth-supabase-identity",
+  "slice": "A",
+  "stage": 7,
+  "decision": "approved",
+  "decided_by": "cto-advisor",
+  "delegation_basis": "Founder standing delegation to CTO Advisor (MEMORY: feedback_founder_delegates_to_cto_advisor). Rohan signs every Founder gate on the Founder's behalf.",
+  "stage6_result": "PASS",
+  "hard_rule_deviation": false,
+  "notes": "B2 plan amendment (RS256->{RS256,ES256}) is a Stage-5 correctness fix within the security envelope, fully tested — not a hard-rule deviation. Slice A advances to Stage 8 readiness HOLD; no live cutover. Nothing committed; no secret leaked. Founder dashboard action required for a confirmed-user / Google live session.",
+  "decided_at": "2026-05-25T19:42:00Z"
+}
