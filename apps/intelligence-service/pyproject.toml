@@ -3,4 +3,35 @@ name = "intelligence-service"
 version = "0.0.0"
 requires-python = ">=3.13,<3.14"
 description = "AI/ML inference layer, frontier-LLM gateway routing, Decision-Log schema (Postgres ai.*). Phase 0-1 deployable. uv workspace member."
-dependencies = []
+dependencies = [
+  # Cost router + paradigm gate (Track V1 — built in pylibs/brain_cost_router)
+  "brain-cost-router",
+  # Data validation + typed contracts (WriteToolCall, InsightItem, etc.)
+  "pydantic>=2.12.5",
+  # Model-agnostic LLM gateway (resolves small_llm/frontier_llm tiers)
+  "litellm>=1.86.0",
+  # OTel metrics (paradigm_distribution counter sink)
+  "opentelemetry-api>=1.42.1",
+  "opentelemetry-sdk>=1.42.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# pythonpath includes src so tests import as "src.domain...." and the pylibs path
+pythonpath = [
+  ".",
+  "src",
+  "../../pylibs/brain_cost_router",
+]
+asyncio_mode = "auto"
+markers = [
+  "smoke: real network calls (excluded from CI); run manually pre-Stage-8",
+  "integration: requires database; skipped in unit-test-only runs",
+]
