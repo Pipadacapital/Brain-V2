@@ -520,6 +520,113 @@ _ROW_LTV_CAC = DDRRow(
     formula_snapshot="ltv_cac_bp = intDiv(ltv_mu * 10000, cac_mu); NULL if cac_mu <= 0",
 )
 
+# ---------------------------------------------------------------------------
+# Phase-2 slice-5 (feat-cohorts-ltv) DDR rows
+# ---------------------------------------------------------------------------
+
+_ROW_COHORT_LTV = DDRRow(
+    legacy_formula=(
+        "lib/cohorts/compute.ts:681-695 — cumulative mode seeds s = firstOrderR "
+        "then s += incr[k] for k=1..12 (float; per-cohort realized CM3 curve)"
+    ),
+    brain_formula="cohort_ltv_mu",
+    reason=(
+        "Cohort cumulative realized CM3 at a horizon — the LTV rung that feeds ltv_cac_bp. "
+        "Rohan Stage-1 Finding 1: cohorts use CM3 (cm2 − misc), NOT CM2; the slice-table's "
+        "'cohort_cumulative_cm2_mu' named the wrong rung. The single-step identity is integer "
+        "additive: ltv_at_step = prev_ltv_mu + incr_cm3_mu; the use-case walks it. "
+        "Legacy is a float cumulative; integer-paise here is the canonical Brain form."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not applicable as a byte comparand — legacy is float, Brain is integer paise. "
+        "Worked anchor CF-S5-LTV-CUM-1: prev=1500000µ, incr=300000µ → 1800000µ. "
+        "An 'incremental-not-cumulative' mutant returns 300000µ — killed by the anchor."
+    ),
+    business_impact=(
+        "cohort_ltv_mu is the numerator of LTV:CAC. Using CM2 (no misc) instead of CM3 "
+        "would OVERSTATE LTV by the misc-expense share and inflate LTV:CAC — a retention "
+        "investment over-confidence error."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "cohort_ltv_mu step = prev_ltv_mu + incr_cm3_mu (integer add); "
+        "cumulative LTV at horizon H = firstOrderR + SUM(incr realized CM3, buckets 1..H)"
+    ),
+)
+
+_ROW_REPEAT_RATE = DDRRow(
+    legacy_formula=(
+        "lib/cohorts/compute.ts:589-608 (rr90 = count90/newCustomers); "
+        "lib/ltv/compute.ts:618-623 (repeat_rate = distinct-repeat-set.size / n)"
+    ),
+    brain_formula="repeat_rate_bp",
+    reason=(
+        "Distinct repeat customers ÷ new customers, in basis points. Covers rr90 (90-day "
+        "window) and the bucketed repeat metric. Legacy comparand EXISTS (float ratio) → "
+        "shadow_compare; no definitional delta — the Brain bp form is the integer FLOOR of "
+        "the same ratio."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Zero definitional delta; only the integer-bp representation differs from the legacy "
+        "float fraction. Anchor CF-S5-RR90-1: 3 of 10 in 90d → intDiv(3×10000,10) = 3000bp. "
+        "A '÷ total-orders(25)' mutant → 1200bp — killed."
+    ),
+    business_impact=(
+        "Repeat rate is the retention health signal on the cohort heatmap. Dividing by the "
+        "wrong denominator (orders vs customers) would mis-state retention by the orders-per-"
+        "customer factor."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot="repeat_rate_bp = intDiv(repeat_customers * 10000, new_customers); NULL if new_customers <= 0",
+)
+
+# Documentary row — the REAL CAC payback (NOT a registry single-expression metric).
+# The phantom cac_payback_months (CAC/MonthlyCM2) was DECOMMISSIONED (Rohan Finding 3).
+# The real payback is the cumulative bucket-walk WITH INTERPOLATION computed in
+# CohortMatrixQuery — it is an iterative array-walk, not a fixed-arity formula, so it
+# is NOT a MetricDefinition. This row pins the canonical formula + the use-case anchor.
+_ROW_CAC_PAYBACK = DDRRow(
+    legacy_formula=(
+        "lib/cohorts/compute.ts:610-652 — cumulative bucket-walk: cum = firstOrderR − cac; "
+        "if cum>=0 → 0; else for k in 1..12: cum += incr[k-1]; on first cum>=0: "
+        "(cm3+post, incrVal>eps, prevCum<0) → payback = (k-1) + (0 − prevCum)/incrVal "
+        "[linear interpolation]; else → k; if never → null. Summary averagePayback = "
+        "customer-weighted mean of per-cohort cm3 payback (compute.ts:632-652)."
+    ),
+    brain_formula="cohort_cac_payback",  # use-case computed; NOT a registry metric id
+    reason=(
+        "The prior cac_payback_months = intDiv(cac_mu, monthly_cm2_mu) was a SPECULATIVE "
+        "PRE-BUILD that does NOT match legacy. A flat CAC ÷ monthly-CM2 ratio diverges from "
+        "the legacy cumulative bucket-walk with interpolation on any non-flat retention curve "
+        "(same phantom class as slice-4's pamer_bp). DECOMMISSIONED from the registry; the "
+        "real payback is computed in CohortMatrixQuery and anchored by a non-vacuous fixture."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Worked anchor CF-S5-COHORT-PAYBACK-1: firstOrderR=30000µ, cac=50000µ, "
+        "incr cm3 = [20000µ, …]. cum0 = 30000−50000 = −20000 (<0). M1: cum = 0 ≥0 → "
+        "cm3+post interpolate: (1-1) + (0 − (−20000))/20000 = 1.0 month (100 centi-months). "
+        "A flat 'CAC/MonthlyCM2' mutant = intDiv(50000,20000) = 2 months — KILLED."
+    ),
+    business_impact=(
+        "Payback months is a headline acquisition-efficiency metric. The phantom flat ratio "
+        "would mis-state payback whenever retention is front- or back-loaded, corrupting the "
+        "spend-vs-retention decision."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "cohort payback (months) = cumulative bucket-walk over per-cohort incremental realized "
+        "CM3: cum=firstOrderR−cac; if cum>=0 → 0; else walk M1..M12 adding incr; first k where "
+        "cum>=0; cm3+post interpolates (k-1)+(0−prevCum)/incrVal; null if never reached. "
+        "Stored as centi-months (×100) for integer interpolation."
+    ),
+)
+
 _ROW_TOTAL_TAX = DDRRow(
     # Legacy: analytics-sync.ts:42-43,208,256 — ShopifyQL `taxes` DAY-LEVEL aggregate
     # Brain: SUM(event-level per-SKU GST-2.0 line tax via RegionAdapter India)
@@ -814,6 +921,10 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     # Phase-2 slice-4 (feat-marketing-acquisition): marketing efficiency reconciled to legacy
     "mer_bp":                    _ROW_MER_BASIS,
     "new_customer_revenue_mu":   _ROW_NC_REVENUE_CM2,
+    # Phase-2 slice-5 (feat-cohorts-ltv): cohorts + LTV
+    "cohort_ltv_mu":             _ROW_COHORT_LTV,
+    "repeat_rate_bp":            _ROW_REPEAT_RATE,
+    "cohort_cac_payback":        _ROW_CAC_PAYBACK,  # use-case computed; phantom cac_payback_months decommissioned
 }
 
 

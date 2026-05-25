@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-25T15:22:00Z",
+  "updated_at": "2026-05-25T15:42:00Z",
   "updated_by": "cto-advisor",
   "active_requirements": [
     {
@@ -3091,6 +3091,36 @@
       "updated_by": "cto-advisor",
       "final_review": "PASS",
       "founder_decision": "APPROVE (signed under standing delegation)"
+    },
+    {
+      "req_id": "feat-cohorts-ltv",
+      "parent_epic": "epic-phase2-feature-parity",
+      "slice": 5,
+      "title": "Cohorts + LTV (/cohorts, /lifetime-value)",
+      "status": "approved",
+      "stage": 8,
+      "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "money (CM2/CM3/CAC/LTV/payback bigint) + multi-tenancy (workspace-scoped CH reads) + schema/registry change + PII-adjacent (customer_id LTV dimension)",
+      "trigger_surfaces_touched": [
+        "money",
+        "multi-tenancy",
+        "schema-registry",
+        "pii-customer-dimension"
+      ],
+      "needs_personas": [],
+      "blocks": [
+        "feat-store-order-fact-layer",
+        "feat-pnl-cm-waterfall",
+        "feat-rto-cod-economics",
+        "feat-marketing-acquisition"
+      ],
+      "run_folder": ".engineering-os/runs/2026-05-25T15-25-02Z__slice5__feat-cohorts-ltv__rishabhporwal",
+      "paradigm": "sql",
+      "updated_at": "2026-05-25T15:42:00Z",
+      "updated_by": "cto-advisor",
+      "final_review": "PASS",
+      "founder_decision": "delegated-auto-approve (standing delegation; no hard-rule deviation); Stage-8 readiness only \u2014 awaits Founder 'commit it'"
     }
   ]
 }

@@ -500,7 +500,10 @@ export const LTV_CAC_BP: MetricDefinition = {
   scale: 10000,
   // LTV:CAC ratio in basis points (×10000). Brain ratio convention: ALL decision-metric
   // ratios use bp (×10000), not x100. The x100 scale was a deviation; this is the canonical form.
-  // Canon: SKILL.md §"LTV:CAC = cohort cumulative CM2 ÷ cohort CAC".
+  // Phase-2 slice-5 (feat-cohorts-ltv) CORRECTION (Rohan Stage-1 Finding 4): the LTV input
+  // (ltv_mu) is the COHORT CUMULATIVE REALIZED CM3 at a horizon (cohort_ltv_mu) — NOT
+  // "cohort cumulative CM2". Legacy cohorts use CM3 (cm2 − misc); the prior comment named
+  // the wrong rung. The RATIO formula is correct and unchanged; only the input-rung doc is fixed.
   // Brain-native: no legacy comparand. parity_gap:true.
   // Worked example: ltv=300000p, cac=100000p → intDiv(300000×10000,100000) = 30000bp (3.0×)
   formula_ts: (ltv_mu: bigint, cac_mu: bigint): number =>
@@ -509,6 +512,52 @@ export const LTV_CAC_BP: MetricDefinition = {
     'if(cac_mu > 0, intDiv(ltv_mu * 10000, cac_mu), NULL)',
   display_only: false,
   parity_class: 'correctness_fixture',
+};
+
+// ---------------------------------------------------------------------------
+// Cohorts + LTV (Phase-2 slice-5: feat-cohorts-ltv)
+// Ported to LEGACY semantics from lib/cohorts/compute.ts + lib/ltv/compute.ts.
+// KEY FINDINGS (Rohan Stage-1) baked in:
+//   F1: cohorts use CM3 (cm2 − misc), NOT CM2 → cohort_ltv_mu accumulates realized CM3.
+//   F3: the old cac_payback_months (CAC/MonthlyCM2) was a phantom — DECOMMISSIONED.
+//       Real payback is the cumulative bucket-walk in CohortMatrixQuery (DDR _ROW_CAC_PAYBACK).
+//   F4: ltv_cac_bp input is the cumulative CM3 (above), not CM2.
+// Byte-identical pairs with pylibs/.../registry/definitions.py.
+// ---------------------------------------------------------------------------
+
+// Cohort cumulative LTV (realized CM3 at horizon) — single-step accumulation identity.
+// The use-case walks foR + Σ(incr cm3, 1..H); this def pins the integer-additive step.
+// parity_gap:true → correctness_fixture + DDR _ROW_COHORT_LTV.
+// WORKED ANCHOR (CF-S5-LTV-CUM-1): prev=1_500_000µ, incr=300_000µ → 1_800_000µ.
+export const COHORT_LTV_MU: MetricDefinition = {
+  id: 'cohort_ltv_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (prev_ltv_mu: bigint, incr_cm3_mu: bigint): bigint =>
+    prev_ltv_mu + incr_cm3_mu,
+  clickhouse_sql: 'toInt64(prev_ltv_mu + incr_cm3_mu)',
+  display_only: false,
+  parity_class: 'correctness_fixture', // parity_gap:true — Brain-native integer cumulative
+};
+
+// Repeat rate (basis points) — distinct repeat customers ÷ new customers.
+// Covers rr90 (90-day) + bucketed repeat. Legacy comparand exists
+// (cohorts/compute.ts:589-608; LTV repeat_rate distinct-set.size/n) → shadow_compare.
+// WORKED ANCHOR (CF-S5-RR90-1): 3 of 10 repeat in 90d → intDiv(3×10000,10) = 3000bp (30.00%).
+//   A "÷ total-orders (25)" mutant → 1200bp — KILLED.
+export const REPEAT_RATE_BP: MetricDefinition = {
+  id: 'repeat_rate_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  // Caller guards: NULL if new_customers == 0.
+  formula_ts: (repeat_customers: bigint, new_customers: bigint): number =>
+    ratioToBasisPoints(repeat_customers, new_customers),
+  clickhouse_sql:
+    'if(new_customers > 0, intDiv(repeat_customers * 10000, new_customers), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
 };
 
 // ---------------------------------------------------------------------------
@@ -648,6 +697,21 @@ export const PINCODE_RELIABILITY_SCORE: MetricDefinition = {
   parity_class: 'correctness_fixture', // parity_gap:true — Brain-native integerized score
 };
 
+// CF-S5 NON-VACUOUS FORMULA ANCHORS (slice-5; exported for the cross-language anchor test).
+// These prove the slice-5 formulas are correct AND that the wrong-formula mutants die.
+export const _CF_S5_COHORT_LTV_ANCHOR = {
+  prev_ltv_mu: 1_500_000n,
+  incr_cm3_mu: 300_000n,
+  expected_mu: 1_800_000n,
+} as const;
+export const _CF_S5_REPEAT_RATE_ANCHOR = {
+  repeat_customers: 3n,
+  new_customers: 10n,
+  expected_bp: 3000, // 30.00%; "÷ total-orders(25)" mutant → 1200bp (killed)
+  mutant_total_orders: 25n,
+  mutant_bp: 1200,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Registry export (all definitions indexed by id)
 // ---------------------------------------------------------------------------
@@ -688,6 +752,9 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   cod_realization_rate_bp: COD_REALIZATION_RATE_BP,
   breakeven_cod_rto_rate_bp: BREAKEVEN_COD_RTO_RATE_BP,
   pincode_reliability_score: PINCODE_RELIABILITY_SCORE,
+  // Phase-2 slice-5 (feat-cohorts-ltv): cohorts + LTV.
+  cohort_ltv_mu: COHORT_LTV_MU,
+  repeat_rate_bp: REPEAT_RATE_BP,
 } as const;
 
 /** All metric ids that are display_only (must never appear in decision thresholds). */

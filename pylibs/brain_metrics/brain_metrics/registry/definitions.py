@@ -562,10 +562,13 @@ amer_bp = MetricDefinition(
 # LTV:CAC (Brain-native — parity_gap:true)
 # ---------------------------------------------------------------------------
 # LTV:CAC ratio = Customer Lifetime Value / Customer Acquisition Cost
-# LTV is computed by the lifecycle-service (not this child).
-# Here we register the ratio definition for the parity gate.
+# Phase-2 slice-5 (feat-cohorts-ltv) CORRECTION (Rohan Stage-1 Finding 4): the LTV input
+# (ltv_mu) is the COHORT CUMULATIVE REALIZED CM3 at a horizon (cohort_ltv_mu) — NOT a
+# "cumulative CM2" curve. Legacy cohorts use CM3 (cm2 − misc); the prior comment naming
+# CM2 was the wrong rung. The RATIO formula below is correct and unchanged; only the
+# input-rung documentation is fixed. cac_mu is the slice-4 blended CAC.
 # Formula: ltv_cac_bp = intDiv(ltv_mu × 10000, cac_mu)
-# parity_gap:true — no legacy comparand.
+# parity_gap:true — no legacy comparand (Brain integer-paise ratio).
 
 def _ltv_cac_bp(ltv_mu: int, cac_mu: int) -> int | None:
     """LTV:CAC ratio in basis points.
@@ -863,27 +866,77 @@ acquisition_ad_spend_mu = MetricDefinition(
     parity_class="shadow_compare",
 )
 
-# ── CAC Payback Period (months) — integer months ───────────────────────────
-def _cac_payback_months(cac_mu: int, monthly_cm2_mu: int) -> int | None:
-    """CAC Payback = CAC / Monthly CM2 (integer months, FLOOR).
+# ── CAC Payback Period — DECOMMISSIONED (Phase-2 slice-5, feat-cohorts-ltv) ──
+# The prior `cac_payback_months = intDiv(cac_mu, monthly_cm2_mu)` was a SPECULATIVE
+# PRE-BUILD (PY-only; never in the TS registry; never had cross-language parity; no
+# consumer). It does NOT match the legacy payback. Legacy payback (cohorts/compute.ts:
+# 610-652) is a CUMULATIVE BUCKET-WALK WITH INTERPOLATION over the per-cohort M1..M12
+# incremental realized-CM3 curve — NOT a flat CAC ÷ monthly-CM2 ratio. A flat ratio
+# diverges from legacy on any non-flat retention curve.
+#
+# Same decommission class as slice-4's pamer_bp (phantom, wrong formula, no comparand).
+# Rohan Stage-1 Finding 3. The REAL payback is computed in the cohorts use-case
+# (CohortMatrixQuery) — it is an iterative array-walk, not a fixed-arity single
+# expression, so it does NOT fit the MetricDefinition formula contract; it is
+# anchored by a non-vacuous use-case correctness fixture + DDR row _ROW_CAC_PAYBACK.
+# Removed from METRIC_REGISTRY below.
 
-    @paradigm: sql — integer FLOOR.
+# ── Cohort cumulative LTV (realized CM3 at horizon) — parity_gap:true ────────
+# The cohort cumulative realized-CM3 value that feeds ltv_cac_bp. This is the LTV
+# rung for the LTV:CAC decision metric. Rohan Stage-1 Finding 1 + 4: cohorts use
+# CM3 (cm2 − misc), NOT CM2; and ltv_cac_bp's input is THIS cumulative CM3, not a
+# CM2 curve. Brain-native: legacy is a float cumulative; integer-paise here is the
+# canonical Brain form. parity_gap:true → correctness_fixture + DDR _ROW_COHORT_LTV.
+#
+# The cumulative sum itself is iterative (foR + Σ incr 1..H); the registry def pins
+# the SINGLE-STEP accumulation identity: ltv_at_step = prev_ltv_mu + incr_cm3_mu.
+# The use-case walks it; the gate checks the step identity is integer-additive.
+# WORKED ANCHOR (CF-S5-LTV-CUM-1): prev=1500000µ, incr=300000µ → 1800000µ.
+def _cohort_ltv_mu(prev_ltv_mu: int, incr_cm3_mu: int) -> int:
+    """Cohort cumulative realized CM3 step: prev + this-bucket incremental CM3.
+
+    @paradigm: sql — integer addition; no float. parity_gap:true (Brain-native).
     """
-    if cac_mu is None or monthly_cm2_mu is None:
-        return None
-    return _int_floor_div_or_null(cac_mu, monthly_cm2_mu)
+    return prev_ltv_mu + incr_cm3_mu
 
 
-cac_payback_months = MetricDefinition(
-    id="cac_payback_months",
-    kind="count",
-    unit="count",
-    formula_py=_cac_payback_months,
+cohort_ltv_mu = MetricDefinition(
+    id="cohort_ltv_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_cohort_ltv_mu,
+    clickhouse_sql="toInt64(prev_ltv_mu + incr_cm3_mu)",
+    parity_class="correctness_fixture",  # parity_gap:true — Brain-native integer cumulative
+    scale=1,
+)
+
+# ── Repeat rate (basis points) — shadow_compare ─────────────────────────────
+# Distinct repeat customers ÷ new customers, in bp. Covers rr90 (90-day window) and
+# the bucketed repeat metric. Legacy comparand exists (cohorts/compute.ts:589-608
+# rr90 = count90/newCustomers; LTV repeat_rate = distinct-set.size/n). shadow_compare.
+# Rohan Stage-1 spec (cohorts repeat family + LTV repeat_rate metric).
+# WORKED ANCHOR (CF-S5-RR90-1): 3 of 10 new customers repeat within 90d →
+#   intDiv(3 × 10000, 10) = 3000 bp (30.00%). A "÷ total-orders (say 25)" mutant →
+#   intDiv(3×10000,25)=1200bp — KILLED.
+def _repeat_rate_bp(repeat_customers: int, new_customers: int) -> int | None:
+    """Repeat rate = repeat customers / new customers in basis points.
+
+    @paradigm: sql — integer FLOOR. NULL on zero new customers.
+    """
+    return _ratio_bp(repeat_customers, new_customers)
+
+
+repeat_rate_bp = MetricDefinition(
+    id="repeat_rate_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_repeat_rate_bp,
     clickhouse_sql=(
-        "if(monthly_cm2_mu > 0, "
-        "intDiv(cac_mu, monthly_cm2_mu), NULL)"
+        "if(new_customers > 0, "
+        "intDiv(repeat_customers * 10000, new_customers), NULL)"
     ),
     parity_class="shadow_compare",
+    scale=10000,  # CF-C6-ROAS-DISPLAY-CONTRACT-1
 )
 
 # ---------------------------------------------------------------------------
@@ -1114,7 +1167,8 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     # Marketing efficiency (slice-4 reconciled to legacy)
     "mer_bp":                    mer_bp,
     "cac_mu":                    cac_mu,
-    "cac_payback_months":        cac_payback_months,  # PY-only; slice-5 (cohorts), not wired in slice-4
+    # cac_payback_months DECOMMISSIONED (slice-5) — phantom flat ratio; real payback is
+    # the cumulative bucket-walk in CohortMatrixQuery (DDR _ROW_CAC_PAYBACK).
     "new_customer_revenue_mu":   new_customer_revenue_mu,
     "nc_cm2_mu":                 nc_cm2_mu,
     "cm2_per_nc_mu":             cm2_per_nc_mu,
@@ -1125,6 +1179,10 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "cod_realization_rate_bp":   cod_realization_rate_bp,
     "breakeven_cod_rto_rate_bp": breakeven_cod_rto_rate_bp,
     "pincode_reliability_score": pincode_reliability_score,
+    # Phase-2 slice-5 (feat-cohorts-ltv): cohorts + LTV. cohort_ltv_mu feeds ltv_cac_bp
+    # (cumulative CM3, not CM2); repeat_rate_bp covers rr90 + LTV repeat_rate.
+    "cohort_ltv_mu":             cohort_ltv_mu,
+    "repeat_rate_bp":            repeat_rate_bp,
 }
 
 

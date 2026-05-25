@@ -31,6 +31,10 @@ import {
   COD_REALIZATION_RATE_BP,
   BREAKEVEN_COD_RTO_RATE_BP,
   PINCODE_RELIABILITY_SCORE,
+  COHORT_LTV_MU,
+  REPEAT_RATE_BP,
+  _CF_S5_COHORT_LTV_ANCHOR,
+  _CF_S5_REPEAT_RATE_ANCHOR,
 } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -50,6 +54,8 @@ describe('METRIC_REGISTRY completeness', () => {
       'breakeven_cod_rto_rate_bp', 'pincode_reliability_score',
       // Phase-2 slice-4 (feat-marketing-acquisition): marketing efficiency reconciled to legacy
       'mer_bp', 'cac_mu', 'new_customer_revenue_mu', 'nc_cm2_mu', 'cm2_per_nc_mu', 'acquisition_ad_spend_mu',
+      // Phase-2 slice-5 (feat-cohorts-ltv): cohorts + LTV
+      'cohort_ltv_mu', 'repeat_rate_bp',
     ];
     for (const id of required) {
       expect(METRIC_REGISTRY).toHaveProperty(id);
@@ -107,6 +113,36 @@ describe('METRIC_REGISTRY completeness', () => {
     for (const id of shadowMetrics) {
       expect(METRIC_REGISTRY[id].parity_class).toBe('shadow_compare');
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase-2 slice-5 (feat-cohorts-ltv) — definitions + NON-VACUOUS anchors
+  // -------------------------------------------------------------------------
+  it('slice-5: cohort_ltv_mu is correctness_fixture, repeat_rate_bp is shadow_compare', () => {
+    expect(METRIC_REGISTRY['cohort_ltv_mu'].parity_class).toBe('correctness_fixture');
+    expect(METRIC_REGISTRY['repeat_rate_bp'].parity_class).toBe('shadow_compare');
+  });
+
+  it('slice-5: phantom cac_payback_months is DECOMMISSIONED (not in TS registry)', () => {
+    // The flat CAC/MonthlyCM2 def never matched legacy (cumulative bucket-walk).
+    expect(METRIC_REGISTRY).not.toHaveProperty('cac_payback_months');
+    // The old wrong cohort rung name must not appear either.
+    expect(METRIC_REGISTRY).not.toHaveProperty('cohort_cumulative_cm2_mu');
+  });
+
+  it('slice-5 CF-S5-LTV-CUM-1: cohort_ltv_mu accumulates (cumulative, not incremental)', () => {
+    const a = _CF_S5_COHORT_LTV_ANCHOR;
+    expect(COHORT_LTV_MU.formula_ts(a.prev_ltv_mu, a.incr_cm3_mu)).toBe(a.expected_mu);
+    // Mutant: returning the incremental alone (no accumulation) → 300_000µ — must DIFFER.
+    expect(COHORT_LTV_MU.formula_ts(a.prev_ltv_mu, a.incr_cm3_mu)).not.toBe(a.incr_cm3_mu);
+  });
+
+  it('slice-5 CF-S5-RR90-1: repeat_rate_bp divides by new_customers (not total orders)', () => {
+    const a = _CF_S5_REPEAT_RATE_ANCHOR;
+    expect(REPEAT_RATE_BP.formula_ts(a.repeat_customers, a.new_customers)).toBe(a.expected_bp);
+    // Mutant: dividing by total orders (25) → 1200bp — KILLED (different value).
+    expect(REPEAT_RATE_BP.formula_ts(a.repeat_customers, a.mutant_total_orders)).toBe(a.mutant_bp);
+    expect(a.expected_bp).not.toBe(a.mutant_bp);
   });
 });
 

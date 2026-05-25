@@ -34,6 +34,7 @@ import {
   assertPnlStatementTraceability,
   assertLogisticsDefinitionId,
   assertMarketingDefinitionId,
+  assertCohortLtvDefinitionId,
   getMetricScale,
 } from '../domain/registry-mapper.js';
 import {
@@ -569,6 +570,100 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // cohorts router — workspace tier, requireRole(ANALYST)
+  // Phase-2 slice-5 (feat-cohorts-ltv): cohort retention/repeat heatmap (CM3).
+  // Cohorts use CM3 (Finding 1); payback = cumulative bucket-walk (Finding 3);
+  // cohort_ltv feeds ltv_cac_bp (Finding 4). The phantom cac_payback_months is gone.
+  // -------------------------------------------------------------------
+  const cohortsRouter = router({
+    /** Cohort retention/repeat matrix. requireRole(ANALYST). */
+    matrix: workspaceProc
+      .input(
+        dateInput.extend({
+          metric: z.enum(['cm3', 'revenue', 'repeat', 'repurchase']).optional(),
+          mode: z.enum(['post', 'cumulative', 'incr', 'pct', 'ltvcac']).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `cohorts.matrix requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getCohortMatrix({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: { metric: input.metric, mode: input.mode },
+        });
+        assertCohortLtvDefinitionId('cac_mu');
+        assertCohortLtvDefinitionId('cohort_ltv_mu');
+        assertCohortLtvDefinitionId('ltv_cac_bp');
+        assertCohortLtvDefinitionId('repeat_rate_bp');
+        return {
+          result: result.result,
+          rows: result.result.rows,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
+  // ltv router — workspace tier, requireRole(ANALYST)
+  // Phase-2 slice-5 (feat-cohorts-ltv): LTV-by-dimension (CM2). NO CAC/payback here
+  // (those are cohort concepts — Finding 2). Dimensioned + weighted + paginated.
+  // -------------------------------------------------------------------
+  const ltvRouter = router({
+    /** LTV curve by dimension. requireRole(ANALYST). */
+    summary: workspaceProc
+      .input(
+        dateInput.extend({
+          metric: z.enum(['cm2', 'revenue', 'repeat_rate']).optional(),
+          mode: z.enum(['cumulative', 'post_acq', 'incremental']).optional(),
+          dimension: z
+            .enum([
+              'product', 'variant', 'vendor', 'collection', 'product_type',
+              'product_tags', 'order_tags', 'discount_codes', 'discount_pct', 'customer_id',
+            ])
+            .optional(),
+          search: z.string().optional(),
+          page: z.number().int().min(1).optional(),
+          page_size: z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `ltv.summary requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getLtvSummary({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: {
+            metric: input.metric,
+            mode: input.mode,
+            dimension: input.dimension,
+            search: input.search,
+            page: input.page,
+            page_size: input.page_size,
+          },
+        });
+        assertCohortLtvDefinitionId('cm2_mu');
+        assertCohortLtvDefinitionId('repeat_rate_bp');
+        return {
+          result: result.result,
+          rows: result.result.rows,
+          total_rows: result.result.total_rows,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // morningBrief router — workspace tier
   // CF-C6-MB-IDEMPOTENCY-1: submitResponse uses Redis dedup.
   // CF-C6-MB-GRADUATED-LABEL-1: status is server-driven.
@@ -723,6 +818,8 @@ export function createBrainRouter(
     pnl: pnlRouter,
     logistics: logisticsRouter,
     marketing: marketingRouter,
+    cohorts: cohortsRouter,
+    ltv: ltvRouter,
     morningBrief: morningBriefRouter,
     device: deviceRouter,
   });

@@ -30,7 +30,9 @@ Three consecutive Phase-2 slices found the ratified slice-table shorthand to be 
 - **slice 4 (`feat-marketing-acquisition`, this run `…14-56-06Z__slice4m`)** — Stage-1 review + persona: slice-table named paMER/payback/attribution-ladder; ground truth: paMER has NO legacy comparand (decommissioned), payback + placed→realized→incremental are slice-5 cohort concepts, AND Child-4 had pre-built `amer_bp` (= true_cm2/total_spend) diverging from legacy aMER (= nc_revenue/acquisition-classified-spend) behind a parity shadow-carve. Reconciled at Stage 1→3.
 - **metric-engine + pnl runs (`…22-25-29Z__0e76f7`, `…14-06-44Z__b2f1c7`)** — retros reference TS↔Python↔DDR formula divergence + a vacuous registry-parity gate (the same shadow-carve failure mode that hid slice-4's divergent defs).
 
-(≥3 distinct runs, this one included — meets the auto-candidate threshold.)
+- **slice 5 (`feat-cohorts-ltv`, run `…15-25-02Z__slice5`)** — Stage-1 review: slice-table said cohort rung = `cohort_cumulative_cm2_mu` and "LTV:CAC + payback under LTV"; real legacy: cohorts use **CM3** (cm2 − misc), LTV uses **CM2** with **NO** CAC/payback/LTV:CAC (those are cohort concepts). A 3rd speculative pre-build — Python-only `cac_payback_months = CAC/MonthlyCM2` — does NOT match the legacy cumulative bucket-walk + interpolation; DECOMMISSIONED (mirrors slice-4 `pamer_bp`). Notably TWO artifacts (the slice-table AND the pre-built `ltv_cac_bp` comment) AGREED on the wrong CM2 rung — internal consistency was not correctness. Caught at Stage 1; payback verified at the wire (1.0mo bucket-walk, not the phantom 2mo flat).
+
+(≥4 distinct runs now (slices 2-5), this one included — well past the auto-candidate threshold. Evidence #5.)
 
 ---
 

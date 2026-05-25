@@ -255,6 +255,36 @@ export function assertMarketingDefinitionId(definitionId: string): void {
   }
 }
 
+// COHORT_LTV_DEFINITION_IDS: registry ids on the slice-5 cohorts + LTV surfaces.
+// Phase-2 slice-5 (feat-cohorts-ltv). cohort_ltv_mu feeds ltv_cac_bp (cumulative CM3, not CM2);
+// repeat_rate_bp covers rr90 + LTV repeat_rate; the phantom cac_payback_months is DECOMMISSIONED
+// (must NOT appear here — the real payback is use-case computed, not a registry metric).
+export const COHORT_LTV_DEFINITION_IDS = [
+  'cac_mu',
+  'cohort_ltv_mu',
+  'ltv_cac_bp',
+  'repeat_rate_bp',
+  'cm2_mu',
+  'cm3_mu',
+] as const;
+
+/**
+ * Validate that a cohorts/LTV definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived cohort/LTV field in the BFF.
+ * Mutant probe: id "cac_payback_months" (decommissioned phantom) or "foo_mu" → this throws.
+ */
+export function assertCohortLtvDefinitionId(definitionId: string): void {
+  const isKnown =
+    COHORT_LTV_DEFINITION_IDS.includes(definitionId as (typeof COHORT_LTV_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: cohort/ltv definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
 /**
  * Look up a MetricDefinition by id. Returns undefined for count metrics (no registry entry).
  */

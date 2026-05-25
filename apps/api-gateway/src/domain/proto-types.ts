@@ -364,6 +364,91 @@ export interface DistributionsFilterInput {
 }
 
 // ---------------------------------------------------------------------------
+// Cohorts + LTV proto types (Phase-2 slice-5: feat-cohorts-ltv)
+// Cohorts use CM3 (Finding 1); LTV uses CM2 (Finding 2); payback is the cumulative
+// bucket-walk (Finding 3); cohort_ltv feeds ltv_cac_bp (Finding 4).
+// ---------------------------------------------------------------------------
+
+export type CohortMetric = 'cm3' | 'revenue' | 'repeat' | 'repurchase';
+export type CohortMode = 'post' | 'cumulative' | 'incr' | 'pct' | 'ltvcac';
+
+export interface CohortRow {
+  cohort_month: string;          // YYYY-MM
+  new_customers: bigint;
+  cac_mu: bigint | null;
+  rr90_bp: number | null;
+  payback_centimonths: number | null;  // null = not reached; 0 = immediate; 100 = 1.0 month
+  first_order_cm3_mu: bigint;
+  first_order_realized_cm3_mu: bigint;
+  cohort_ltv_mu: bigint;         // cumulative realized CM3 at horizon (feeds ltv_cac_bp)
+  ltv_cac_bp: number | null;
+  m: bigint[];                   // length 12 (display values; bigint for money/bp integer)
+}
+
+export interface CohortMatrixResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  metric: CohortMetric;
+  mode: CohortMode;
+  average_cac_mu: bigint | null;
+  avg_90day_repeat_bp: number | null;
+  average_payback_centimonths: number | null;
+  new_customers: bigint;
+  rows: CohortRow[];
+}
+
+export interface CohortFilterInput {
+  metric?: CohortMetric;
+  mode?: CohortMode;
+}
+
+export type LtvMetric = 'cm2' | 'revenue' | 'repeat_rate';
+export type LtvMode = 'cumulative' | 'post_acq' | 'incremental';
+export type LtvDimension =
+  | 'product' | 'variant' | 'vendor' | 'collection' | 'product_type'
+  | 'product_tags' | 'order_tags' | 'discount_codes' | 'discount_pct' | 'customer_id';
+
+export interface LtvRow {
+  dimension_value: string;
+  dimension_label: string;
+  orders_count: bigint;
+  new_customers: bigint;
+  first_order_realized_mu: bigint;
+  first_order_mu: bigint;
+  m: bigint[];  // length 12
+}
+
+export interface LtvSummaryResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  metric: LtvMetric;
+  mode: LtvMode;
+  dimension: LtvDimension;
+  first_order_mu: bigint;
+  first_order_realized_mu: bigint;
+  month1_mu: bigint;
+  month3_mu: bigint;
+  month6_mu: bigint;
+  month12_mu: bigint;
+  new_customers: bigint;
+  total_rows: bigint;
+  rows: LtvRow[];
+}
+
+export interface LtvFilterInput {
+  metric?: LtvMetric;
+  mode?: LtvMode;
+  dimension?: LtvDimension;
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Intelligence proto types (brain.intelligence.v1)
 // ---------------------------------------------------------------------------
 
@@ -539,6 +624,22 @@ export interface DataPlanePort {
     date_range: DateRange;
     filters?: DistributionsFilterInput;
   }): Promise<{ result: DistributionsResult; data_epoch: Date }>;
+
+  /**
+   * Phase-2 slice-5 (feat-cohorts-ltv): cohort retention/repeat heatmap (CM3) +
+   * LTV-by-dimension (CM2). CF-C6-DATA-SEAM-1: additive methods on the SAME port.
+   */
+  getCohortMatrix(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: CohortFilterInput;
+  }): Promise<{ result: CohortMatrixResult; data_epoch: Date }>;
+
+  getLtvSummary(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: LtvFilterInput;
+  }): Promise<{ result: LtvSummaryResult; data_epoch: Date }>;
 
   getMorningBrief(params: {
     workspace_id: string;

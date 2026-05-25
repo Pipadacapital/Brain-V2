@@ -40,6 +40,12 @@ import type {
   DistributionsProductRow,
   DistributionsGraphPoint,
   DistributionsFilterInput,
+  CohortMatrixResult,
+  CohortRow,
+  CohortFilterInput,
+  LtvSummaryResult,
+  LtvRow,
+  LtvFilterInput,
 } from '../domain/proto-types.js';
 
 // ---------------------------------------------------------------------------
@@ -515,6 +521,229 @@ function buildSugandhlokAcquisition(): AcquisitionSummaryResult {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Cohorts + LTV (Phase-2 slice-5: feat-cohorts-ltv). The builders mirror the
+// analytics-service use-case math so the wire output equals the use-case anchors.
+// Cohorts use CM3; LTV uses CM2; payback is the cumulative bucket-walk (centi-months).
+// ---------------------------------------------------------------------------
+
+// Two cohorts for the anchor brand. Per-customer numbers are deliberately chosen so
+// the headline payback and LTV:CAC are clean.
+const _COHORT_SEED = [
+  {
+    cohort_month: '2026-01', new_customers: 1000n, month_spend_mu: 50_000_000n, // cac 50000
+    sum_fo_cm3_mu: 30_000_000n, sum_fo_realized_cm3_mu: 30_000_000n,            // fo 30000/cust
+    repeat_90d: 300n,                                                            // rr90 3000bp
+    incr_cm3_mu: [20_000_000n, 10_000_000n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n], // 20000,10000/cust
+    incr_revenue_mu: [40_000_000n, 20_000_000n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+    incr_repeat_customers: [300n, 150n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+    incr_repurchase_orders: [350n, 160n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+  },
+  {
+    cohort_month: '2026-02', new_customers: 800n, month_spend_mu: 32_000_000n,  // cac 40000
+    sum_fo_cm3_mu: 28_000_000n, sum_fo_realized_cm3_mu: 28_000_000n,            // fo 35000/cust
+    repeat_90d: 200n,                                                            // rr90 2500bp
+    incr_cm3_mu: [12_000_000n, 8_000_000n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+    incr_revenue_mu: [24_000_000n, 16_000_000n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+    incr_repeat_customers: [200n, 100n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+    incr_repurchase_orders: [240n, 110n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+  },
+];
+
+function _avgInt(total: bigint, n: bigint): bigint {
+  return n > 0n ? total / n : 0n;
+}
+
+/** Cumulative bucket-walk payback in centi-months (×100). Mirrors the use-case. */
+function _cohortPaybackCentimonths(
+  foRealized: bigint, cac: bigint, incrCm3: bigint[], n: bigint, metric: string, mode: string,
+): number | null {
+  if (metric !== 'cm3' && metric !== 'revenue') return null;
+  if (n <= 0n) return null;
+  const incr = incrCm3.map((v) => v / n);
+  const foPer = foRealized / n;
+  let cum = foPer - cac;
+  if (cum >= 0n) return 0;
+  for (let k = 1; k <= 12; k++) {
+    const incrVal = incr[k - 1] ?? 0n;
+    const prevCum = cum;
+    cum += incrVal;
+    if (cum >= 0n) {
+      if (metric === 'cm3' && mode === 'post' && incrVal > 0n && prevCum < 0n) {
+        const fracCenti = (100n * -prevCum) / incrVal;
+        return (k - 1) * 100 + Number(fracCenti);
+      }
+      return k * 100;
+    }
+  }
+  return null;
+}
+
+function _applyCohortMode(
+  metric: string, mode: string, firstOrder: bigint, firstOrderR: bigint, cac: bigint, incr: bigint[],
+): bigint[] {
+  if (metric === 'cm3' || metric === 'revenue') {
+    const fo = metric === 'cm3' ? firstOrderR : firstOrder;
+    if (mode === 'incr') return [...incr];
+    if (mode === 'post') {
+      if (metric === 'cm3') return [...incr];
+      let s = 0n; return incr.map((v) => (s += v));
+    }
+    if (mode === 'cumulative') { let s = fo; return incr.map((v) => (s += v)); }
+    if (mode === 'pct') {
+      const denom = (fo < 0n ? -fo : fo) > 0n ? (fo < 0n ? -fo : fo) : 1n;
+      let s = fo; return incr.map((v) => { s += v; return (s * 10000n) / denom; });
+    }
+    if (mode === 'ltvcac') {
+      const denom = cac > 0n ? cac : 1n;
+      let s = fo; return incr.map((v) => { s += v; return (s * 10000n) / denom; });
+    }
+  } else {
+    if (mode === 'post') { let s = 0n; return incr.map((v) => (s += v)); }
+    return [...incr];
+  }
+  return [...incr];
+}
+
+function buildSugandhlokCohortMatrix(filters?: CohortFilterInput): CohortMatrixResult {
+  const metric = filters?.metric ?? 'cm3';
+  const mode = filters?.mode ?? 'post';
+  const rows: CohortRow[] = [];
+  let totalNew = 0n;
+  let repeat90Total = 0n;
+  let totalAdSpend = 0n;
+  let paybackWeightedSum = 0;
+  let paybackWeight = 0;
+
+  for (const c of _COHORT_SEED) {
+    const n = c.new_customers;
+    totalNew += n;
+    repeat90Total += c.repeat_90d;
+    totalAdSpend += c.month_spend_mu;
+    const cac = n > 0n ? c.month_spend_mu / n : null;
+    const rr90 = n > 0n ? _ratioBp(c.repeat_90d, n) : null;
+    const firstOrder = _avgInt(c.sum_fo_cm3_mu, n);
+    const firstOrderR = _avgInt(c.sum_fo_realized_cm3_mu, n);
+
+    let incrPer: bigint[];
+    if (metric === 'cm3') incrPer = c.incr_cm3_mu.map((v) => (n > 0n ? v / n : 0n));
+    else if (metric === 'revenue') incrPer = c.incr_revenue_mu.map((v) => (n > 0n ? v / n : 0n));
+    else if (metric === 'repeat') incrPer = c.incr_repeat_customers.map((v) => (n > 0n ? (_ratioBp(v, n) ?? 0) : 0)).map((x) => BigInt(x));
+    else incrPer = c.incr_repurchase_orders.map((v) => (n > 0n ? v / n : 0n));
+
+    const cm3Per = c.incr_cm3_mu.map((v) => (n > 0n ? v / n : 0n));
+    let ltv = firstOrderR;
+    for (const step of cm3Per) ltv = ltv + step;
+    const ltvCac = cac && cac > 0n ? _ratioBp(ltv, cac) : null;
+
+    const payback = _cohortPaybackCentimonths(c.sum_fo_realized_cm3_mu, cac ?? 0n, c.incr_cm3_mu, n, metric, mode);
+    if (payback !== null && n > 0n) { paybackWeightedSum += payback * Number(n); paybackWeight += Number(n); }
+
+    const m = _applyCohortMode(metric, mode, firstOrder, firstOrderR, cac ?? 0n, incrPer);
+
+    rows.push({
+      cohort_month: c.cohort_month, new_customers: n, cac_mu: cac, rr90_bp: rr90,
+      payback_centimonths: payback, first_order_cm3_mu: firstOrder,
+      first_order_realized_cm3_mu: firstOrderR, cohort_ltv_mu: ltv, ltv_cac_bp: ltvCac, m,
+    });
+  }
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID, period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH, currency_code: SUGANDH_LOK_CANONICAL.currency_code,
+    metric, mode,
+    average_cac_mu: totalNew > 0n ? totalAdSpend / totalNew : null,
+    avg_90day_repeat_bp: totalNew > 0n ? _ratioBp(repeat90Total, totalNew) : null,
+    average_payback_centimonths: paybackWeight > 0 ? Math.trunc(paybackWeightedSum / paybackWeight) : null,
+    new_customers: totalNew, rows,
+  };
+}
+
+// LTV-by-dimension seed (product). cm2 values per the anchor brand.
+const _LTV_SEED = [
+  {
+    dimension_value: 'p_oud', dimension_label: 'Sugandh Oud Attar 12ml', new_customers: 600n, orders_count: 1500n,
+    sum_fo_mu: 600_000_000n, sum_fo_realized_mu: 600_000_000n,           // fo 1000000/cust
+    incr_value_mu: [300_000_000n, 180_000_000n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n], // 500000,300000/cust
+    incr_repeat_customers: [240n, 120n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+  },
+  {
+    dimension_value: 'p_rose', dimension_label: 'Rose Mist 50ml', new_customers: 400n, orders_count: 700n,
+    sum_fo_mu: 200_000_000n, sum_fo_realized_mu: 200_000_000n,           // fo 500000/cust
+    incr_value_mu: [80_000_000n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n], // 200000/cust
+    incr_repeat_customers: [80n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n],
+  },
+];
+
+function _applyLtvMode(mode: string, fo: bigint, incr: bigint[]): bigint[] {
+  if (mode === 'cumulative') { let s = fo; return incr.map((v) => (s += v)); }
+  if (mode === 'post_acq') { let s = 0n; return incr.map((v) => (s += v)); }
+  return [...incr];
+}
+
+function buildSugandhlokLtvSummary(filters?: LtvFilterInput): LtvSummaryResult {
+  const metric = filters?.metric ?? 'cm2';
+  const mode = filters?.mode ?? 'cumulative';
+  const dimension = filters?.dimension ?? 'product';
+  const page = Math.max(1, filters?.page ?? 1);
+  const pageSize = Math.min(100, Math.max(10, filters?.page_size ?? 20));
+  const search = filters?.search;
+
+  const allRows: LtvRow[] = [];
+  let sumFo = 0n, sumFoR = 0n;
+  const sumIncr = new Array<bigint>(12).fill(0n);
+
+  for (const d of _LTV_SEED) {
+    const n = d.new_customers;
+    if (n === 0n) continue;
+    const isRepeat = metric === 'repeat_rate';
+    const fo = isRepeat ? 0n : d.sum_fo_mu / n;
+    const foR = isRepeat ? 0n : d.sum_fo_realized_mu / n;
+    const incr = isRepeat
+      ? d.incr_repeat_customers.map((v) => BigInt(_ratioBp(v, n) ?? 0))
+      : d.incr_value_mu.map((v) => v / n);
+    const m = _applyLtvMode(mode, isRepeat ? 0n : foR, incr);
+
+    allRows.push({
+      dimension_value: d.dimension_value, dimension_label: d.dimension_label,
+      orders_count: d.orders_count, new_customers: n,
+      first_order_realized_mu: foR, first_order_mu: fo, m,
+    });
+    sumFo += fo * n; sumFoR += foR * n;
+    for (let k = 0; k < 12; k++) sumIncr[k] = (sumIncr[k] ?? 0n) + (incr[k] ?? 0n) * n;
+  }
+
+  allRows.sort((a, b) => (b.dimension_label || '').localeCompare(a.dimension_label || ''));
+  let filtered = allRows;
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    filtered = allRows.filter((r) => r.dimension_label.toLowerCase().includes(q));
+  }
+  const totalRows = filtered.length;
+  const start = (page - 1) * pageSize;
+  const paginated = filtered.slice(start, start + pageSize);
+
+  const totalN = allRows.reduce((s, r) => s + r.new_customers, 0n);
+  const avgFo = totalN > 0n ? sumFo / totalN : 0n;
+  const avgFoR = totalN > 0n ? sumFoR / totalN : 0n;
+  const avgIncr = sumIncr.map((s) => (totalN > 0n ? s / totalN : 0n));
+  const baseFo = metric === 'repeat_rate' ? 0n : avgFoR;
+  const cards = _applyLtvMode(mode, baseFo, avgIncr);
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID, period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH, currency_code: SUGANDH_LOK_CANONICAL.currency_code,
+    metric, mode, dimension,
+    first_order_mu: metric === 'repeat_rate' ? 0n : avgFo,
+    first_order_realized_mu: metric === 'repeat_rate' ? 0n : avgFoR,
+    month1_mu: metric === 'repeat_rate' ? (avgIncr[0] ?? 0n) : (cards[0] ?? 0n),
+    month3_mu: metric === 'repeat_rate' ? (avgIncr[2] ?? 0n) : (cards[2] ?? 0n),
+    month6_mu: metric === 'repeat_rate' ? (avgIncr[5] ?? 0n) : (cards[5] ?? 0n),
+    month12_mu: metric === 'repeat_rate' ? (avgIncr[11] ?? 0n) : (cards[11] ?? 0n),
+    new_customers: totalN, total_rows: BigInt(totalRows), rows: paginated,
+  };
+}
+
 // Per-product per-order value arrays (paise) for the distributions histogram.
 const _DISTRIBUTIONS_SEED: { product: string; sales: bigint[]; cm1: bigint[] }[] = [
   {
@@ -897,6 +1126,28 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { result: buildSugandhlokDistributions(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  async getCohortMatrix(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: CohortFilterInput;
+  }): Promise<{ result: CohortMatrixResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokCohortMatrix(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  async getLtvSummary(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: LtvFilterInput;
+  }): Promise<{ result: LtvSummaryResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokLtvSummary(params.filters), data_epoch: DATA_EPOCH };
   }
 
   async getMorningBrief(params: {
