@@ -634,3 +634,13 @@
 **Open questions:** Full authenticated HTTP e2e (real Supabase JWT → onboarding → dashboard) still needs the Supabase dashboard redirect/mailer config (Founder action, carried from slices A/B). Proven instead via the integration test (real DB+RLS) + the gateway-runtime DbMembershipResolver proof against the live local DB.
 **Deferred (slice D):** Shopify/Woo LIVE OAuth connect (handle captured, connect affordance disabled); member-invite SENDING (email).
 **Next:** STOP after slice C per directive. Slice D NOT started. Founder commits via sliceC-pending-founder-commit.md.
+
+## 2026-05-26T01:16:30Z — Rohan (cto-advisor) — epic-real-auth-supabase (slice D)
+**Stage:** 1→6 (full high-stakes pass, single-operator; Agent tool unavailable)
+**Action:** Built slice D — Shopify/Meta/Google OAuth connect/callback + token custody; Stage-6 PASS.
+**Personas (Stage 1):** 1 — token-custody-at-rest-realist:sonnet (5 concerns TC-001..005, all accepted, folded into the plan + tests).
+**Decision:** PASS → Founder gate SIGNED under standing delegation (no hard-rule deviation).
+**Rationale:** Tokens encrypted at rest (AES-256-GCM, RLS-scoped, never logged/returned); CSRF state + idempotent callback + FORCE RLS proven at the wire; production seal() HELD (CF-C7-CUSTODY-PROOF-1); data-ingestion DEFERRED (honest "sync pending"); mechanically verified with a fixture token-exchange (no live creds). ZERO new deps; @paradigm sql/io. Closes epic-real-auth-supabase.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, integration-connectors.
+**Open questions:** none blocking. Founder must register 3 redirect URIs for live e2e + authorize the commit. pool-isolation.test.ts (Child-1) needs a pgbouncer :5433 container (pre-existing env gap).
+**Next:** Founder — register redirect URIs + 'commit it' (sliceD-pending-founder-commit.md, explicit paths, real .env excluded).

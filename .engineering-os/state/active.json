@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-25T20-25-53Z",
+  "updated_at": "2026-05-26T01:16:30Z",
   "updated_by": "cto-advisor",
   "active_requirements": [
     {
@@ -3211,9 +3211,9 @@
     {
       "req_id": "epic-real-auth-supabase",
       "title": "Real authentication (Supabase) \u2014 login + signup + onboarding + Google OAuth, Brain-native (EPIC)",
-      "status": "intake",
+      "status": "awaiting-founder",
       "stage": 1,
-      "current_owner": "cto-advisor",
+      "current_owner": "founder \u2014 slice D Stage-7 gate SIGNED under delegation; awaiting commit authorization + provider-dashboard redirect-URI registration for live e2e",
       "feature_class": "high-stakes",
       "feature_class_rationale": "5 trigger surfaces (auth, multi-tenancy, pii, secrets-env, connectors); live auth with real consumers; no scaffolding carve-out.",
       "trigger_surfaces_touched": [
@@ -3264,7 +3264,89 @@
         "A",
         "B",
         "C"
-      ]
+      ],
+      "slice_d": {
+        "title": "live integrations OAuth (Shopify, Meta, Google) + token custody",
+        "feature_class": "high-stakes",
+        "trigger_surfaces_touched": [
+          "connectors",
+          "auth",
+          "multi-tenancy",
+          "PII",
+          "secrets"
+        ],
+        "paradigm": "sql/io",
+        "persona_count": 1,
+        "needs_personas": [
+          "token-custody-at-rest-realist:sonnet"
+        ],
+        "intake_decision": "ADVANCE",
+        "cto_review_artifact": "sliceD-02-cto-advisor-review.md",
+        "architect_plan": "sliceD-03-architect-plan.md",
+        "stage6_final_review": {
+          "reviewer": "cto-advisor (Rohan)",
+          "ts": "2026-05-26T01:16:00Z",
+          "verdict": "PASS",
+          "recommendation": "APPROVE",
+          "founder_gate": "SIGNED under standing delegation",
+          "artifact": "sliceD-11-final-review.md",
+          "retro": "sliceD-14-retro.md",
+          "founder_decision_delegated": "sliceD-12-founder-decision.json",
+          "hard_rule_deviation_check": "NONE",
+          "custody": "local AES-256-GCM (encrypted at rest, RLS-scoped, never logged); production seal() HELD CF-C7-CUSTODY-PROOF-1",
+          "deferred": "data-ingestion/backfill (honest 'connected \u00b7 sync pending'); production seal()",
+          "independent_reverification": {
+            "rls_force": "connector_connections/credentials/oauth_states all relrowsecurity+relforcerowsecurity=t",
+            "fail_closed_read": "context-less read of connector_credentials as rls_app -> 0 rows",
+            "cross_workspace": "wrong-ws context -> 0 rows; correct-ws -> 1 row",
+            "fail_closed_write": "context-less INSERT -> new row violates row-level security policy",
+            "mechanical_flow": "auth-URL build correct per vendor; callback exchange->custody(encrypted)->UPSERT idempotent; AES tamper-reject; at-rest plaintext-token-present=false x3; decrypt round-trip OK",
+            "gateway_wire": "authMode real-supabase-jwt; connectors.* no-Bearer + forged-Bearer -> UNAUTHORIZED",
+            "typecheck": "0 x3 (core-service, api-gateway, web)",
+            "suites": "core-service 224u +7 integ (slice-D isolated/serial); api-gateway 225; web 87"
+          },
+          "committed": false,
+          "commit_note": "NO commit. sliceD-pending-founder-commit.md (explicit paths, no git add -A); real .env git-ignored + check-ignore-proven; only .env.example committed."
+        },
+        "founder_handoff_redirect_uris": {
+          "shopify": "http://localhost:3000/api/integrations/shopify/callback",
+          "meta": "http://localhost:3000/api/integrations/meta/callback",
+          "google": "http://localhost:3000/api/integrations/google/callback"
+        },
+        "files_changed": [
+          "apps/core-service/migrations/local-dev/03-schema-connectors.sql",
+          "apps/core-service/migrations/local-dev/04-enable-rls-connectors.sql",
+          "apps/core-service/migrations/local-dev/down-connectors.sql",
+          "apps/core-service/src/infrastructure/secrets/credential-custody.ts",
+          "apps/core-service/src/infrastructure/secrets/local-aesgcm-custody.ts",
+          "apps/core-service/src/infrastructure/secrets/production-custody.ts",
+          "apps/core-service/src/infrastructure/secrets/custody-factory.ts",
+          "apps/core-service/src/application/connectors/oauth-state.ts",
+          "apps/core-service/src/application/connectors/provider-config.ts",
+          "apps/core-service/src/application/connectors/connector-use-cases.ts",
+          "apps/core-service/src/application/connectors/index.ts",
+          "apps/core-service/src/__tests__/custody-local-aesgcm.test.ts",
+          "apps/core-service/src/__tests__/provider-config.test.ts",
+          "apps/core-service/src/__tests__/connector-use-cases.test.ts",
+          "apps/core-service/src/__tests__/integration/connectors-rls.integration.test.ts",
+          "apps/core-service/src/__tests__/integration/connectors-mechanical-proof.integration.test.ts",
+          "apps/api-gateway/src/application/router.ts",
+          "apps/api-gateway/src/application/router.connectors-sliceD.test.ts",
+          "apps/api-gateway/tsconfig.json",
+          "apps/api-gateway/vitest.config.ts",
+          "apps/api-gateway/.env.example",
+          "apps/web/tsconfig.json",
+          "apps/web/src/app/api/integrations/shopify/callback/route.ts",
+          "apps/web/src/app/api/integrations/meta/callback/route.ts",
+          "apps/web/src/app/api/integrations/google/callback/route.ts",
+          "apps/web/src/infrastructure/connector-callback.ts",
+          "apps/web/src/infrastructure/connector-callback-handler.ts",
+          "apps/web/src/interfaces/components/settings/integrations-content.tsx",
+          "apps/web/src/test/connector-callback.test.ts",
+          "apps/web/src/test/integrations-content.test.tsx"
+        ],
+        "epic_close_out": "FINAL slice \u2014 closes epic-real-auth-supabase (A/B/C/D all built + mechanically verified locally)."
+      }
     },
     {
       "req_id": "feat-auth-supabase-identity",
