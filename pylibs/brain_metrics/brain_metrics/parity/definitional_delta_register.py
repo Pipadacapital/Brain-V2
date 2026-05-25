@@ -593,6 +593,145 @@ _ROW_ACOS = DDRRow(
 )
 
 
+_ROW_BREAKEVEN_COD_RTO = DDRRow(
+    # Phase-2 slice-3 (feat-rto-cod-economics). Legacy: cod-prepaid-analytics.ts:218-231.
+    # Rohan/persona Concern-1: the slice table's naive r*=M/(M+C) is WRONG; Brain ports the FULL formula.
+    legacy_formula=(
+        "cod-prepaid-analytics.ts:218-231 "
+        "(numerator = V*P + (COD_fee - PG_fee) + P*(S+RS); denominator = V + S + RS; "
+        "rCodBe = numerator/denominator; valid only if 0<=rCodBe<=1; "
+        "PG_fee = V*(gatewayFeePercent/100))"
+    ),
+    brain_formula="breakeven_cod_rto_rate_bp",
+    reason=(
+        "Brain canonicalizes the FULL legacy COD break-even RTO rate, NOT the naive M/(M+C) form "
+        "that appeared in the ratified slice table. The naive form is a degenerate special case and "
+        "would mis-advise COD-vs-prepaid policy — a top India-D2C margin lever. Brain computes the "
+        "exact legacy formula in INTEGER paise with a SINGLE final FLOOR-to-bp (no chained float), "
+        "so TS and Python are byte-identical. parity_gap:true (Brain canonical integer form; the "
+        "legacy float result is not a byte comparand). Routed to the correctness-fixture gate with a "
+        "cross-language worked anchor that FAILS the naive M/(M+C) and PASSES the full form — the "
+        "slice-2 verify-the-verifier lesson applied. Rohan's Stage-6 sign-off must acknowledge no "
+        "legacy byte shadow. When the result is outside [0, 10000] bp the use-case surfaces the "
+        "legacy breakEvenNote instead of a rate; the registry value is the raw bp."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not applicable — no legacy byte comparand (legacy is float, Brain is integer-canonical). "
+        "WORKED ANCHOR (CF-S3-BREAKEVEN-1): aov_mu=150000 (₹1500), prepaid_rto_rate_bp=500 (5%), "
+        "cod_fee_mu=3000 (₹30), gateway_fee_bp=200 (2%), return_shipping_mu=8000 (₹80), restocking_mu=0. "
+        "pg_fee = intDiv(150000*200, 10000) = 3000. "
+        "num_scaled = 150000*500 + (3000-3000)*10000 + 500*(8000+0) = 75000000 + 0 + 4000000 = 79000000. "
+        "denom = 150000 + 8000 + 0 = 158000. "
+        "breakeven_cod_rto_rate_bp = intDiv(79000000, 158000) = 500 bp (5.00%). "
+        "The naive M/(M+C) would yield ~95% — the anchor distinguishes the two formulas."
+    ),
+    business_impact=(
+        "Break-even COD RTO rate is the decision threshold for COD-vs-prepaid policy: above r* prepaid "
+        "is more profitable at the current AOV and fees. For high-RTO Indian-D2C brands this is the "
+        "single largest controllable margin lever. A wrong (naive) formula would systematically "
+        "mis-advise the COD discount / prepaid-nudge strategy."
+    ),
+    parity_gap=True,  # STRUCTURAL RULE 1: correctness-fixture gate, never shadow GREEN
+    child_dependency=None,
+    formula_snapshot=(
+        "breakeven_cod_rto_rate_bp = intDiv("
+        "aov_mu * prepaid_rto_rate_bp "
+        "+ (cod_fee_mu - intDiv(aov_mu * gateway_fee_bp, 10000)) * 10000 "
+        "+ prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu), "
+        "aov_mu + return_shipping_mu + restocking_mu); "
+        "NULL when (aov_mu + return_shipping_mu + restocking_mu) <= 0. "
+        "ClickHouse: if((aov_mu + return_shipping_mu + restocking_mu) > 0, intDiv(aov_mu * prepaid_rto_rate_bp "
+        "+ (cod_fee_mu - intDiv(aov_mu * gateway_fee_bp, 10000)) * 10000 "
+        "+ prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu), "
+        "aov_mu + return_shipping_mu + restocking_mu), NULL)"
+    ),
+)
+
+_ROW_PINCODE_RELIABILITY = DDRRow(
+    # Phase-2 slice-3. Legacy float: pincode-intelligence.ts:60-66 (calcProfitabilityScore).
+    legacy_formula=(
+        "pincode-intelligence.ts:60-66 "
+        "(clamp(0,100, 100 - rtoRate*2 - codRate*0.5 + repeatRate*0.5 + (aov/1000)*10); "
+        "rates in percent points, aov in rupees — FLOAT)"
+    ),
+    brain_formula="pincode_reliability_score",
+    reason=(
+        "Brain integerizes the legacy float profitability score to a deterministic CENTI-POINT score "
+        "(0..10000 = 0.00..100.00), so TS and Python are byte-identical (the legacy float coefficients "
+        "0.5 and aov/1000 are TS<->Python drift risk — persona Concern-2). Inputs are rates in bp "
+        "(=pp*100) and aov in paise. parity_gap:true (Brain-native integer canonical; the legacy float "
+        "is not a byte comparand). Routed to the correctness-fixture gate with a worked anchor. "
+        "aov-term derivation: legacy (aov_rupees/1000)*10 POINTS = aov_rupees/100 points = aov_rupees "
+        "centi-points; aov_rupees = intDiv(aov_mu, 100) ⇒ term_cp = intDiv(aov_mu, 100). "
+        "Rohan's Stage-6 sign-off must acknowledge no legacy byte shadow."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not applicable — no legacy byte comparand (legacy float vs Brain integer centi-points). "
+        "WORKED ANCHOR (CF-S3-PINCODE-1): rto_bp=1800 (18%), cod_bp=6000 (60%), repeat_bp=2000 (20%), "
+        "aov_mu=150000 (₹1500). "
+        "raw = 10000 - 1800*2 - intDiv(6000,2) + intDiv(2000,2) + intDiv(150000,100) "
+        "= 10000 - 3600 - 3000 + 1000 + 1500 = 5900 centi-points (= 59.00). clamp(0,10000) -> 5900. "
+        "Legacy float check: 100 - 18*2 - 60*0.5 + 20*0.5 + (1500/1000)*10 "
+        "= 100 - 36 - 30 + 10 + 15 = 59.00 -> matches (×100 = 5900)."
+    ),
+    business_impact=(
+        "Pincode reliability ranks delivery destinations by RTO risk / COD load / repeat loyalty / AOV. "
+        "It drives serviceability and COD-gating decisions per pincode — a direct RTO-leak control. "
+        "A drifting float score would rank pincodes inconsistently across the web and analytics surfaces."
+    ),
+    parity_gap=True,  # STRUCTURAL RULE 1
+    child_dependency=None,
+    formula_snapshot=(
+        "pincode_reliability_score = clamp(0, 10000, "
+        "10000 - rto_bp*2 - intDiv(cod_bp,2) + intDiv(repeat_bp,2) + intDiv(aov_mu,100)); "
+        "centi-points (×100 of legacy 0..100); inputs: rates in bp, aov in paise. "
+        "ClickHouse: greatest(0, least(10000, toInt64(10000 - rto_bp * 2 - intDiv(cod_bp, 2) "
+        "+ intDiv(repeat_bp, 2) + intDiv(aov_mu, 100))))"
+    ),
+)
+
+_ROW_RTO_COST_VALUE = DDRRow(
+    # Phase-2 slice-3. Legacy: shiprocket-charges.ts (rtoChargesFromRaw / shiprocketRtoRevenueLost).
+    # Connector-sourced per-shipment charges/value — unmeasurable pre-Child-3 (mirrors _ROW_TOTAL_TAX).
+    # Covers BOTH rto_cost_mu (keyed here) and its sibling rto_revenue_lost_mu (same ingest dependency).
+    legacy_formula=(
+        "shiprocket-charges.ts (rtoChargesFromRaw -> rto_cost_mu; "
+        "shiprocketRtoRevenueLost -> rto_revenue_lost_mu); rto-analytics.ts:114-144 sums per RTO shipment"
+    ),
+    brain_formula="rto_cost_mu",
+    reason=(
+        "rto_cost_mu (SUM of per-RTO-shipment charges) and its sibling rto_revenue_lost_mu (SUM of RTO "
+        "order/COD value) are CONNECTOR-SOURCED aggregates extracted from Shiprocket raw_json. They are "
+        "NOT computable until the Child-3 connector cutover provides per-shipment charge/value data — "
+        "exactly like total_tax_mu's per-SKU dependency. During the shadow phase these values are "
+        "unmeasurable; the row is NOT signable until the child-3-shopify-connector gate is GREEN "
+        "(STRUCTURAL RULE 2). The Brain definitions are passthrough money aggregates (toInt64 of the "
+        "summed paise) — never silently float-matched."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Unmeasurable pre-Child-3 (no per-shipment charge/value ingest yet). "
+        "Once Child-3 is GREEN: Brain = SUM(integer paise per RTO shipment); legacy = float "
+        "Math.round(sum*100)/100. Expected delta: sub-paise FLOOR-vs-ROUND rounding only. "
+        "rto_revenue_lost_mu shares this row's dependency and rounding behavior."
+    ),
+    business_impact=(
+        "RTO cost and revenue-lost are the money headline of /rto-analytics and /logistics — the "
+        "explicit ₹ size of the RTO leak. A wrong-but-signed value here would understate or overstate "
+        "the single largest controllable margin leak. NOT signable until Child-3 connector gate is GREEN."
+    ),
+    parity_gap=False,
+    child_dependency="child-3-shopify-connector",  # STRUCTURAL RULE 2 applies
+    formula_snapshot=(
+        "rto_cost_mu = toInt64(SUM(rtoChargesFromRaw(shipment.raw_json))) over RTO shipments; "
+        "rto_revenue_lost_mu = toInt64(SUM(shiprocketRtoRevenueLost(shipment))) over RTO shipments; "
+        "connector-sourced; pending Child-3 per-shipment charge/value ingest."
+    ),
+)
+
+
 # ---------------------------------------------------------------------------
 # The canonical register (ordered by waterfall / priority)
 # ---------------------------------------------------------------------------
@@ -611,6 +750,10 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     "fx_restatement":            _ROW_FX,
     "blended_roas_x100":         _ROW_BLENDED_ROAS,
     "acos_bp":                   _ROW_ACOS,
+    # Phase-2 slice-3 (feat-rto-cod-economics)
+    "breakeven_cod_rto_rate_bp": _ROW_BREAKEVEN_COD_RTO,
+    "pincode_reliability_score": _ROW_PINCODE_RELIABILITY,
+    "rto_cost_mu":               _ROW_RTO_COST_VALUE,
 }
 
 

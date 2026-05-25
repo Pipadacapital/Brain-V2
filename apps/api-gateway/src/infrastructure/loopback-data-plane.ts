@@ -27,6 +27,12 @@ import type {
   SubmitInsightResult,
   RegisterPushTokenResult,
   DateRange,
+  RtoAnalyticsResult,
+  CodPrepaidResult,
+  LogisticsResult,
+  PincodeIntelligenceResult,
+  PincodeRow,
+  PincodeFilterInput,
 } from '../domain/proto-types.js';
 
 // ---------------------------------------------------------------------------
@@ -93,6 +99,31 @@ const SUGANDH_LOK_CANONICAL = {
   rto_rate_bp: 1_800,
   blended_roas_x100: 285,
   conversion_rate_bp: 230,
+  // -------------------------------------------------------------------
+  // Slice-3 (feat-rto-cod-economics) operational facts. Shiprocket-sourced
+  // (held at Child-3 cutover; seeded here for the harness). Chosen so the derived
+  // rto_rate stays ~1800bp (cross-surface consistency with the dashboard KPI) and
+  // the break-even worked example reproduces 500bp. All money in paise.
+  // -------------------------------------------------------------------
+  total_shipments: 1_247n,
+  rto_cost_mu: 4_480_000n,           // ₹44.8K total RTO charges
+  rto_revenue_lost_mu: 33_200_000n,  // ₹3.32L revenue lost to RTO
+  cod_orders: 800n,
+  prepaid_orders: 200n,              // total 1000; break-even AOV = 150000p
+  cod_delivered: 612n,              // cod realization = 7650bp
+  prepaid_delivered: 190n,
+  cod_rto: 180n,                    // cod rto = 2250bp
+  prepaid_rto: 10n,                 // prepaid rto = 500bp (break-even P)
+  gross_revenue_cod_mu: 120_000_000n,
+  gross_revenue_prepaid_mu: 30_000_000n,  // total gross 150_000_000 → AOV 150000p
+  cod_fee_mu: 3_000n,              // ₹30 COD fee
+  gateway_fee_bp: 200,            // 2% gateway
+  return_shipping_mu: 8_000n,     // ₹80 return shipping per RTO
+  // Logistics charge breakdown
+  forward_charges_mu: 8_000_000n,
+  cod_charges_mu: 1_200_000n,
+  rto_charges_mu: 4_480_000n,
+  delivered_count: 980n,
 } as const;
 
 /** Sugandh-Lok seed KPI data — DERIVED from the canonical seed (single source). */
@@ -202,6 +233,194 @@ function buildSugandhlokPnlStatement(): PnlStatementRow {
     cm3_mu: cm3,
     true_cm2_mu: trueCm2,
     order_count: c.order_count,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Slice-3 (feat-rto-cod-economics) builders — derived from SUGANDH_LOK_CANONICAL.
+// Mirror the analytics-service use-case math (registry formulas; integer FLOOR).
+// ONE seed → /rto-analytics, /cod-prepaid, /logistics, /pincode share consistent facts.
+// ---------------------------------------------------------------------------
+
+function _ratioBp(num: bigint, denom: bigint): number | null {
+  if (denom <= 0n) return null;
+  return Number((num * 10000n) / denom);
+}
+
+function buildSugandhlokRtoAnalytics(): RtoAnalyticsResult {
+  const c = SUGANDH_LOK_CANONICAL;
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    total_shipments: c.total_shipments,
+    rto_count: c.rto_orders,
+    rto_rate_bp: _ratioBp(c.rto_orders, c.total_shipments), // 224/1247 = 1796bp
+    total_rto_cost_mu: c.rto_cost_mu,
+    revenue_lost_to_rto_mu: c.rto_revenue_lost_mu,
+    // RTO-analytics by-payment counts reconcile to rto_orders (224) — the RTO surface counts
+    // ALL RTO shipments. (The /cod-prepaid surface uses its own mapped denominators.)
+    by_payment_method: [
+      { payment_method: 'COD', rto_count: 180n, rto_cost_mu: 3_600_000n, revenue_lost_mu: 27_000_000n },
+      { payment_method: 'Prepaid', rto_count: 44n, rto_cost_mu: 880_000n, revenue_lost_mu: 6_200_000n },
+    ],
+    by_courier: [
+      { courier_name: 'Delhivery', rto_count: 120n, rto_cost_mu: 2_400_000n, revenue_lost_mu: 18_000_000n },
+      { courier_name: 'Bluedart', rto_count: 104n, rto_cost_mu: 2_080_000n, revenue_lost_mu: 15_200_000n },
+    ],
+  };
+}
+
+function buildSugandhlokCodPrepaid(): CodPrepaidResult {
+  const c = SUGANDH_LOK_CANONICAL;
+  const totalOrders = c.cod_orders + c.prepaid_orders;            // 1000
+  const totalGross = c.gross_revenue_cod_mu + c.gross_revenue_prepaid_mu; // 150_000_000
+  const aov = totalOrders > 0n ? totalGross / totalOrders : 0n;   // 150000
+  const codRtoBp = _ratioBp(c.cod_rto, c.cod_orders) ?? 0;        // 2250
+  const prepaidRtoBp = _ratioBp(c.prepaid_rto, c.prepaid_orders) ?? 0; // 500
+  // Effective revenue (integer FLOOR), mirrors the use-case.
+  const codSurvived = c.gross_revenue_cod_mu - (c.gross_revenue_cod_mu * BigInt(codRtoBp)) / 10000n;
+  const prepaidSurvived =
+    c.gross_revenue_prepaid_mu - (c.gross_revenue_prepaid_mu * BigInt(prepaidRtoBp)) / 10000n;
+  const codFeeTotal = c.cod_orders * c.cod_fee_mu;
+  const gatewayFeeTotal = (c.gross_revenue_prepaid_mu * BigInt(c.gateway_fee_bp)) / 10000n;
+  const codReturnShip = c.cod_rto * c.return_shipping_mu;
+  const prepaidReturnShip = c.prepaid_rto * c.return_shipping_mu;
+  const effCod = codSurvived - codFeeTotal - codReturnShip;
+  const effPrepaid = prepaidSurvived - gatewayFeeTotal - prepaidReturnShip;
+  // Break-even (FULL legacy formula) — single final FLOOR-to-bp.
+  const restocking = 0n;
+  const denom = aov + c.return_shipping_mu + restocking;
+  const pgFee = (aov * BigInt(c.gateway_fee_bp)) / 10000n;
+  const numScaled =
+    aov * BigInt(prepaidRtoBp) +
+    (c.cod_fee_mu - pgFee) * 10000n +
+    BigInt(prepaidRtoBp) * (c.return_shipping_mu + restocking);
+  const breakeven = denom > 0n ? Number(numScaled / denom) : null; // 500bp
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    cod_orders: c.cod_orders,
+    prepaid_orders: c.prepaid_orders,
+    cod_realization_rate_bp: _ratioBp(c.cod_delivered, c.cod_orders), // 7650
+    cod_rto_rate_bp: codRtoBp,
+    prepaid_rto_rate_bp: prepaidRtoBp,
+    effective_revenue_cod_mu: effCod,
+    effective_revenue_prepaid_mu: effPrepaid,
+    prepaid_premium_mu: effPrepaid - effCod,
+    average_order_value_mu: aov,
+    breakeven_cod_rto_rate_bp: breakeven,
+    breakeven_note: null,
+    comparison: [
+      {
+        payment_method: 'COD',
+        orders: c.cod_orders,
+        gross_revenue_mu: c.gross_revenue_cod_mu,
+        rto_rate_bp: codRtoBp,
+        effective_revenue_mu: effCod,
+        fee_total_mu: codFeeTotal + codReturnShip,
+        net_revenue_per_order_mu: c.cod_orders > 0n ? effCod / c.cod_orders : null,
+      },
+      {
+        payment_method: 'Prepaid',
+        orders: c.prepaid_orders,
+        gross_revenue_mu: c.gross_revenue_prepaid_mu,
+        rto_rate_bp: prepaidRtoBp,
+        effective_revenue_mu: effPrepaid,
+        fee_total_mu: gatewayFeeTotal + prepaidReturnShip,
+        net_revenue_per_order_mu: c.prepaid_orders > 0n ? effPrepaid / c.prepaid_orders : null,
+      },
+    ],
+  };
+}
+
+function buildSugandhlokLogistics(): LogisticsResult {
+  const c = SUGANDH_LOK_CANONICAL;
+  const totalCharges = c.forward_charges_mu + c.cod_charges_mu + c.rto_charges_mu;
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    total_shipments: c.total_shipments,
+    delivered_count: c.delivered_count,
+    delivered_rate_bp: _ratioBp(c.delivered_count, c.total_shipments), // 7858
+    rto_count: c.rto_orders,
+    rto_rate_bp: _ratioBp(c.rto_orders, c.total_shipments),            // 1796
+    cod_count: c.cod_orders,
+    prepaid_count: c.total_shipments - c.cod_orders,                  // 447
+    forward_charges_mu: c.forward_charges_mu,
+    cod_charges_mu: c.cod_charges_mu,
+    rto_charges_mu: c.rto_charges_mu,
+    total_shiprocket_charges_mu: totalCharges,
+    average_shipping_charge_per_shipment_mu:
+      c.total_shipments > 0n ? totalCharges / c.total_shipments : null,
+    by_courier: [
+      { courier_name: 'Delhivery', count: 700n, delivered_count: 560n, rto_count: 120n, total_charges_mu: 7_000_000n },
+      { courier_name: 'Bluedart', count: 547n, delivered_count: 420n, rto_count: 104n, total_charges_mu: 6_680_000n },
+    ],
+  };
+}
+
+const _PINCODE_SEED: Array<{
+  pincode: string; city: string; state: string;
+  shipment_count: bigint; rto_count: bigint; cod_count: bigint; delivered_count: bigint;
+  revenue_mu: bigint; unique_customers: bigint; repeat_customers: bigint; top_courier: string;
+}> = [
+  { pincode: '400001', city: 'Mumbai', state: 'Maharashtra', shipment_count: 320n, rto_count: 48n, cod_count: 180n, delivered_count: 252n, revenue_mu: 37_800_000n, unique_customers: 160n, repeat_customers: 40n, top_courier: 'Delhivery' },
+  { pincode: '110001', city: 'Delhi', state: 'Delhi', shipment_count: 280n, rto_count: 62n, cod_count: 196n, delivered_count: 196n, revenue_mu: 29_400_000n, unique_customers: 140n, repeat_customers: 22n, top_courier: 'Bluedart' },
+  { pincode: '422001', city: 'Nashik', state: 'Maharashtra', shipment_count: 90n, rto_count: 27n, cod_count: 63n, delivered_count: 54n, revenue_mu: 8_100_000n, unique_customers: 45n, repeat_customers: 5n, top_courier: 'Delhivery' },
+];
+
+function buildSugandhlokPincode(filters?: PincodeFilterInput): PincodeIntelligenceResult {
+  const c = SUGANDH_LOK_CANONICAL;
+  const HIGH_RTO_BP = 2000;
+  const HIGH_COD_BP = 5000;
+  let rows: PincodeRow[] = _PINCODE_SEED.map((p) => {
+    const sc = p.shipment_count;
+    const rtoBp = _ratioBp(p.rto_count, sc);
+    const codBp = _ratioBp(p.cod_count, sc);
+    const deliveredBp = _ratioBp(p.delivered_count, sc);
+    const aov = p.delivered_count > 0n ? p.revenue_mu / p.delivered_count : null;
+    const repeatBp = _ratioBp(p.repeat_customers, p.unique_customers);
+    // reliability (centi-points): 10000 - rto_bp*2 - intDiv(cod_bp,2) + intDiv(repeat_bp,2) + intDiv(aov_mu,100)
+    const rRto = BigInt(rtoBp ?? 0);
+    const rCod = BigInt(codBp ?? 0);
+    const rRepeat = BigInt(repeatBp ?? 0);
+    const rAov = aov ?? 0n;
+    const raw = 10000n - rRto * 2n - rCod / 2n + rRepeat / 2n + rAov / 100n;
+    const score = Number(raw < 0n ? 0n : raw > 10000n ? 10000n : raw);
+    const tier =
+      ['mumbai', 'delhi'].includes(p.city.toLowerCase()) ? 1 :
+      p.city.toLowerCase() === 'nashik' ? 2 : 3;
+    return {
+      pincode: p.pincode, city: p.city, state: p.state, tier,
+      shipment_count: sc, rto_count: p.rto_count, rto_rate_bp: rtoBp,
+      cod_count: p.cod_count, cod_rate_bp: codBp,
+      delivered_count: p.delivered_count, delivered_rate_bp: deliveredBp,
+      revenue_mu: p.revenue_mu, aov_mu: aov,
+      unique_customers: p.unique_customers, repeat_rate_bp: repeatBp,
+      reliability_score: score, top_courier: p.top_courier,
+    };
+  });
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    rows = rows.filter((r) => r.pincode.toLowerCase().includes(q) || r.city.toLowerCase().includes(q) || r.state.toLowerCase().includes(q));
+  }
+  if (filters?.state) rows = rows.filter((r) => r.state.toLowerCase() === filters.state!.toLowerCase());
+  if (filters?.min_orders) rows = rows.filter((r) => r.shipment_count >= BigInt(filters.min_orders!));
+  if (filters?.high_rto) rows = rows.filter((r) => r.rto_rate_bp !== null && r.rto_rate_bp >= HIGH_RTO_BP);
+  if (filters?.high_cod) rows = rows.filter((r) => r.cod_rate_bp !== null && r.cod_rate_bp >= HIGH_COD_BP);
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    rows,
+    total_shipments: _PINCODE_SEED.reduce((s, p) => s + p.shipment_count, 0n),
   };
 }
 
@@ -398,6 +617,47 @@ export class StubDataPlane implements DataPlanePort {
     }
     const { summary, ladder } = buildSugandhlokStoreSummary();
     return { summary, ladder, data_epoch: DATA_EPOCH };
+  }
+
+  async getRtoAnalytics(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: RtoAnalyticsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokRtoAnalytics(), data_epoch: DATA_EPOCH };
+  }
+
+  async getCodPrepaid(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: CodPrepaidResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokCodPrepaid(), data_epoch: DATA_EPOCH };
+  }
+
+  async getLogistics(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: LogisticsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokLogistics(), data_epoch: DATA_EPOCH };
+  }
+
+  async getPincodeIntelligence(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: PincodeFilterInput;
+  }): Promise<{ result: PincodeIntelligenceResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokPincode(params.filters), data_epoch: DATA_EPOCH };
   }
 
   async getMorningBrief(params: {

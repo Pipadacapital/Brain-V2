@@ -32,6 +32,7 @@ import {
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
   assertPnlStatementTraceability,
+  assertLogisticsDefinitionId,
   getMetricScale,
 } from '../domain/registry-mapper.js';
 import {
@@ -363,6 +364,116 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // logistics router — workspace tier, requireRole(ANALYST)
+  // Phase-2 slice-3 (feat-rto-cod-economics): RTO/COD/logistics/pincode economics.
+  // CF-C6-RENDER-ONLY-1: zero arithmetic here — values from the data plane.
+  // CF-C6-REGISTRY-ONLY-BFF-1: every metric field traces a registry definition_id.
+  // CF-C6-BIGINT-JSON-1: _mu = bigint over superjson.
+  // -------------------------------------------------------------------
+  const dateInput = z.object({
+    date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+    date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+  });
+
+  const logisticsRouter = router({
+    /** RTO analytics: rate/cost/revenue-lost + by-payment + by-courier. requireRole(ANALYST). */
+    rto: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `logistics.rto requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getRtoAnalytics({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: input.date_start, end: input.date_end },
+      });
+      // G-REGISTRY-ONLY: the result's metric fields trace to registry defs.
+      assertLogisticsDefinitionId('rto_rate_bp');
+      assertLogisticsDefinitionId('rto_cost_mu');
+      assertLogisticsDefinitionId('rto_revenue_lost_mu');
+      return { analytics: result.result, data_epoch: result.data_epoch, request_id: ctx.requestId };
+    }),
+
+    /** COD vs prepaid economics + break-even. requireRole(ANALYST). */
+    codPrepaid: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `logistics.codPrepaid requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getCodPrepaid({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: input.date_start, end: input.date_end },
+      });
+      assertLogisticsDefinitionId('cod_realization_rate_bp');
+      assertLogisticsDefinitionId('breakeven_cod_rto_rate_bp');
+      assertLogisticsDefinitionId('aov_mu');
+      return { result: result.result, data_epoch: result.data_epoch, request_id: ctx.requestId };
+    }),
+
+    /** Logistics operational summary. requireRole(ANALYST). */
+    summary: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `logistics.summary requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getLogistics({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: input.date_start, end: input.date_end },
+      });
+      assertLogisticsDefinitionId('rto_rate_bp');
+      return { result: result.result, data_epoch: result.data_epoch, request_id: ctx.requestId };
+    }),
+
+    /** Pincode intelligence (filterable/sortable). requireRole(ANALYST). */
+    pincode: workspaceProc
+      .input(
+        dateInput.extend({
+          search: z.string().optional(),
+          state: z.string().optional(),
+          min_orders: z.number().int().min(0).optional(),
+          high_rto: z.boolean().optional(),
+          high_cod: z.boolean().optional(),
+          sort: z.string().optional(),
+          order: z.enum(['asc', 'desc']).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `logistics.pincode requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getPincodeIntelligence({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: {
+            search: input.search,
+            state: input.state,
+            min_orders: input.min_orders,
+            high_rto: input.high_rto,
+            high_cod: input.high_cod,
+            sort: input.sort,
+            order: input.order,
+          },
+        });
+        assertLogisticsDefinitionId('pincode_reliability_score');
+        assertLogisticsDefinitionId('aov_mu');
+        return {
+          rows: result.result.rows,
+          total_shipments: result.result.total_shipments,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // morningBrief router — workspace tier
   // CF-C6-MB-IDEMPOTENCY-1: submitResponse uses Redis dedup.
   // CF-C6-MB-GRADUATED-LABEL-1: status is server-driven.
@@ -515,6 +626,7 @@ export function createBrainRouter(
     metrics: metricsRouter,
     store: storeRouter,
     pnl: pnlRouter,
+    logistics: logisticsRouter,
     morningBrief: morningBriefRouter,
     device: deviceRouter,
   });

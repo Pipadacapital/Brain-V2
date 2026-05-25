@@ -144,6 +144,136 @@ export interface PnlStatementRow {
 }
 
 // ---------------------------------------------------------------------------
+// RTO / COD / Logistics / Pincode economics (Phase-2 slice-3: feat-rto-cod-economics)
+// All _mu are bigint (int64 paise); _bp are number|null (nullable on zero-denominator).
+// Every field traces a registry definition_id (CF-C6-REGISTRY-ONLY-BFF-1).
+// ---------------------------------------------------------------------------
+
+export interface RtoByPaymentMethodRow {
+  payment_method: 'COD' | 'Prepaid';
+  rto_count: bigint;
+  rto_cost_mu: bigint;
+  revenue_lost_mu: bigint;
+}
+
+export interface RtoByCourierRow {
+  courier_name: string;
+  rto_count: bigint;
+  rto_cost_mu: bigint;
+  revenue_lost_mu: bigint;
+}
+
+export interface RtoAnalyticsResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  total_shipments: bigint;
+  rto_count: bigint;
+  rto_rate_bp: number | null;       // registry rto_rate_bp
+  total_rto_cost_mu: bigint;        // registry rto_cost_mu
+  revenue_lost_to_rto_mu: bigint;   // registry rto_revenue_lost_mu
+  by_payment_method: RtoByPaymentMethodRow[];
+  by_courier: RtoByCourierRow[];
+}
+
+export interface CodPrepaidSegmentRow {
+  payment_method: 'COD' | 'Prepaid';
+  orders: bigint;
+  gross_revenue_mu: bigint;
+  rto_rate_bp: number | null;
+  effective_revenue_mu: bigint;
+  fee_total_mu: bigint;
+  net_revenue_per_order_mu: bigint | null;
+}
+
+export interface CodPrepaidResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  cod_orders: bigint;
+  prepaid_orders: bigint;
+  cod_realization_rate_bp: number | null;      // registry cod_realization_rate_bp
+  cod_rto_rate_bp: number | null;
+  prepaid_rto_rate_bp: number | null;
+  effective_revenue_cod_mu: bigint;
+  effective_revenue_prepaid_mu: bigint;
+  prepaid_premium_mu: bigint;
+  average_order_value_mu: bigint | null;       // registry aov_mu
+  breakeven_cod_rto_rate_bp: number | null;    // registry breakeven_cod_rto_rate_bp
+  breakeven_note: string | null;
+  comparison: CodPrepaidSegmentRow[];
+}
+
+export interface LogisticsCourierRow {
+  courier_name: string;
+  count: bigint;
+  delivered_count: bigint;
+  rto_count: bigint;
+  total_charges_mu: bigint;
+}
+
+export interface LogisticsResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  total_shipments: bigint;
+  delivered_count: bigint;
+  delivered_rate_bp: number | null;
+  rto_count: bigint;
+  rto_rate_bp: number | null;
+  cod_count: bigint;
+  prepaid_count: bigint;
+  forward_charges_mu: bigint;
+  cod_charges_mu: bigint;
+  rto_charges_mu: bigint;
+  total_shiprocket_charges_mu: bigint;
+  average_shipping_charge_per_shipment_mu: bigint | null;
+  by_courier: LogisticsCourierRow[];
+}
+
+export interface PincodeRow {
+  pincode: string;
+  city: string;
+  state: string;
+  tier: number | null;            // 1 | 2 | 3 | null
+  shipment_count: bigint;
+  rto_count: bigint;
+  rto_rate_bp: number | null;
+  cod_count: bigint;
+  cod_rate_bp: number | null;
+  delivered_count: bigint;
+  delivered_rate_bp: number | null;
+  revenue_mu: bigint;
+  aov_mu: bigint | null;          // registry aov_mu
+  unique_customers: bigint;
+  repeat_rate_bp: number | null;
+  reliability_score: number;      // registry pincode_reliability_score (centi-points 0..10000)
+  top_courier: string;
+}
+
+export interface PincodeIntelligenceResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  rows: PincodeRow[];
+  total_shipments: bigint;
+}
+
+export interface PincodeFilterInput {
+  search?: string;
+  state?: string;
+  min_orders?: number;
+  high_rto?: boolean;
+  high_cod?: boolean;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}
+
+// ---------------------------------------------------------------------------
 // Intelligence proto types (brain.intelligence.v1)
 // ---------------------------------------------------------------------------
 
@@ -274,6 +404,31 @@ export interface DataPlanePort {
     workspace_id: string;
     date_range: DateRange;
   }): Promise<{ summary: StoreSummaryRow; ladder: StoreRevenueLadderStep[]; data_epoch: Date }>;
+
+  /**
+   * Phase-2 slice-3 (feat-rto-cod-economics): RTO/COD/logistics/pincode economics.
+   * CF-C6-DATA-SEAM-1: additive methods on the SAME port — no second code path.
+   */
+  getRtoAnalytics(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: RtoAnalyticsResult; data_epoch: Date }>;
+
+  getCodPrepaid(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: CodPrepaidResult; data_epoch: Date }>;
+
+  getLogistics(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: LogisticsResult; data_epoch: Date }>;
+
+  getPincodeIntelligence(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: PincodeFilterInput;
+  }): Promise<{ result: PincodeIntelligenceResult; data_epoch: Date }>;
 
   getMorningBrief(params: {
     workspace_id: string;

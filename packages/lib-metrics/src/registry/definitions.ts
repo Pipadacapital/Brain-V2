@@ -426,6 +426,143 @@ export const LTV_CAC_BP: MetricDefinition = {
 };
 
 // ---------------------------------------------------------------------------
+// RTO / COD / Logistics / Pincode economics (Phase-2 slice-3: feat-rto-cod-economics)
+// The single largest controllable Indian-D2C margin leak. rto_rate_bp / prepaid_rate_bp
+// are REUSED from Child-4 (above) — these are the COST / ECONOMICS layer on top.
+// Byte-identical pairs with pylibs/.../registry/definitions.py.
+// ---------------------------------------------------------------------------
+
+// RTO cost: SUM of per-RTO-shipment charges (Shiprocket-sourced). Passthrough money
+// aggregate (like gross_sales_mu). Connector-sourced — DDR _ROW_RTO_COST_VALUE carries
+// child_dependency:child-3-shopify-connector (unmeasurable pre-cutover; mirrors total_tax_mu).
+export const RTO_COST_MU: MetricDefinition = {
+  id: 'rto_cost_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (rto_cost_mu: bigint): bigint => rto_cost_mu,
+  clickhouse_sql: 'toInt64(rto_cost_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// RTO revenue lost: SUM of RTO shipment order/COD value. Passthrough money aggregate.
+export const RTO_REVENUE_LOST_MU: MetricDefinition = {
+  id: 'rto_revenue_lost_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (rto_revenue_lost_mu: bigint): bigint => rto_revenue_lost_mu,
+  clickhouse_sql: 'toInt64(rto_revenue_lost_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// COD realization rate = delivered COD orders / total COD orders (basis points).
+// Legacy: cod-prepaid-analytics.ts:187 (codDelivered/codOrders). Legacy comparand exists →
+// shadow_compare, no DDR delta. NULL-guard on zero COD orders.
+export const COD_REALIZATION_RATE_BP: MetricDefinition = {
+  id: 'cod_realization_rate_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  // Caller guards: NULL if cod_orders == 0.
+  formula_ts: (cod_delivered: bigint, cod_orders: bigint): number =>
+    ratioToBasisPoints(cod_delivered, cod_orders),
+  clickhouse_sql:
+    'if(cod_orders > 0, intDiv(cod_delivered * 10000, cod_orders), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Break-even COD RTO rate (basis points) — the FULL legacy formula, NOT the naive M/(M+C).
+// Legacy: cod-prepaid-analytics.ts:218-231.
+//   pg_fee_mu  = intDiv(aov_mu * gateway_fee_bp, 10000)              (V·gatewayPct)
+//   num_scaled = aov_mu * prepaid_rto_rate_bp                        (V·P·10000; P in bp)
+//              + (cod_fee_mu - pg_fee_mu) * 10000                    ((COD_fee − PG_fee)·10000)
+//              + prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu)   (P·(S+RS)·10000)
+//   denom      = aov_mu + return_shipping_mu + restocking_mu
+//   breakeven_cod_rto_rate_bp = (denom > 0) ? intDiv(num_scaled, denom) : NULL   (already ×10000 ⇒ bp)
+// SINGLE final FLOOR-to-bp; integer paise throughout (no chained float). parity_gap:true
+// (Brain canonical; legacy float not a byte comparand) → correctness_fixture + DDR anchor.
+// WORKED ANCHOR (CF-S3-BREAKEVEN-1): aov=150000, P=500bp, cod_fee=3000, gateway=200bp,
+//   S=8000, RS=0 → pg_fee=intDiv(150000*200,10000)=3000; num_scaled = 150000*500
+//   + (3000-3000)*10000 + 500*(8000+0) = 75000000 + 0 + 4000000 = 79000000;
+//   denom = 150000+8000 = 158000; breakeven = intDiv(79000000,158000) = 500 bp (5.00%).
+//   (The naive M/(M+C) would give ~95% — the anchor distinguishes them.)
+export const BREAKEVEN_COD_RTO_RATE_BP: MetricDefinition = {
+  id: 'breakeven_cod_rto_rate_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  formula_ts: (
+    aov_mu: bigint,
+    prepaid_rto_rate_bp: bigint,
+    cod_fee_mu: bigint,
+    gateway_fee_bp: bigint,
+    return_shipping_mu: bigint,
+    restocking_mu: bigint,
+  ): number => {
+    const denom = aov_mu + return_shipping_mu + restocking_mu;
+    if (denom <= 0n) return 0; // null-guard (caller treats 0-denom as NULL/note)
+    const pg_fee_mu = (aov_mu * gateway_fee_bp) / 10000n; // intDiv FLOOR
+    const num_scaled =
+      aov_mu * prepaid_rto_rate_bp +
+      (cod_fee_mu - pg_fee_mu) * 10000n +
+      prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu);
+    return Number(num_scaled / denom); // SINGLE final FLOOR-to-bp
+  },
+  clickhouse_sql:
+    'if((aov_mu + return_shipping_mu + restocking_mu) > 0, intDiv(aov_mu * prepaid_rto_rate_bp + (cod_fee_mu - intDiv(aov_mu * gateway_fee_bp, 10000)) * 10000 + prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu), aov_mu + return_shipping_mu + restocking_mu), NULL)',
+  display_only: false,
+  parity_class: 'correctness_fixture', // parity_gap:true — Brain canonical, no byte comparand
+};
+
+// Pincode reliability score — Brain-native integerized score in CENTI-POINTS (0..10000 = 0..100.00).
+// Legacy float: pincode-intelligence.ts:60-66
+//   clamp(0,100, 100 − rtoRate·2 − codRate·0.5 + repeatRate·0.5 + (aov/1000)·10)
+// where rtoRate/codRate/repeatRate are PERCENT POINTS (pp) and aov is RUPEES.
+// Brain integer form (inputs: rates in bp = pp×100, aov in paise = rupees×100):
+//   raw_cp = 10000
+//          - rto_bp * 2                       (rtoRate·2 [pp] → rto_bp·2 [centi-pts])
+//          - intDiv(cod_bp, 2)                (codRate·0.5 [pp] → cod_bp/2 [centi-pts])
+//          + intDiv(repeat_bp, 2)             (repeatRate·0.5 [pp] → repeat_bp/2 [centi-pts])
+//          + intDiv(aov_mu, 1000)             ((aov/1000)·10 [pp] = aov_rupees/100 = intDiv(aov_mu,1000) [centi-pts])
+//   pincode_reliability_score = clamp(0, 10000, raw_cp)
+// (Derivation of the aov term: legacy adds (aov_rupees/1000)·10 POINTS = aov_rupees/100 points
+//  = aov_rupees·100/100 centi-pts = aov_rupees centi-pts; aov_mu = aov_rupees·100 paise ⇒
+//  aov_rupees = intDiv(aov_mu,100); the term in centi-pts = aov_rupees = intDiv(aov_mu,100)... see DDR.)
+// WORKED ANCHOR (CF-S3-PINCODE-1): rto_bp=1800, cod_bp=6000, repeat_bp=2000, aov_mu=150000 →
+//   raw = 10000 - 1800*2 - intDiv(6000,2) + intDiv(2000,2) + intDiv(150000,100)
+//       = 10000 - 3600 - 3000 + 1000 + 1500 = 5900 centi-pts (= 59.00). clamp → 5900.
+// parity_gap:true → correctness_fixture + DDR _ROW_PINCODE_RELIABILITY pins the exact form.
+export const PINCODE_RELIABILITY_SCORE: MetricDefinition = {
+  id: 'pincode_reliability_score',
+  kind: 'count',
+  unit: 'count',
+  scale: 1,
+  formula_ts: (
+    rto_bp: bigint,
+    cod_bp: bigint,
+    repeat_bp: bigint,
+    aov_mu: bigint,
+  ): number => {
+    const raw =
+      10000n -
+      rto_bp * 2n -
+      cod_bp / 2n +
+      repeat_bp / 2n +
+      aov_mu / 100n;
+    const clamped = raw < 0n ? 0n : raw > 10000n ? 10000n : raw;
+    return Number(clamped);
+  },
+  clickhouse_sql:
+    'greatest(0, least(10000, toInt64(10000 - rto_bp * 2 - intDiv(cod_bp, 2) + intDiv(repeat_bp, 2) + intDiv(aov_mu, 100))))',
+  display_only: false,
+  parity_class: 'correctness_fixture', // parity_gap:true — Brain-native integerized score
+};
+
+// ---------------------------------------------------------------------------
 // Registry export (all definitions indexed by id)
 // ---------------------------------------------------------------------------
 
@@ -452,6 +589,12 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   pamer_bp: PAMER_BP,
   amer_bp: AMER_BP,
   ltv_cac_bp: LTV_CAC_BP,
+  // Phase-2 slice-3 (feat-rto-cod-economics): RTO/COD/logistics/pincode economics.
+  rto_cost_mu: RTO_COST_MU,
+  rto_revenue_lost_mu: RTO_REVENUE_LOST_MU,
+  cod_realization_rate_bp: COD_REALIZATION_RATE_BP,
+  breakeven_cod_rto_rate_bp: BREAKEVEN_COD_RTO_RATE_BP,
+  pincode_reliability_score: PINCODE_RELIABILITY_SCORE,
 } as const;
 
 /** All metric ids that are display_only (must never appear in decision thresholds). */

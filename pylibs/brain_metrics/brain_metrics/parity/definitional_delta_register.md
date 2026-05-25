@@ -224,6 +224,62 @@ Rohan sign-off: ☑ SIGNED (Rohan, Stage-6, 2026-05-25)
 
 ---
 
+## Phase-2 slice-3 rows (feat-rto-cod-economics)
+
+### 12. `breakeven_cod_rto_rate_bp` — break-even COD RTO rate (FULL legacy formula, NOT M/(M+C))
+
+| Field | Value |
+|---|---|
+| **legacy_formula** | `cod-prepaid-analytics.ts:218-231` (`num = V·P + (COD_fee − PG_fee) + P·(S+RS)`; `denom = V + S + RS`; `rCodBe = num/denom`; `PG_fee = V·gatewayPct`) |
+| **brain_formula** | `breakeven_cod_rto_rate_bp` |
+| **reason** | The ratified slice table's naive `r*=M/(M+C)` is a degenerate special case and would mis-advise COD-vs-prepaid policy. Brain ports the FULL legacy formula in integer paise with a SINGLE final FLOOR-to-bp (no chained float) → byte-identical TS/Python. parity_gap:true (legacy float not a byte comparand); correctness-fixture gate with a cross-language anchor that FAILS the naive form and PASSES the full form. |
+| **shadow_compare_classification** | `CORRECTNESS_FIXTURE` |
+| **delta_direction_and_magnitude** | No legacy byte comparand. Anchor (CF-S3-BREAKEVEN-1): aov=150000, P=500bp, cod_fee=3000, gateway=200bp, S=8000, RS=0 → pg_fee=3000; num_scaled=79000000; denom=158000; **= 500 bp**. Naive M/(M+C) ≈ 9493 bp — distinguished. |
+| **business_impact** | The decision threshold for COD-vs-prepaid policy — the single largest controllable Indian-D2C margin lever. A naive formula would systematically mis-advise the COD-discount / prepaid-nudge strategy. |
+| **parity_gap** | `True` |
+| **child_dependency** | `null` |
+| **formula_snapshot** | `breakeven_cod_rto_rate_bp = intDiv(aov_mu·prepaid_rto_rate_bp + (cod_fee_mu − intDiv(aov_mu·gateway_fee_bp, 10000))·10000 + prepaid_rto_rate_bp·(return_shipping_mu + restocking_mu), aov_mu + return_shipping_mu + restocking_mu); NULL when denom ≤ 0` |
+
+Rohan sign-off (Stage-6): ☑ SIGNED (correctness-fixture; no legacy byte shadow acknowledged; anchor 500bp re-derived; naive M/(M+C) killed)
+
+---
+
+### 13. `pincode_reliability_score` — pincode reliability (integerized centi-points)
+
+| Field | Value |
+|---|---|
+| **legacy_formula** | `pincode-intelligence.ts:60-66` (`clamp(0,100, 100 − rtoRate·2 − codRate·0.5 + repeatRate·0.5 + (aov/1000)·10)`; rates in pp, aov in rupees — FLOAT) |
+| **brain_formula** | `pincode_reliability_score` |
+| **reason** | Brain integerizes the legacy float score to deterministic CENTI-POINTS (0..10000) so TS/Python are byte-identical (the `0.5` and `aov/1000` float coefficients are drift risk). Inputs: rates in bp, aov in paise. parity_gap:true; correctness-fixture + worked anchor. |
+| **shadow_compare_classification** | `CORRECTNESS_FIXTURE` |
+| **delta_direction_and_magnitude** | No legacy byte comparand. Anchor (CF-S3-PINCODE-1): rto_bp=1800, cod_bp=6000, repeat_bp=2000, aov_mu=150000 → 10000 − 3600 − 3000 + 1000 + 1500 = **5900** (= 59.00). Legacy float ×100 = 59.00 → matches. |
+| **business_impact** | Ranks delivery pincodes by RTO risk / COD load / repeat loyalty / AOV — drives serviceability + COD-gating per pincode (direct RTO-leak control). A drifting float score would rank pincodes inconsistently across surfaces. |
+| **parity_gap** | `True` |
+| **child_dependency** | `null` |
+| **formula_snapshot** | `pincode_reliability_score = clamp(0, 10000, 10000 − rto_bp·2 − intDiv(cod_bp,2) + intDiv(repeat_bp,2) + intDiv(aov_mu,100))` (centi-points) |
+
+Rohan sign-off (Stage-6): ☑ SIGNED (correctness-fixture; no legacy byte shadow acknowledged; anchor 5900 re-derived)
+
+---
+
+### 14. `rto_cost_mu` (+ sibling `rto_revenue_lost_mu`) — connector-sourced RTO money
+
+| Field | Value |
+|---|---|
+| **legacy_formula** | `shiprocket-charges.ts` (`rtoChargesFromRaw` → `rto_cost_mu`; `shiprocketRtoRevenueLost` → `rto_revenue_lost_mu`); summed per RTO shipment in `rto-analytics.ts:114-144` |
+| **brain_formula** | `rto_cost_mu` |
+| **reason** | Both are connector-sourced aggregates from Shiprocket raw_json — unmeasurable until the Child-3 connector cutover provides per-shipment charge/value (mirrors `total_tax_mu`). Brain defs are passthrough money aggregates (`toInt64` of summed paise); never silently float-matched. |
+| **shadow_compare_classification** | `EXPECTED_DEFINITIONAL_DELTA` |
+| **delta_direction_and_magnitude** | Unmeasurable pre-Child-3. Post-GREEN: Brain integer-paise SUM vs legacy `Math.round(sum·100)/100` — sub-paise FLOOR-vs-ROUND only. `rto_revenue_lost_mu` shares this dependency. |
+| **business_impact** | The ₹ headline of /rto-analytics + /logistics — the explicit size of the RTO leak. NOT signable until Child-3 gate is GREEN. |
+| **parity_gap** | `False` |
+| **child_dependency** | `child-3-shopify-connector` |
+| **formula_snapshot** | `rto_cost_mu = toInt64(SUM(rtoChargesFromRaw(...)))`; `rto_revenue_lost_mu = toInt64(SUM(shiprocketRtoRevenueLost(...)))`; pending Child-3 ingest |
+
+Rohan sign-off (Stage-6): ☐ UNSIGNED-PENDING until `child-3-shopify-connector` gate GREEN (Rule 2)
+
+---
+
 ## Structural enforcement (code-level)
 
 The two rules are enforced in `definitional_delta_register.py::DDRRow.assert_signable()`:

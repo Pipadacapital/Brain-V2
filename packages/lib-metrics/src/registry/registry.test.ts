@@ -24,6 +24,11 @@ import {
   AOV_MU,
   CONVERSION_RATE_BP,
   PREPAID_RATE_BP,
+  RTO_COST_MU,
+  RTO_REVENUE_LOST_MU,
+  COD_REALIZATION_RATE_BP,
+  BREAKEVEN_COD_RTO_RATE_BP,
+  PINCODE_RELIABILITY_SCORE,
 } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +43,9 @@ describe('METRIC_REGISTRY completeness', () => {
       'rto_rate_bp', 'prepaid_rate_bp', 'conversion_rate_bp', 'aov_mu',
       'acos_bp', 'blended_roas_x100',
       'true_cm2_mu', 'pamer_bp', 'amer_bp', 'ltv_cac_bp',
+      // Phase-2 slice-3 (feat-rto-cod-economics)
+      'rto_cost_mu', 'rto_revenue_lost_mu', 'cod_realization_rate_bp',
+      'breakeven_cod_rto_rate_bp', 'pincode_reliability_score',
     ];
     for (const id of required) {
       expect(METRIC_REGISTRY).toHaveProperty(id);
@@ -74,9 +82,19 @@ describe('METRIC_REGISTRY completeness', () => {
   });
 
   it('correctness_fixture metrics have parity_class=correctness_fixture', () => {
-    const cfMetrics = ['true_cm2_mu', 'pamer_bp', 'amer_bp', 'ltv_cac_bp'];
+    const cfMetrics = [
+      'true_cm2_mu', 'pamer_bp', 'amer_bp', 'ltv_cac_bp',
+      // Phase-2 slice-3: Brain-native econ canon (no legacy byte comparand)
+      'breakeven_cod_rto_rate_bp', 'pincode_reliability_score',
+    ];
     for (const id of cfMetrics) {
       expect(METRIC_REGISTRY[id].parity_class, `${id} should be correctness_fixture`).toBe('correctness_fixture');
+    }
+  });
+
+  it('slice-3 shadow_compare econ metrics are shadow_compare (rto_cost, rto_revenue_lost, cod_realization)', () => {
+    for (const id of ['rto_cost_mu', 'rto_revenue_lost_mu', 'cod_realization_rate_bp']) {
+      expect(METRIC_REGISTRY[id].parity_class).toBe('shadow_compare');
     }
   });
 
@@ -163,6 +181,72 @@ describe('formula_ts: CM ladder cross-language anchor (slice-2)', () => {
     const withMoreVar = CM1_MU.formula_ts(779000n, 200000n, 80000n) as bigint;
     expect(withVar).not.toBe(withMoreVar);
     expect(withVar - withMoreVar).toBe(30000n);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase-2 slice-3: RTO/COD/pincode economics cross-language formula anchors (NON-VACUOUS).
+// These MIRROR the Python anchors in pylibs/brain_metrics/tests/test_registry.py. Each pins
+// the EXACT formula output on the SAME integer inputs both languages compute. The break-even
+// anchor is the one that BITES the slice-table's naive r*=M/(M+C): the full formula returns
+// 500bp on these inputs, the naive form would return ~9500bp — same anchor on both sides.
+// ---------------------------------------------------------------------------
+describe('formula_ts: slice-3 RTO/COD/pincode cross-language anchors', () => {
+  it('rto_cost_mu / rto_revenue_lost_mu: passthrough aggregates (mirror Python)', () => {
+    expect(RTO_COST_MU.formula_ts(4_480_000n)).toBe(4_480_000n);
+    expect(RTO_REVENUE_LOST_MU.formula_ts(33_200_000n)).toBe(33_200_000n);
+  });
+
+  it('cod_realization_rate_bp: cod_delivered / cod_orders FLOOR (mirror Python)', () => {
+    // 612 delivered / 800 COD orders = 0.765 → 7650 bp (76.50%)
+    expect(COD_REALIZATION_RATE_BP.formula_ts(612n, 800n)).toBe(7650);
+    // 2/3 = 6666 bp (FLOOR, not 6666.67)
+    expect(COD_REALIZATION_RATE_BP.formula_ts(2n, 3n)).toBe(6666);
+  });
+
+  it('breakeven_cod_rto_rate_bp: FULL legacy formula = 500bp; KILLS the naive M/(M+C) (mirror Python)', () => {
+    // CF-S3-BREAKEVEN-1 anchor: aov=150000, P=500bp, cod_fee=3000, gateway=200bp, S=8000, RS=0.
+    // pg_fee=intDiv(150000*200,10000)=3000; num_scaled = 150000*500 + (3000-3000)*10000 + 500*8000
+    //   = 75000000 + 0 + 4000000 = 79000000; denom=158000; intDiv = 500 bp.
+    const result = BREAKEVEN_COD_RTO_RATE_BP.formula_ts(150_000n, 500n, 3_000n, 200n, 8_000n, 0n);
+    expect(result).toBe(500);
+    // The naive M/(M+C) (with M=aov=150000, C=return_shipping=8000) would be
+    // intDiv(150000*10000, 158000) = 9493 bp — DIFFERENT. The anchor distinguishes them.
+    expect(result).not.toBe(9493);
+  });
+
+  it('breakeven_cod_rto_rate_bp: moves with the gateway fee (kills a stuck-constant mutant)', () => {
+    // Raising gateway fee lowers pg_fee subtraction → (cod_fee - pg_fee) drops → numerator drops.
+    const base = BREAKEVEN_COD_RTO_RATE_BP.formula_ts(150_000n, 500n, 3_000n, 200n, 8_000n, 0n);
+    const higherGw = BREAKEVEN_COD_RTO_RATE_BP.formula_ts(150_000n, 500n, 3_000n, 400n, 8_000n, 0n);
+    expect(higherGw).not.toBe(base);
+  });
+
+  it('breakeven_cod_rto_rate_bp: zero denominator guard (aov=0,S=0,RS=0) → 0/NULL sentinel', () => {
+    expect(BREAKEVEN_COD_RTO_RATE_BP.formula_ts(0n, 500n, 3_000n, 200n, 0n, 0n)).toBe(0);
+  });
+
+  it('pincode_reliability_score: integer centi-point form = 5900; KILLS a float port (mirror Python)', () => {
+    // CF-S3-PINCODE-1 anchor: rto_bp=1800, cod_bp=6000, repeat_bp=2000, aov_mu=150000.
+    // raw = 10000 - 1800*2 - intDiv(6000,2) + intDiv(2000,2) + intDiv(150000,100)
+    //     = 10000 - 3600 - 3000 + 1000 + 1500 = 5900 (= 59.00). clamp → 5900.
+    const result = PINCODE_RELIABILITY_SCORE.formula_ts(1_800n, 6_000n, 2_000n, 150_000n);
+    expect(result).toBe(5900);
+  });
+
+  it('pincode_reliability_score: clamps to [0,10000]', () => {
+    // Extreme high RTO drives raw negative → clamp 0.
+    expect(PINCODE_RELIABILITY_SCORE.formula_ts(9_000n, 9_000n, 0n, 0n)).toBe(0);
+    // Extreme high AOV drives raw over 10000 → clamp 10000.
+    expect(PINCODE_RELIABILITY_SCORE.formula_ts(0n, 0n, 10_000n, 100_000_000n)).toBe(10000);
+  });
+
+  it('pincode_reliability_score: moves with each input (kills a dropped-term mutant)', () => {
+    const base = PINCODE_RELIABILITY_SCORE.formula_ts(1_800n, 6_000n, 2_000n, 150_000n);
+    expect(PINCODE_RELIABILITY_SCORE.formula_ts(1_900n, 6_000n, 2_000n, 150_000n)).not.toBe(base); // rto term
+    expect(PINCODE_RELIABILITY_SCORE.formula_ts(1_800n, 6_200n, 2_000n, 150_000n)).not.toBe(base); // cod term
+    expect(PINCODE_RELIABILITY_SCORE.formula_ts(1_800n, 6_000n, 2_200n, 150_000n)).not.toBe(base); // repeat term
+    expect(PINCODE_RELIABILITY_SCORE.formula_ts(1_800n, 6_000n, 2_000n, 160_000n)).not.toBe(base); // aov term
   });
 });
 

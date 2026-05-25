@@ -848,6 +848,169 @@ def _goal_rag_count(
     }
 
 
+# ---------------------------------------------------------------------------
+# RTO / COD / Logistics / Pincode economics (Phase-2 slice-3: feat-rto-cod-economics)
+# The single largest controllable Indian-D2C margin leak. rto_rate_bp / prepaid_rate_bp
+# are REUSED from Child-4 — these are the COST / ECONOMICS layer on top.
+# Byte-identical pairs with packages/lib-metrics/src/registry/definitions.ts.
+# ---------------------------------------------------------------------------
+
+# ── RTO Cost (SUM of per-RTO-shipment charges) ─────────────────────────────
+def _rto_cost_mu(rto_cost_mu: int) -> int:
+    """RTO cost: sum of per-RTO-shipment charges (Shiprocket-sourced). Passthrough aggregate."""
+    return rto_cost_mu
+
+
+rto_cost_mu = MetricDefinition(
+    id="rto_cost_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_rto_cost_mu,
+    clickhouse_sql="toInt64(rto_cost_mu)",
+    parity_class="shadow_compare",
+)
+
+
+# ── RTO Revenue Lost (SUM of RTO shipment order/COD value) ─────────────────
+def _rto_revenue_lost_mu(rto_revenue_lost_mu: int) -> int:
+    """RTO revenue lost: sum of RTO shipment order/COD value. Passthrough aggregate."""
+    return rto_revenue_lost_mu
+
+
+rto_revenue_lost_mu = MetricDefinition(
+    id="rto_revenue_lost_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_rto_revenue_lost_mu,
+    clickhouse_sql="toInt64(rto_revenue_lost_mu)",
+    parity_class="shadow_compare",
+)
+
+
+# ── COD Realization Rate (delivered COD orders / total COD orders) ─────────
+def _cod_realization_rate_bp(cod_delivered: int, cod_orders: int) -> int | None:
+    """COD realization = delivered COD orders / total COD orders in basis points.
+
+    @paradigm: sql — integer FLOOR. CF-C4-RATIO-DIVOP-1.
+    Legacy: cod-prepaid-analytics.ts:187 (codDelivered/codOrders). Comparand exists → shadow_compare.
+    """
+    return _ratio_bp(cod_delivered, cod_orders)
+
+
+cod_realization_rate_bp = MetricDefinition(
+    id="cod_realization_rate_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_cod_realization_rate_bp,
+    clickhouse_sql=(
+        "if(cod_orders > 0, "
+        "intDiv(cod_delivered * 10000, cod_orders), NULL)"
+    ),
+    parity_class="shadow_compare",
+    scale=10000,
+)
+
+
+# ── Break-even COD RTO Rate — FULL legacy formula (NOT naive M/(M+C)) ──────
+# Legacy: cod-prepaid-analytics.ts:218-231.
+#   pg_fee_mu  = intDiv(aov_mu * gateway_fee_bp, 10000)          (V·gatewayPct)
+#   num_scaled = aov_mu * prepaid_rto_rate_bp                    (V·P·10000; P in bp)
+#              + (cod_fee_mu - pg_fee_mu) * 10000                ((COD_fee − PG_fee)·10000)
+#              + prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu)  (P·(S+RS)·10000)
+#   denom      = aov_mu + return_shipping_mu + restocking_mu
+#   breakeven_cod_rto_rate_bp = intDiv(num_scaled, denom) if denom > 0 else None  (already ×10000 ⇒ bp)
+# SINGLE final FLOOR-to-bp; integer paise throughout. parity_gap:true → correctness_fixture + DDR.
+# WORKED ANCHOR (CF-S3-BREAKEVEN-1): aov=150000, P=500bp, cod_fee=3000, gateway=200bp, S=8000, RS=0
+#   → pg_fee=intDiv(150000*200,10000)=3000; num_scaled = 150000*500 + (3000-3000)*10000
+#     + 500*(8000+0) = 75000000 + 0 + 4000000 = 79000000; denom = 158000;
+#     breakeven = intDiv(79000000, 158000) = 500 bp (5.00%). (Naive M/(M+C) ~ 95% — distinguished.)
+def _breakeven_cod_rto_rate_bp(
+    aov_mu: int,
+    prepaid_rto_rate_bp: int,
+    cod_fee_mu: int,
+    gateway_fee_bp: int,
+    return_shipping_mu: int,
+    restocking_mu: int,
+) -> int | None:
+    """Break-even COD RTO rate in basis points (FULL legacy formula).
+
+    @paradigm: sql — integer FLOOR, single final FLOOR-to-bp, no chained float.
+    parity_gap:true — Brain canonical; legacy float not a byte comparand.
+    Returns None when (aov + S + RS) <= 0 (caller surfaces breakEvenNote).
+    """
+    denom = aov_mu + return_shipping_mu + restocking_mu
+    if denom <= 0:
+        return None
+    pg_fee_mu = (aov_mu * gateway_fee_bp) // 10000  # intDiv FLOOR
+    num_scaled = (
+        aov_mu * prepaid_rto_rate_bp
+        + (cod_fee_mu - pg_fee_mu) * 10000
+        + prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu)
+    )
+    return num_scaled // denom  # SINGLE final FLOOR-to-bp
+
+
+breakeven_cod_rto_rate_bp = MetricDefinition(
+    id="breakeven_cod_rto_rate_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_breakeven_cod_rto_rate_bp,
+    clickhouse_sql=(
+        "if((aov_mu + return_shipping_mu + restocking_mu) > 0, "
+        "intDiv(aov_mu * prepaid_rto_rate_bp + (cod_fee_mu - intDiv(aov_mu * gateway_fee_bp, 10000)) * 10000 "
+        "+ prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu), "
+        "aov_mu + return_shipping_mu + restocking_mu), NULL)"
+    ),
+    parity_class="correctness_fixture",  # parity_gap:true — Brain canonical, no byte comparand
+    scale=10000,
+)
+
+
+# ── Pincode Reliability Score — Brain-native integerized (centi-points 0..10000) ──
+# Legacy float: pincode-intelligence.ts:60-66
+#   clamp(0,100, 100 − rtoRate·2 − codRate·0.5 + repeatRate·0.5 + (aov/1000)·10)
+#   (rtoRate/codRate/repeatRate in PERCENT POINTS; aov in RUPEES)
+# Brain integer form (inputs: rates in bp = pp×100, aov in paise):
+#   raw_cp = 10000 - rto_bp*2 - intDiv(cod_bp,2) + intDiv(repeat_bp,2) + intDiv(aov_mu,100)
+#   pincode_reliability_score = clamp(0, 10000, raw_cp)   (centi-points; ×100 of legacy 0..100)
+# aov term derivation: legacy (aov_r/1000)·10 POINTS = aov_r/100 points = aov_r centi-pts;
+#   aov_r = aov_mu/100 ⇒ term_cp = intDiv(aov_mu,100).
+# WORKED ANCHOR (CF-S3-PINCODE-1): rto_bp=1800, cod_bp=6000, repeat_bp=2000, aov_mu=150000 →
+#   raw = 10000 - 3600 - 3000 + 1000 + 1500 = 5900 (= 59.00). clamp → 5900.
+def _pincode_reliability_score(
+    rto_bp: int,
+    cod_bp: int,
+    repeat_bp: int,
+    aov_mu: int,
+) -> int:
+    """Pincode reliability score in centi-points (0..10000). Brain-native integerized.
+
+    @paradigm: sql — integer arithmetic only, deterministic, clamped.
+    parity_gap:true — correctness_fixture; DDR pins the exact form.
+    """
+    raw = (
+        10000
+        - rto_bp * 2
+        - cod_bp // 2
+        + repeat_bp // 2
+        + aov_mu // 100
+    )
+    return max(0, min(10000, raw))
+
+
+pincode_reliability_score = MetricDefinition(
+    id="pincode_reliability_score",
+    kind="count",
+    unit="count",
+    formula_py=_pincode_reliability_score,
+    clickhouse_sql=(
+        "greatest(0, least(10000, toInt64(10000 - rto_bp * 2 - intDiv(cod_bp, 2) "
+        "+ intDiv(repeat_bp, 2) + intDiv(aov_mu, 100))))"
+    ),
+    parity_class="correctness_fixture",  # parity_gap:true — Brain-native integerized score
+)
+
+
 # ── FX Rate (shadow-phase static rate — matches legacy EXCHANGE_RATES) ────
 # workspace-costs.ts:9-21 / pnl.ts:11-17: EXCHANGE_RATES INR:83.5
 # Brain shadow phase: MUST use the same static 83.5 rate as legacy.
@@ -893,6 +1056,12 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "mer_bp":                    mer_bp,
     "cac_mu":                    cac_mu,
     "cac_payback_months":        cac_payback_months,
+    # Phase-2 slice-3 (feat-rto-cod-economics): RTO/COD/logistics/pincode economics
+    "rto_cost_mu":               rto_cost_mu,
+    "rto_revenue_lost_mu":       rto_revenue_lost_mu,
+    "cod_realization_rate_bp":   cod_realization_rate_bp,
+    "breakeven_cod_rto_rate_bp": breakeven_cod_rto_rate_bp,
+    "pincode_reliability_score": pincode_reliability_score,
 }
 
 

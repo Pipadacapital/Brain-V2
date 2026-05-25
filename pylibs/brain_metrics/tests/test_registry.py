@@ -57,7 +57,11 @@ class TestMetricDefinitionStructure:
 
     def test_parity_gap_metrics_are_correctness_fixture(self):
         """parity_gap metrics must use correctness_fixture gate. CF-C4-DDR-1 Rule 1."""
-        parity_gap_ids = {"true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp"}
+        parity_gap_ids = {
+            "true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp",
+            # Phase-2 slice-3 (feat-rto-cod-economics): Brain-native econ canon
+            "breakeven_cod_rto_rate_bp", "pincode_reliability_score",
+        }
         for mid in parity_gap_ids:
             m = METRIC_REGISTRY[mid]
             assert m.parity_class == "correctness_fixture", (
@@ -164,6 +168,79 @@ class TestRevenueLadderFormulas:
         f = METRIC_REGISTRY["total_ad_spend_mu"].formula_py
         assert f(meta_ad_spend_mu=60000, google_ad_spend_mu=40000) == 100000
         assert f(meta_ad_spend_mu=0, google_ad_spend_mu=0) == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-3: RTO/COD/pincode economics cross-language anchors (NON-VACUOUS).
+# These MIRROR the TS anchors in packages/lib-metrics/src/registry/registry.test.ts byte-for-byte.
+# The break-even anchor BITES the slice-table's naive r*=M/(M+C): the FULL legacy formula
+# returns 500bp on these inputs (the naive form would return ~9493bp).
+# ---------------------------------------------------------------------------
+
+class TestSlice3RtoCodPincodeEconomics:
+    """feat-rto-cod-economics registry anchors. Byte-identical to the TS anchors."""
+
+    def test_rto_cost_and_revenue_lost_passthrough(self):
+        assert METRIC_REGISTRY["rto_cost_mu"].formula_py(rto_cost_mu=4_480_000) == 4_480_000
+        assert METRIC_REGISTRY["rto_revenue_lost_mu"].formula_py(
+            rto_revenue_lost_mu=33_200_000
+        ) == 33_200_000
+
+    def test_cod_realization_rate_bp(self):
+        f = METRIC_REGISTRY["cod_realization_rate_bp"].formula_py
+        # 612 / 800 = 0.765 → 7650 bp
+        assert f(cod_delivered=612, cod_orders=800) == 7650
+        # 2/3 FLOOR
+        assert f(cod_delivered=2, cod_orders=3) == 6666
+        # zero COD orders → NULL
+        assert f(cod_delivered=0, cod_orders=0) is None
+
+    def test_breakeven_cod_rto_rate_bp_full_formula_kills_naive(self):
+        """CF-S3-BREAKEVEN-1: FULL legacy formula = 500bp; the naive M/(M+C) would be ~9493bp."""
+        f = METRIC_REGISTRY["breakeven_cod_rto_rate_bp"].formula_py
+        result = f(
+            aov_mu=150_000,
+            prepaid_rto_rate_bp=500,
+            cod_fee_mu=3_000,
+            gateway_fee_bp=200,
+            return_shipping_mu=8_000,
+            restocking_mu=0,
+        )
+        assert result == 500, f"expected 500bp from the full formula, got {result}"
+        # The naive M/(M+C) (M=aov, C=return_shipping) = intDiv(150000*10000, 158000) = 9493 — DIFFERENT.
+        assert result != 9493
+
+    def test_breakeven_moves_with_gateway_fee(self):
+        f = METRIC_REGISTRY["breakeven_cod_rto_rate_bp"].formula_py
+        base = f(aov_mu=150_000, prepaid_rto_rate_bp=500, cod_fee_mu=3_000,
+                 gateway_fee_bp=200, return_shipping_mu=8_000, restocking_mu=0)
+        higher = f(aov_mu=150_000, prepaid_rto_rate_bp=500, cod_fee_mu=3_000,
+                   gateway_fee_bp=400, return_shipping_mu=8_000, restocking_mu=0)
+        assert higher != base
+
+    def test_breakeven_zero_denominator_null(self):
+        f = METRIC_REGISTRY["breakeven_cod_rto_rate_bp"].formula_py
+        assert f(aov_mu=0, prepaid_rto_rate_bp=500, cod_fee_mu=3_000,
+                 gateway_fee_bp=200, return_shipping_mu=0, restocking_mu=0) is None
+
+    def test_pincode_reliability_score_integer_form_kills_float(self):
+        """CF-S3-PINCODE-1: integer centi-point score = 5900 (= 59.00). Matches the legacy float ×100."""
+        f = METRIC_REGISTRY["pincode_reliability_score"].formula_py
+        result = f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_000, aov_mu=150_000)
+        assert result == 5900, f"expected 5900 centi-points, got {result}"
+
+    def test_pincode_reliability_clamps(self):
+        f = METRIC_REGISTRY["pincode_reliability_score"].formula_py
+        assert f(rto_bp=9_000, cod_bp=9_000, repeat_bp=0, aov_mu=0) == 0
+        assert f(rto_bp=0, cod_bp=0, repeat_bp=10_000, aov_mu=100_000_000) == 10000
+
+    def test_pincode_reliability_moves_with_each_term(self):
+        f = METRIC_REGISTRY["pincode_reliability_score"].formula_py
+        base = f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_000, aov_mu=150_000)
+        assert f(rto_bp=1_900, cod_bp=6_000, repeat_bp=2_000, aov_mu=150_000) != base
+        assert f(rto_bp=1_800, cod_bp=6_200, repeat_bp=2_000, aov_mu=150_000) != base
+        assert f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_200, aov_mu=150_000) != base
+        assert f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_000, aov_mu=160_000) != base
 
 
 # ---------------------------------------------------------------------------

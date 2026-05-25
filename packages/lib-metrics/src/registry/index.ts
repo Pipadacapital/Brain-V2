@@ -29,6 +29,12 @@ export {
   PAMER_BP,
   AMER_BP,
   LTV_CAC_BP,
+  // Phase-2 slice-3: RTO/COD/logistics/pincode economics
+  RTO_COST_MU,
+  RTO_REVENUE_LOST_MU,
+  COD_REALIZATION_RATE_BP,
+  BREAKEVEN_COD_RTO_RATE_BP,
+  PINCODE_RELIABILITY_SCORE,
   // Registry index + derived sets
   METRIC_REGISTRY,
   DISPLAY_ONLY_METRIC_IDS,

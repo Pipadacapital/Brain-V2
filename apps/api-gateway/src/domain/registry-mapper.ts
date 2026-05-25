@@ -189,6 +189,37 @@ export function assertLadderDefinitionId(step: StoreRevenueLadderStep): void {
   }
 }
 
+// LOGISTICS_DEFINITION_IDS: registry ids that appear on the slice-3 logistics surfaces.
+// Phase-2 slice-3 (feat-rto-cod-economics). Every money/ratio/score field on the RTO / COD /
+// logistics / pincode results must trace to one of these (CF-C6-REGISTRY-ONLY-BFF-1).
+export const LOGISTICS_DEFINITION_IDS = [
+  'rto_rate_bp',
+  'rto_cost_mu',
+  'rto_revenue_lost_mu',
+  'cod_realization_rate_bp',
+  'prepaid_rate_bp',
+  'breakeven_cod_rto_rate_bp',
+  'pincode_reliability_score',
+  'aov_mu',
+] as const;
+
+/**
+ * Validate that a logistics definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived logistics field in the BFF.
+ * Mutant probe: an id "foo_mu" → this throws.
+ */
+export function assertLogisticsDefinitionId(definitionId: string): void {
+  const isKnown =
+    LOGISTICS_DEFINITION_IDS.includes(definitionId as (typeof LOGISTICS_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: logistics definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
 /**
  * Look up a MetricDefinition by id. Returns undefined for count metrics (no registry entry).
  */
