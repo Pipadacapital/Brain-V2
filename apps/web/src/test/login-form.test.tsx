@@ -2,7 +2,7 @@
 // Tests for LoginForm.
 // CF-C6-PII-CLIENT-1: email/password never in logs; tested negatively.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider as ReduxProvider } from 'react-redux';
@@ -10,6 +10,25 @@ import { configureStore } from '@reduxjs/toolkit';
 import { LoginForm } from '@/interfaces/components/auth/login-form.js';
 import uiReducer from '@/domain/store/ui-slice.js';
 import sessionReducer from '@/domain/store/session-slice.js';
+
+// LoginForm navigates client-side via next/navigation's useRouter on success
+// (router.push, NOT window.location, so the in-memory Redux session survives).
+// jsdom has no App Router mounted, so we stub it and assert navigation directly.
+const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: pushMock,
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
+beforeEach(() => {
+  pushMock.mockClear();
+});
 
 function makeStore() {
   return configureStore({ reducer: { ui: uiReducer, session: sessionReducer } });
@@ -44,6 +63,8 @@ describe('LoginForm', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/invalid email or password/i);
     });
+    // Negative: a failed login must NOT navigate.
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it('dispatches setSession on correct stub credentials', async () => {
@@ -59,6 +80,10 @@ describe('LoginForm', () => {
       const state = store.getState();
       expect(state.session.isAuthenticated).toBe(true);
       expect(state.session.workspaceRole).toBe('OWNER');
+    });
+    // Positive: a successful login navigates to the dashboard client-side.
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith('/dashboard');
     });
   });
 

@@ -8,6 +8,7 @@
 //   flows through Supabase JWT → BrainClaim via the api-gateway session endpoint.
 
 import { useState, useId } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAppDispatch } from '@/domain/store/hooks.js';
 import { setSession } from '@/domain/store/session-slice.js';
 
@@ -31,6 +32,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const errorId = useId();
 
   const dispatch = useAppDispatch();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,7 +57,10 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           }),
         );
         if (onSuccess) onSuccess();
-        else window.location.href = '/dashboard';
+        // Client-side nav (NOT window.location.href) so the in-memory Redux
+        // session set above survives — a full reload would wipe it and the
+        // dashboard guard would bounce back to /login.
+        else router.push('/dashboard');
       } else {
         setError('Invalid email or password.');
       }
