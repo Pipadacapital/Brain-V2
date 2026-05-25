@@ -75,3 +75,23 @@
 **Deferred (non-goals):** WooCommerce cohort/LTV path; customer-lifecycle/RFM (slice 8); AI narration (slice 9); collection/discount_codes real compute.
 
 **Progress: slices 1-5 done (5/9).** Next: slice 6 `feat-catalog-inventory` (catalog/inventory + first-product cascade). Do NOT auto-start — orchestrator drives the loop + commits.
+
+## 2026-05-25T16:02:00Z — Slice 6 SHIPPED (Stage 6 PASS) — feat-catalog-inventory — Rohan
+
+**Catalog/products + inventory + first-product cascade** on 3 real pages (`/products`, `/inventory`, `/first-product-cascade`). Full high-stakes pipeline (Rohan S1 → Aryan S2 → Maya/Vikram/Ananya S3 → Shreya S4 → Tanvi S5 → Rohan S6), signed under standing delegation. Stage-8 readiness; nothing committed (pending-founder-commit.md).
+
+**The standing lesson bit a 6th time — read the actual legacy formulas:** the slice-table was WRONG on ALL THREE features; reconciled, not rebuilt:
+- **Products is CM1, NOT per-SKU CM2** (Finding 1). `cm1 = (sales−refunds) − cogs − variableCost` — algebraically byte-identical to the existing `cm1_mu`, so **REUSED cm1_mu** (and `aov_mu`); did NOT build phantom `product_cm1_mu`/`sku_cm2_mu` (Single-Primitive Rule). There is no SKU-grain CM2 (no per-SKU ad allocation in legacy).
+- **Pareto grade is a cumulative-CM1 walk** over positive-cm1 rows (≤80%→A, ≤95%→B, else C; neg→F) — integer-exact (cum×100 ≤ total×80), anchored at the boundary.
+- **Inventory has sellThrough + daysLeft, NO turnover** (Finding 3). `inventory_days_left` = velocity cascade L30→L90→L180→L360 (999999 INFINITE sentinel); `inventory_sell_through_bp` = sales365/(sales365+inv). The slice-table's "inventory turnover"/"cover_days" don't exist in legacy.
+- **Cascade second-order-rate is per-first-product, observation-windowed — NOT slice-5 rr90** (Finding 4). De-conflated: `first_product_second_order_rate_bp` (≥2 lifetime orders / cohort) is a SEPARATE def; did NOT reuse `repeat_rate_bp`. Cascade LTV is REVENUE (totalPrice), not CM — DDR-noted.
+
+**Bar met:** 3 new defs (inventory_sell_through_bp shadow + DDR scale-delta, inventory_days_left correctness_fixture + DDR, first_product_second_order_rate_bp shadow + DDR scale-delta) TS↔Python byte-identical + NON-VACUOUS (CF-S6-INV-SELLTHRU-1 ÷-inv-only mutant killed; CF-S6-INV-DAYSLEFT-1 always-L360 mutant killed + INF sentinel anchor; CF-S6-FP-2ND-1 ÷-orders mutant killed; pareto boundary anchored). 3 fail-closed use-cases; catalog.products/inventory/firstProductCascade tRPC (workspaceProc/ANALYST/bigint); RLS fail-closed proven at the wire (foreign workspace header → UnscopedQueryError); per-SKU GST untouched (sits on slice-1/2 honest base); @paradigm sql (ML ruled out); ZERO new deps; typecheck 0 (lib-metrics/api-gateway/web).
+
+**Tests:** 152 TS lib-metrics (+6) + 104 api-gateway (+17) + 317 brain_metrics (+18) + 208 analytics (+43), all green. Parity gate PASS (36 shared metrics, DDR coverage, killed-mutant non-vacuous). Live smoke (real network): products CM1 500000/grade A/total 650000; inventory ROSE 10d/Restock Soon, MUSK 30d cascade/Healthy, OUD 300d/Overstocked, SND-BAR 999999/Severely Overstocked; cascade p_oud 2nd=3750bp/3rd=2500bp/4th+=1250bp/extra=75/ltv=1000000/days2nd=300. 3 pages HTTP 200.
+
+**Candidate rule:** evidence #6 for `verify-legacy-formula-at-stage1-not-slice-table` (human-gated; ≥5 runs).
+
+**Deferred (non-goals):** WooCommerce products/cascade path; products CRUD/settings (slice 7); collections/vendor/tags real grouping compute (scaffolded enums, product-grain seeded); AI narration (slice 9); inventory reorder-recommendation ML (none proven).
+
+**Progress: slices 1-6 done (6/9).** Next: slice 7 `feat-finance-settings-goals`. Do NOT auto-start — orchestrator drives the loop + commits.

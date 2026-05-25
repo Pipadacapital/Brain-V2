@@ -526,3 +526,22 @@
 **Auto-candidate rule (step 8a):** evidence #5 appended to verify-legacy-formula-at-stage1-not-slice-table (human-gated; ≥4 runs now).
 **Open questions:** cohort_ltv_mu/cohort_cac_payback DDR rows signable now (Shopify facts present for anchor); WooCommerce cohort/LTV path + customer-lifecycle/RFM (slice 8) deferred.
 **Next:** orchestrator stages Stage-8 readiness (Jatin); Founder "commit it" commits slice-scoped paths (pending-founder-commit.md); then slice 6 (feat-catalog-inventory) on its turn. STOP — do not auto-start slice 6.
+
+## 2026-05-25T15:46:22Z — Rohan (cto-advisor) — feat-catalog-inventory (Phase 2, slice 6)
+**Stage:** 1 (intake)
+**Action:** ADVANCE → Stage 2 (Aryan), with a binding slice-table correction (standing lesson #6)
+**Personas spawned (Stage 1):** catalog-inventory-numeric-parity-realist:sonnet (requested; synthesized into build given deep legacy read)
+**Decision:** ADVANCE (high-stakes; dependency pre-flight PASS — slice-1 approved/stage-8)
+**Rationale:** Slice-table wrong on all 3 — products is CM1 not per-SKU CM2; inventory is sellThrough+daysLeft not turnover; cascade rate is observation-windowed per-first-product not slice-5 rr90. Reconcile not rebuild; REUSE cm1_mu/aov_mu (no phantoms).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, verification-before-completion, code-review, architecture-patterns
+**Open questions:** none
+**Next:** Aryan S2 → build → Rohan S6
+
+## 2026-05-25T16:02:00Z — Rohan (cto-advisor) — feat-catalog-inventory (Phase 2, slice 6)
+**Stage:** 6 (final review — VETO authority)
+**Action:** Drove the full high-stakes pipeline end-to-end on feature/feat-store-order-fact-layer; PASS → APPROVE under standing delegation (no hard-rule deviation). Stage-8 readiness; pending-founder-commit.md produced (nothing committed).
+**Decision:** PASS
+**Rationale:** 3 net-new defs TS↔Py byte-identical + NON-VACUOUS (mutants killed); CM1/sellThrough/daysLeft/second-order-rate reconciled to legacy; cm1_mu+aov_mu reused (no over-engineering); 3 fail-closed use-cases; catalog.* tRPC; RLS fail-closed at the wire; @paradigm sql; 0 new deps; typecheck 0; parity gate PASS; real-network smoke PASS (3 pages 200 + correct values). Over-engineering audit clean. Independent gate re-run: parity gate + 4 test suites + live HTTP smoke all reproduced PASS with captured output.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, architecture-patterns, verification-before-completion
+**Open questions:** none
+**Next:** Founder Stage-7 commit gate (pending-founder-commit.md). Do NOT auto-start slice 7.

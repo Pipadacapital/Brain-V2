@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ScaffoldPage } from "@/interfaces/components/shell/scaffold-page.js";
+import { ProductsContent } from "@/interfaces/components/catalog/products-content.js";
 
 export const metadata: Metadata = { title: "Products — Brain" };
 
 export default function Page() {
-  return <ScaffoldPage title="Products" description="Per-SKU profitability, returns, and ad attribution." />;
+  return <ProductsContent />;
 }

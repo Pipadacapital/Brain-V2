@@ -449,6 +449,124 @@ export interface LtvFilterInput {
 }
 
 // ---------------------------------------------------------------------------
+// Catalog / inventory / first-product cascade (Phase-2 slice-6: feat-catalog-inventory)
+// Products is CM1 (NOT per-SKU CM2); inventory = sell_through + days_left (NOT turnover);
+// cascade second-order-rate is per-first-product (NOT slice-5 rr90).
+// ---------------------------------------------------------------------------
+
+export type ProductGroupBy =
+  | 'product' | 'variant' | 'collection' | 'vendor' | 'type'
+  | 'product_tags' | 'order_tags' | 'discount_codes';
+export type ProductSort =
+  | 'label' | 'pareto_grade' | 'cm1' | 'cm1_pct' | 'cm1_total'
+  | 'revenue' | 'sold' | 'refunded' | 'net_quantity' | 'return_rate' | 'orders' | 'aov';
+
+export interface ProductRow {
+  label: string;
+  pareto_grade: 'A' | 'B' | 'C' | 'F';
+  cm1_mu: bigint;
+  cm1_pct_bp: number | null;
+  cm1_total_share_bp: number | null;
+  revenue_mu: bigint;
+  sales_mu: bigint;
+  refunds_mu: bigint;
+  sold: bigint;
+  refunded: bigint;
+  net_quantity: bigint;
+  return_rate_bp: number | null;
+  nc_return_rate_bp: number | null;
+  ec_return_rate_bp: number | null;
+  orders: bigint;
+  nc_orders: bigint;
+  ec_orders: bigint;
+  aov_mu: bigint | null;
+  nc_aov_mu: bigint | null;
+  ec_aov_mu: bigint | null;
+}
+
+export interface ProductPerformanceResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  group_by: ProductGroupBy;
+  sort: ProductSort;
+  direction: 'asc' | 'desc';
+  total_cm1_mu: bigint;
+  total_rows: bigint;
+  rows: ProductRow[];
+}
+
+export interface ProductFilterInput {
+  group_by?: ProductGroupBy;
+  sort?: ProductSort;
+  direction?: 'asc' | 'desc';
+  search?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export type InventoryStatus =
+  | 'Out of stock' | 'Restock Soon' | 'Healthy' | 'Overstocked' | 'Severely Overstocked';
+export type InventorySort = 'label' | 'current_inventory' | 'days_left' | 'sell_through' | 'status';
+
+export interface InventoryRow {
+  label: string;
+  sku: string;
+  current_inventory: bigint;
+  days_left: bigint;            // 999999 = INFINITE (stock but no velocity)
+  sell_through_bp: number | null;
+  status: InventoryStatus;
+}
+
+export interface InventoryLevelsResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  grain: 'product' | 'variant';
+  sort: InventorySort;
+  direction: 'asc' | 'desc';
+  total_rows: bigint;
+  rows: InventoryRow[];
+}
+
+export interface InventoryFilterInput {
+  grain?: 'product' | 'variant';
+  sort?: InventorySort;
+  direction?: 'asc' | 'desc';
+  status_filter?: InventoryStatus;
+}
+
+export interface FirstProductCascadeRow {
+  product_key: string;
+  product_title: string;
+  first_order_customers: bigint;
+  customers_with_2nd_order: bigint;
+  customers_with_3rd_order: bigint;
+  customers_with_4th_plus_order: bigint;
+  second_order_rate_bp: number | null;
+  third_order_rate_bp: number | null;
+  fourth_plus_rate_bp: number | null;
+  additional_order_rate_centi: bigint;   // mean extra orders ×100
+  average_ltv_revenue_mu: bigint;        // mean revenue LTV (paise)
+  average_days_to_second_deci: bigint | null;  // mean days ×10; null if no 2nd order
+}
+
+export interface FirstProductCascadeResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  observation_days: number;
+  total_cohort_customers: bigint;
+  rows: FirstProductCascadeRow[];
+}
+
+export interface FirstProductCascadeFilterInput {
+  observation_days?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Intelligence proto types (brain.intelligence.v1)
 // ---------------------------------------------------------------------------
 
@@ -640,6 +758,29 @@ export interface DataPlanePort {
     date_range: DateRange;
     filters?: LtvFilterInput;
   }): Promise<{ result: LtvSummaryResult; data_epoch: Date }>;
+
+  /**
+   * Phase-2 slice-6 (feat-catalog-inventory): product performance (CM1), inventory levels
+   * (sell-through + days-left), first-product cascade. CF-C6-DATA-SEAM-1: additive methods
+   * on the SAME port.
+   */
+  getProductPerformance(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: ProductFilterInput;
+  }): Promise<{ result: ProductPerformanceResult; data_epoch: Date }>;
+
+  getInventoryLevels(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: InventoryFilterInput;
+  }): Promise<{ result: InventoryLevelsResult; data_epoch: Date }>;
+
+  getFirstProductCascade(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: FirstProductCascadeFilterInput;
+  }): Promise<{ result: FirstProductCascadeResult; data_epoch: Date }>;
 
   getMorningBrief(params: {
     workspace_id: string;

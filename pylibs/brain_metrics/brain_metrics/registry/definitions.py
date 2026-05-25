@@ -940,6 +940,135 @@ repeat_rate_bp = MetricDefinition(
 )
 
 # ---------------------------------------------------------------------------
+# Catalog / inventory / first-product cascade (Phase-2 slice-6: feat-catalog-inventory)
+# Byte-identical pairs with packages/lib-metrics/src/registry/definitions.ts.
+#
+# LEGACY GROUND TRUTH (read at Stage 1, NOT the slice-table shorthand — Rohan Findings):
+#   - Products metric is CM1 (= revenue−cogs−variableCost), NOT per-SKU CM2 → REUSE cm1_mu;
+#     product AOV reuses aov_mu. No SKU-grain CM2 exists; product_cm1_mu/sku_cm2_mu = phantom.
+#   - Inventory has sellThrough + daysLeft, NOT a turnover ratio (lib/inventory-constants.ts).
+#   - First-product "second order rate" = (#cust ≥2 lifetime orders)/cohort over an observation
+#     window — NOT slice-5 repeat_rate_bp (rr90 = repeat-within-90d/new-customers).
+#
+# SCALE DDR DELTA: legacy emits percent (sell-through 1-decimal; cascade rate 0-100). Brain
+#   canonicalizes on bp (×100 of legacy) — registered in the DDR, NOT silently float-matched.
+# ---------------------------------------------------------------------------
+
+# ── Inventory sell-through (basis points) ──────────────────────────────────
+# = sales365 / (sales365 + currentInventory). Legacy computeSellThrough returns
+# round(sales/(sales+inv)*1000)/10 (1-decimal percent); Brain = bp (FLOOR). NULL-guard
+# on (sales365+inv) <= 0.
+# WORKED ANCHOR (CF-S6-INV-SELLTHRU-1): sales365=300, inv=100 → intDiv(300*10000,400)=7500bp
+#   (75.00%). A "÷ inventory only" mutant → intDiv(300*10000,100)=30000bp — KILLED.
+def _inventory_sell_through_bp(sales365: int, current_inventory: int) -> int | None:
+    """Inventory sell-through = sales365 / (sales365 + inventory) in basis points.
+
+    @paradigm: sql — integer FLOOR. NULL on non-positive (sales365 + inventory).
+    """
+    return _ratio_bp(sales365, sales365 + current_inventory)
+
+
+inventory_sell_through_bp = MetricDefinition(
+    id="inventory_sell_through_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_inventory_sell_through_bp,
+    clickhouse_sql=(
+        "if((sales365 + current_inventory) > 0, "
+        "intDiv(sales365 * 10000, sales365 + current_inventory), NULL)"
+    ),
+    parity_class="shadow_compare",
+    scale=10000,
+)
+
+
+# ── Inventory days-left (estimated days of cover) — velocity-window CASCADE ──
+# Legacy computeDaysLeft: first NON-ZERO window wins (L30→L90→L180→L360).
+#   inv<=0 → 0 ; avgDaily = qtyLwin/win ; avgDaily<=0 → 999999 (INFINITE sentinel) ;
+#   else → round(inv/avgDaily). Integer-exact half-up: round(inv*win/qty).
+# WORKED ANCHOR (CF-S6-INV-DAYSLEFT-1): inv=30, L30=0, L90=90 → win 90, qty 90 →
+#   round(30*90/90)=30. A "always use L360" mutant on L360=0 → 999999 — KILLED.
+# WORKED ANCHOR (CF-S6-INV-DAYSLEFT-INF-1): inv=50, all windows 0 → 999999.
+_INVENTORY_INFINITE_DAYS = 999999
+
+
+def _inventory_days_left(
+    current_inventory: int,
+    qty_l30: int,
+    qty_l90: int,
+    qty_l180: int,
+    qty_l360: int,
+) -> int:
+    """Estimated days of cover via the first non-zero velocity window. @paradigm: sql.
+
+    Integer-exact half-up round of inv/avgDaily where avgDaily = qty/window:
+        round(inv*window/qty) = (inv*window*2 + qty) // (qty*2)  (half-up, positive ints).
+    """
+    if current_inventory <= 0:
+        return 0
+    q = 0
+    w = 0
+    if qty_l30 > 0:
+        q, w = qty_l30, 30
+    elif qty_l90 > 0:
+        q, w = qty_l90, 90
+    elif qty_l180 > 0:
+        q, w = qty_l180, 180
+    elif qty_l360 > 0:
+        q, w = qty_l360, 360
+    if q <= 0:
+        return _INVENTORY_INFINITE_DAYS
+    return (current_inventory * w * 2 + q) // (q * 2)
+
+
+inventory_days_left = MetricDefinition(
+    id="inventory_days_left",
+    kind="count",
+    unit="count",
+    formula_py=_inventory_days_left,
+    clickhouse_sql=(
+        "multiIf(current_inventory <= 0, 0, "
+        "qty_l30 > 0, intDiv(current_inventory * 30 * 2 + qty_l30, qty_l30 * 2), "
+        "qty_l90 > 0, intDiv(current_inventory * 90 * 2 + qty_l90, qty_l90 * 2), "
+        "qty_l180 > 0, intDiv(current_inventory * 180 * 2 + qty_l180, qty_l180 * 2), "
+        "qty_l360 > 0, intDiv(current_inventory * 360 * 2 + qty_l360, qty_l360 * 2), "
+        "999999)"
+    ),
+    parity_class="correctness_fixture",  # parity_gap:true — Brain-native cascade
+    scale=1,
+)
+
+
+# ── First-product second-order rate (basis points) ─────────────────────────
+# = (#cust ≥2 lifetime orders) / cohortSize. Legacy first-product-cascade.ts secondOrderRate
+# (100 × c2 / n, percent 0-100); Brain = bp. NOT slice-5 repeat_rate_bp. NULL-guard cohort<=0.
+# WORKED ANCHOR (CF-S6-FP-2ND-1): 3 of 8 cohort have ≥2 → intDiv(3*10000,8)=3750bp (37.50%).
+#   A "÷ orders(20) not customers" mutant → intDiv(3*10000,20)=1500bp — KILLED.
+def _first_product_second_order_rate_bp(
+    customers_with_2plus: int, cohort_customers: int
+) -> int | None:
+    """First-product second-order rate = customers with >=2 orders / cohort, in bp.
+
+    @paradigm: sql — integer FLOOR. NULL on zero cohort customers.
+    """
+    return _ratio_bp(customers_with_2plus, cohort_customers)
+
+
+first_product_second_order_rate_bp = MetricDefinition(
+    id="first_product_second_order_rate_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_first_product_second_order_rate_bp,
+    clickhouse_sql=(
+        "if(cohort_customers > 0, "
+        "intDiv(customers_with_2plus * 10000, cohort_customers), NULL)"
+    ),
+    parity_class="shadow_compare",
+    scale=10000,
+)
+
+
+# ---------------------------------------------------------------------------
 # Goal RAG (Red/Amber/Green) — count of metrics at each band
 # Not a money/ratio metric; count type.
 # ---------------------------------------------------------------------------
@@ -1183,6 +1312,11 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     # (cumulative CM3, not CM2); repeat_rate_bp covers rr90 + LTV repeat_rate.
     "cohort_ltv_mu":             cohort_ltv_mu,
     "repeat_rate_bp":            repeat_rate_bp,
+    # Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade.
+    # (product CM1 reuses cm1_mu; product AOV reuses aov_mu — no phantom duplicates.)
+    "inventory_sell_through_bp":          inventory_sell_through_bp,
+    "inventory_days_left":                inventory_days_left,
+    "first_product_second_order_rate_bp": first_product_second_order_rate_bp,
 }
 
 

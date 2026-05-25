@@ -35,6 +35,7 @@ import {
   assertLogisticsDefinitionId,
   assertMarketingDefinitionId,
   assertCohortLtvDefinitionId,
+  assertCatalogDefinitionId,
   getMetricScale,
 } from '../domain/registry-mapper.js';
 import {
@@ -664,6 +665,133 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // catalog router — workspace tier, requireRole(ANALYST)
+  // Phase-2 slice-6 (feat-catalog-inventory): product performance (CM1, NOT per-SKU CM2),
+  // inventory levels (sell-through + days-left, NOT turnover), first-product cascade
+  // (per-first-product second-order-rate, NOT slice-5 rr90).
+  // -------------------------------------------------------------------
+  const catalogRouter = router({
+    /** Product performance table (CM1 + pareto + return-rate + AOV). requireRole(ANALYST). */
+    products: workspaceProc
+      .input(
+        dateInput.extend({
+          group_by: z
+            .enum(['product', 'variant', 'collection', 'vendor', 'type', 'product_tags', 'order_tags', 'discount_codes'])
+            .optional(),
+          sort: z
+            .enum(['label', 'pareto_grade', 'cm1', 'cm1_pct', 'cm1_total', 'revenue', 'sold', 'refunded', 'net_quantity', 'return_rate', 'orders', 'aov'])
+            .optional(),
+          direction: z.enum(['asc', 'desc']).optional(),
+          search: z.string().optional(),
+          page: z.number().int().min(1).optional(),
+          page_size: z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.products requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getProductPerformance({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: {
+            group_by: input.group_by,
+            sort: input.sort,
+            direction: input.direction,
+            search: input.search,
+            page: input.page,
+            page_size: input.page_size,
+          },
+        });
+        // Products is CM1 (reuse cm1_mu) + AOV — NEVER per-SKU CM2.
+        assertCatalogDefinitionId('cm1_mu');
+        assertCatalogDefinitionId('aov_mu');
+        return {
+          result: result.result,
+          rows: result.result.rows,
+          total_rows: result.result.total_rows,
+          total_cm1_mu: result.result.total_cm1_mu,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    /** Inventory levels (days-left cascade + sell-through + status). requireRole(ANALYST). */
+    inventory: workspaceProc
+      .input(
+        dateInput.extend({
+          grain: z.enum(['product', 'variant']).optional(),
+          sort: z.enum(['label', 'current_inventory', 'days_left', 'sell_through', 'status']).optional(),
+          direction: z.enum(['asc', 'desc']).optional(),
+          status_filter: z
+            .enum(['Out of stock', 'Restock Soon', 'Healthy', 'Overstocked', 'Severely Overstocked'])
+            .optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.inventory requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getInventoryLevels({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: {
+            grain: input.grain,
+            sort: input.sort,
+            direction: input.direction,
+            status_filter: input.status_filter,
+          },
+        });
+        assertCatalogDefinitionId('inventory_days_left');
+        assertCatalogDefinitionId('inventory_sell_through_bp');
+        return {
+          result: result.result,
+          rows: result.result.rows,
+          total_rows: result.result.total_rows,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    /** First-product cascade (per-first-product repeat behavior + revenue LTV). requireRole(ANALYST). */
+    firstProductCascade: workspaceProc
+      .input(
+        dateInput.extend({
+          observation_days: z.number().int().min(30).max(730).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.firstProductCascade requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getFirstProductCascade({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: { observation_days: input.observation_days },
+        });
+        // The cascade rate is its OWN def — NEVER slice-5 repeat_rate_bp (rr90 conflation).
+        assertCatalogDefinitionId('first_product_second_order_rate_bp');
+        return {
+          result: result.result,
+          rows: result.result.rows,
+          total_cohort_customers: result.result.total_cohort_customers,
+          observation_days: result.result.observation_days,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // morningBrief router — workspace tier
   // CF-C6-MB-IDEMPOTENCY-1: submitResponse uses Redis dedup.
   // CF-C6-MB-GRADUATED-LABEL-1: status is server-driven.
@@ -820,6 +948,7 @@ export function createBrainRouter(
     marketing: marketingRouter,
     cohorts: cohortsRouter,
     ltv: ltvRouter,
+    catalog: catalogRouter,
     morningBrief: morningBriefRouter,
     device: deviceRouter,
   });

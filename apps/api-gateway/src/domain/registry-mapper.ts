@@ -285,6 +285,36 @@ export function assertCohortLtvDefinitionId(definitionId: string): void {
   }
 }
 
+// CATALOG_DEFINITION_IDS: registry ids on the slice-6 catalog/inventory/cascade surfaces.
+// Phase-2 slice-6 (feat-catalog-inventory). Products is CM1 (REUSE cm1_mu) — NOT per-SKU CM2,
+// so 'cm2_mu' must NOT appear here; product AOV reuses aov_mu. Inventory = inventory_days_left +
+// inventory_sell_through_bp. Cascade = first_product_second_order_rate_bp (NOT repeat_rate_bp —
+// the slice-5 rr90 conflation must NOT appear here).
+export const CATALOG_DEFINITION_IDS = [
+  'cm1_mu',
+  'aov_mu',
+  'inventory_sell_through_bp',
+  'inventory_days_left',
+  'first_product_second_order_rate_bp',
+] as const;
+
+/**
+ * Validate that a catalog/inventory/cascade definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived catalog field in the BFF.
+ * Mutant probe: id "product_cm2_mu" (phantom) or "inventory_turnover" → this throws.
+ */
+export function assertCatalogDefinitionId(definitionId: string): void {
+  const isKnown =
+    CATALOG_DEFINITION_IDS.includes(definitionId as (typeof CATALOG_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: catalog definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
 /**
  * Look up a MetricDefinition by id. Returns undefined for count metrics (no registry entry).
  */

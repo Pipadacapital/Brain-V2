@@ -897,6 +897,114 @@ _ROW_RTO_COST_VALUE = DDRRow(
 
 
 # ---------------------------------------------------------------------------
+# Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade.
+# Product CM1 reuses cm1_mu (already _ROW_CM1); product AOV reuses aov_mu — no new rows
+# for those (no phantom duplicates). Three NEW rows below.
+# ---------------------------------------------------------------------------
+
+_ROW_INV_SELL_THROUGH = DDRRow(
+    legacy_formula=(
+        "lib/inventory-constants.ts computeSellThrough — "
+        "round(sales365 / (sales365 + currentInventory) × 1000) / 10 (1-decimal PERCENT)"
+    ),
+    brain_formula="inventory_sell_through_bp",
+    reason=(
+        "Sell-through = sales365 / (sales365 + inventory). Legacy emits a 1-decimal PERCENT "
+        "(0-100). Brain canonicalizes on basis points (×100 of legacy percent), integer FLOOR. "
+        "The economic definition is IDENTICAL; only the scale + rounding-mode representation "
+        "differ — registered here, NOT silently float-matched. Rohan Stage-1 Finding 3: the "
+        "slice-table's 'inventory turnover' does NOT exist in legacy; sellThrough is the real "
+        "primitive."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Scale + rounding delta only: legacy percent (round to 1 decimal) vs Brain bp (FLOOR). "
+        "Brain_bp ≈ legacy_percent × 100, modulo sub-bp FLOOR-vs-ROUND. Anchor CF-S6-INV-"
+        "SELLTHRU-1: sales365=300, inv=100 → intDiv(300×10000,400)=7500bp (legacy 75.0%). "
+        "A '÷ inventory only' mutant → 30000bp — killed."
+    ),
+    business_impact=(
+        "Sell-through drives the overstock/dead-stock read on /inventory. A wrong denominator "
+        "(inventory only, not sales+inventory) would massively overstate velocity and hide "
+        "dead stock — working-capital risk for a D2C brand."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "inventory_sell_through_bp = intDiv(sales365 × 10000, sales365 + current_inventory); "
+        "NULL if (sales365 + current_inventory) <= 0"
+    ),
+)
+
+_ROW_INV_DAYS_LEFT = DDRRow(
+    legacy_formula=(
+        "lib/inventory-constants.ts computeDaysLeft — first NON-ZERO velocity window wins "
+        "(L30→L90→L180→L360): avgDaily = qtyLwin/win; inv<=0→0; avgDaily<=0→999999; "
+        "else round(inv/avgDaily) [float division + Math.round]"
+    ),
+    brain_formula="inventory_days_left",
+    reason=(
+        "Estimated days of cover via the first non-zero velocity window. Brain-native integer "
+        "form: round(inv×win/qty) computed as (inv×win×2 + qty)//(qty×2) [half-up, positive "
+        "ints] — no float, no legacy byte comparand (legacy is float÷ + Math.round). "
+        "999999 is the INFINITE sentinel (stock but no recent velocity). Rohan Stage-1 "
+        "Finding 3: the slice-table's 'inventory_cover_days' is the daysLeft cascade."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not a byte comparand — legacy float÷+round, Brain integer half-up. Anchor "
+        "CF-S6-INV-DAYSLEFT-1: inv=30, L30=0, L90=90 → window falls through to L90, qty 90 → "
+        "round(30×90/90)=30. An 'always L360' mutant on L360=0 → 999999 — killed. Anchor "
+        "CF-S6-INV-DAYSLEFT-INF-1: inv=50, all windows 0 → 999999."
+    ),
+    business_impact=(
+        "Days-left drives the Restock-Soon / Overstocked status badge and reorder timing. "
+        "Skipping the L30→L360 cascade (e.g. always L360) would smear a recent demand spike "
+        "across a year of stale velocity and under-warn on stockouts during a festival run-up."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "inventory_days_left = first non-zero of (L30,30),(L90,90),(L180,180),(L360,360) → "
+        "(inv×win×2 + qty)//(qty×2); inv<=0→0; no window→999999"
+    ),
+)
+
+_ROW_FP_SECOND_ORDER_RATE = DDRRow(
+    legacy_formula=(
+        "lib/metrics/first-product-cascade.ts:338 — secondOrderRate = 100 × "
+        "(customers with >=2 lifetime orders) / cohortCustomers (PERCENT 0-100); cohort = "
+        "customers grouped by deterministic primary first product, observation window default 365d"
+    ),
+    brain_formula="first_product_second_order_rate_bp",
+    reason=(
+        "Per-first-product repeat rate = customers with >=2 lifetime orders / cohort, in bp. "
+        "Rohan Stage-1 Finding 4: this is NOT slice-5 repeat_rate_bp (rr90 = repeat-within-90d "
+        "/ new-customers). The cascade cohort is per-first-product over a long observation "
+        "window with its own deterministic primary-product tie-break. Legacy comparand exists "
+        "(float percent) → shadow_compare; the delta is scale only (percent→bp)."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Scale delta only: legacy percent 0-100 vs Brain bp (×100), integer FLOOR. Anchor "
+        "CF-S6-FP-2ND-1: 3 of 8 cohort have >=2 orders → intDiv(3×10000,8)=3750bp (legacy "
+        "37.5%). A '÷ orders(20) not customers' mutant → 1500bp — killed."
+    ),
+    business_impact=(
+        "This tells the brand WHICH first product best converts to a repeat customer — the "
+        "core acquisition-product decision. Conflating it with rr90 (wrong window/denominator) "
+        "would mis-rank hero products and misdirect acquisition spend."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "first_product_second_order_rate_bp = intDiv(customers_with_2plus × 10000, "
+        "cohort_customers); NULL if cohort_customers <= 0"
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
 # The canonical register (ordered by waterfall / priority)
 # ---------------------------------------------------------------------------
 
@@ -925,6 +1033,10 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     "cohort_ltv_mu":             _ROW_COHORT_LTV,
     "repeat_rate_bp":            _ROW_REPEAT_RATE,
     "cohort_cac_payback":        _ROW_CAC_PAYBACK,  # use-case computed; phantom cac_payback_months decommissioned
+    # Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade
+    "inventory_sell_through_bp":          _ROW_INV_SELL_THROUGH,
+    "inventory_days_left":                _ROW_INV_DAYS_LEFT,
+    "first_product_second_order_rate_bp": _ROW_FP_SECOND_ORDER_RATE,
 }
 
 

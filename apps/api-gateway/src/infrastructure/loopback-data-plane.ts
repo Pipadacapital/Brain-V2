@@ -46,7 +46,27 @@ import type {
   LtvSummaryResult,
   LtvRow,
   LtvFilterInput,
+  ProductPerformanceResult,
+  ProductRow,
+  ProductFilterInput,
+  ProductGroupBy,
+  ProductSort,
+  InventoryLevelsResult,
+  InventoryRow,
+  InventoryFilterInput,
+  InventorySort,
+  InventoryStatus,
+  FirstProductCascadeResult,
+  FirstProductCascadeRow,
+  FirstProductCascadeFilterInput,
 } from '../domain/proto-types.js';
+import {
+  INVENTORY_DAYS_LEFT,
+  INVENTORY_SELL_THROUGH_BP,
+  FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
+  CM1_MU,
+  AOV_MU,
+} from '@brain/lib-metrics';
 
 // ---------------------------------------------------------------------------
 // StubDataPlane — deterministic in-process implementation for LOCAL harness.
@@ -970,6 +990,244 @@ export class InMemoryDecisionLog {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Phase-2 slice-6 (feat-catalog-inventory): product / inventory / first-product cascade.
+// Mirrors the Python analytics use-cases TS-side, using the SAME registry formulas so the
+// loopback values match the parity-gated definitions. Products = CM1 (reuse CM1_MU); NO
+// per-SKU CM2. Inventory = days-left cascade + sell-through (reuse the registry defs).
+// Cascade = per-first-product second-order-rate (reuse FIRST_PRODUCT_SECOND_ORDER_RATE_BP).
+// ---------------------------------------------------------------------------
+
+// Product seed (paise / counts). cogs + variable already line-share allocated; refunds applied.
+const _PRODUCT_SEED = [
+  // revenue 900000; cogs 300000, variable 100000 → cm1 500000.
+  {
+    label: 'Sugandh Oud Attar 12ml', sales: 1_000_000n, refunds: 100_000n, cogs: 300_000n,
+    variable: 100_000n, sold: 100n, refunded: 10n, orders: 80n,
+    ncOrders: 50n, ecOrders: 30n, ncRevenue: 560_000n, ecRevenue: 340_000n,
+  },
+  // revenue 300000; cogs 150000, variable 50000 → cm1 100000.
+  {
+    label: 'Rose Mist 50ml', sales: 320_000n, refunds: 20_000n, cogs: 150_000n,
+    variable: 50_000n, sold: 40n, refunded: 2n, orders: 30n,
+    ncOrders: 20n, ecOrders: 10n, ncRevenue: 180_000n, ecRevenue: 120_000n,
+  },
+  // revenue 180000; cogs 100000, variable 30000 → cm1 50000.
+  {
+    label: 'Sandalwood Soap (Pack of 3)', sales: 190_000n, refunds: 10_000n, cogs: 100_000n,
+    variable: 30_000n, sold: 60n, refunded: 5n, orders: 45n,
+    ncOrders: 25n, ecOrders: 20n, ncRevenue: 100_000n, ecRevenue: 80_000n,
+  },
+] as const;
+
+function _ratioBpOrNull(num: bigint, denom: bigint): number | null {
+  if (denom <= 0n) return null;
+  return Number((num * 10000n) / denom);
+}
+
+function _signedShareBp(num: bigint, denom: bigint): number | null {
+  if (denom === 0n) return null;
+  // truncate toward zero (matches the Python use-case sign behavior).
+  const q = num * 10000n;
+  const t = q / denom; // BigInt division truncates toward zero
+  return Number(t);
+}
+
+function _paretoGrade(cm1: bigint, sortedPositive: bigint[], totalPositive: bigint, rank: number): 'A' | 'B' | 'C' | 'F' {
+  if (cm1 < 0n) return 'F';
+  if (totalPositive <= 0n) return 'C';
+  let cum = 0n;
+  for (let i = 0; i < sortedPositive.length; i++) {
+    cum += sortedPositive[i]!;
+    if (i === rank) {
+      if (cum * 100n <= totalPositive * 80n) return 'A';
+      if (cum * 100n <= totalPositive * 95n) return 'B';
+      return 'C';
+    }
+  }
+  return 'C';
+}
+
+function buildSugandhlokProductPerformance(filters?: ProductFilterInput): ProductPerformanceResult {
+  const groupBy = (filters?.group_by ?? 'product') as ProductGroupBy;
+  const sort = (filters?.sort ?? 'cm1') as ProductSort;
+  const direction = filters?.direction === 'asc' ? 'asc' : 'desc';
+
+  type Tmp = { f: (typeof _PRODUCT_SEED)[number]; revenue: bigint; cm1: bigint };
+  const tmp: Tmp[] = _PRODUCT_SEED.map((f) => {
+    const revenue = f.sales - f.refunds;
+    const cm1 = CM1_MU.formula_ts(revenue, f.cogs, f.variable) as bigint;
+    return { f, revenue, cm1 };
+  });
+  let totalCm1 = 0n;
+  for (const t of tmp) totalCm1 += t.cm1;
+
+  const sortedByCm1 = [...tmp].sort((a, b) => (b.cm1 > a.cm1 ? 1 : b.cm1 < a.cm1 ? -1 : 0));
+  const positiveCm1 = sortedByCm1.filter((t) => t.cm1 > 0n).map((t) => t.cm1);
+  const totalPositive = positiveCm1.reduce((s, v) => s + v, 0n);
+
+  let rows: ProductRow[] = sortedByCm1.map((t, i) => {
+    const positiveRank = sortedByCm1.slice(0, i).filter((x) => x.cm1 > 0n).length;
+    const refunded = t.f.refunded > t.f.sold ? t.f.sold : t.f.refunded;
+    return {
+      label: t.f.label,
+      pareto_grade: _paretoGrade(t.cm1, positiveCm1, totalPositive, positiveRank),
+      cm1_mu: t.cm1,
+      cm1_pct_bp: t.revenue > 0n ? _ratioBpOrNull(t.cm1, t.revenue) : null,
+      cm1_total_share_bp: _signedShareBp(t.cm1, totalCm1),
+      revenue_mu: t.revenue,
+      sales_mu: t.f.sales,
+      refunds_mu: t.f.refunds,
+      sold: t.f.sold,
+      refunded,
+      net_quantity: t.f.sold - refunded,
+      return_rate_bp: t.f.sold > 0n ? _ratioBpOrNull(refunded, t.f.sold) : 0,
+      nc_return_rate_bp: 0,
+      ec_return_rate_bp: 0,
+      orders: t.f.orders,
+      nc_orders: t.f.ncOrders,
+      ec_orders: t.f.ecOrders,
+      aov_mu: t.f.orders > 0n ? (AOV_MU.formula_ts(t.revenue, t.f.orders) as bigint) : null,
+      nc_aov_mu: t.f.ncOrders > 0n ? (AOV_MU.formula_ts(t.f.ncRevenue, t.f.ncOrders) as bigint) : null,
+      ec_aov_mu: t.f.ecOrders > 0n ? (AOV_MU.formula_ts(t.f.ecRevenue, t.f.ecOrders) as bigint) : null,
+    };
+  });
+
+  if (filters?.search && filters.search.trim()) {
+    const q = filters.search.trim().toLowerCase();
+    rows = rows.filter((r) => r.label.toLowerCase().includes(q));
+  }
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: SUGANDH_LOK_CANONICAL.currency_code,
+    group_by: groupBy,
+    sort,
+    direction,
+    total_cm1_mu: totalCm1,
+    total_rows: BigInt(rows.length),
+    rows,
+  };
+}
+
+// Inventory seed (counts). qty_l* = units sold in trailing windows.
+const _INVENTORY_SEED = [
+  { label: 'Sugandh Oud Attar 12ml', sku: 'OUD-12', inv: 300n, l30: 30n, l90: 90n, l180: 180n, l360: 300n },
+  { label: 'Rose Mist 50ml', sku: 'ROSE-50', inv: 10n, l30: 30n, l90: 0n, l180: 0n, l360: 300n },
+  { label: 'Musk 10ml', sku: 'MUSK-10', inv: 30n, l30: 0n, l90: 90n, l180: 0n, l360: 0n },
+  { label: 'Sandalwood Soap (Pack of 3)', sku: 'SND-BAR', inv: 1000n, l30: 0n, l90: 0n, l180: 0n, l360: 0n },
+] as const;
+
+const _STATUS_ORDER: Record<InventoryStatus, number> = {
+  'Out of stock': 0, 'Restock Soon': 1, 'Healthy': 2, 'Overstocked': 3, 'Severely Overstocked': 4,
+};
+
+function _classifyStatus(inv: bigint, daysLeft: number): InventoryStatus {
+  if (inv <= 0n) return 'Out of stock';
+  if (daysLeft < 21) return 'Restock Soon';
+  if (daysLeft >= 365) return 'Severely Overstocked';
+  if (daysLeft >= 180) return 'Overstocked';
+  return 'Healthy';
+}
+
+function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): InventoryLevelsResult {
+  const grain = filters?.grain === 'variant' ? 'variant' : 'product';
+  const sort = (filters?.sort ?? 'days_left') as InventorySort;
+  const direction = filters?.direction === 'desc' ? 'desc' : 'asc';
+
+  let rows: InventoryRow[] = _INVENTORY_SEED.map((s) => {
+    const daysLeft = INVENTORY_DAYS_LEFT.formula_ts(s.inv, s.l30, s.l90, s.l180, s.l360) as number;
+    const sellThrough = INVENTORY_SELL_THROUGH_BP.formula_ts(s.l360, s.inv) as number | null;
+    return {
+      label: s.label,
+      sku: s.sku,
+      current_inventory: s.inv,
+      days_left: BigInt(daysLeft),
+      sell_through_bp: sellThrough,
+      status: _classifyStatus(s.inv, daysLeft),
+    };
+  });
+
+  if (filters?.status_filter) {
+    rows = rows.filter((r) => r.status === filters.status_filter);
+  }
+
+  const reverse = direction === 'desc';
+  rows = [...rows].sort((a, b) => {
+    let diff = 0;
+    if (sort === 'label') diff = a.label.localeCompare(b.label);
+    else if (sort === 'status') diff = _STATUS_ORDER[a.status] - _STATUS_ORDER[b.status];
+    else if (sort === 'current_inventory') diff = Number(a.current_inventory - b.current_inventory);
+    else if (sort === 'sell_through') diff = (a.sell_through_bp ?? -1) - (b.sell_through_bp ?? -1);
+    else diff = Number(a.days_left - b.days_left);
+    return reverse ? -diff : diff;
+  });
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    grain,
+    sort,
+    direction,
+    total_rows: BigInt(rows.length),
+    rows,
+  };
+}
+
+// First-product cascade seed. Cohort assembly already done upstream (deterministic primary
+// product, observation-window order counts).
+const _CASCADE_SEED = [
+  {
+    productKey: 'p_oud', productTitle: 'Sugandh Oud Attar 12ml', cohort: 8n,
+    with2: 3n, with3: 2n, with4: 1n, sumAdditional: 6n, sumLtv: 8_000_000n,
+    sumDaysToSecond: 90n, withSecond: 3n,
+  },
+  {
+    productKey: 'p_rose', productTitle: 'Rose Mist 50ml', cohort: 4n,
+    with2: 1n, with3: 0n, with4: 0n, sumAdditional: 1n, sumLtv: 2_000_000n,
+    sumDaysToSecond: 45n, withSecond: 1n,
+  },
+] as const;
+
+function buildSugandhlokFirstProductCascade(filters?: FirstProductCascadeFilterInput): FirstProductCascadeResult {
+  const obs = Math.min(730, Math.max(30, filters?.observation_days ?? 365));
+  let total = 0n;
+
+  const rows: FirstProductCascadeRow[] = _CASCADE_SEED.map((c) => {
+    total += c.cohort;
+    const n = c.cohort;
+    return {
+      product_key: c.productKey,
+      product_title: c.productTitle,
+      first_order_customers: n,
+      customers_with_2nd_order: c.with2,
+      customers_with_3rd_order: c.with3,
+      customers_with_4th_plus_order: c.with4,
+      second_order_rate_bp: n > 0n ? (FIRST_PRODUCT_SECOND_ORDER_RATE_BP.formula_ts(c.with2, n) as number) : null,
+      third_order_rate_bp: n > 0n ? (FIRST_PRODUCT_SECOND_ORDER_RATE_BP.formula_ts(c.with3, n) as number) : null,
+      fourth_plus_rate_bp: n > 0n ? (FIRST_PRODUCT_SECOND_ORDER_RATE_BP.formula_ts(c.with4, n) as number) : null,
+      additional_order_rate_centi: n > 0n ? (c.sumAdditional * 100n) / n : 0n,
+      average_ltv_revenue_mu: n > 0n ? c.sumLtv / n : 0n,
+      average_days_to_second_deci: c.withSecond > 0n ? (c.sumDaysToSecond * 10n) / c.withSecond : null,
+    };
+  });
+
+  rows.sort((a, b) => Number(b.first_order_customers - a.first_order_customers));
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: SUGANDH_LOK_CANONICAL.currency_code,
+    observation_days: obs,
+    total_cohort_customers: total,
+    rows,
+  };
+}
+
 let _rowCounter = 0;
 
 function newRowId(): string {
@@ -1148,6 +1406,40 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { result: buildSugandhlokLtvSummary(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  // Phase-2 slice-6 (feat-catalog-inventory): product / inventory / first-product cascade.
+  async getProductPerformance(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: ProductFilterInput;
+  }): Promise<{ result: ProductPerformanceResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokProductPerformance(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  async getInventoryLevels(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: InventoryFilterInput;
+  }): Promise<{ result: InventoryLevelsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokInventoryLevels(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  async getFirstProductCascade(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: FirstProductCascadeFilterInput;
+  }): Promise<{ result: FirstProductCascadeResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokFirstProductCascade(params.filters), data_epoch: DATA_EPOCH };
   }
 
   async getMorningBrief(params: {

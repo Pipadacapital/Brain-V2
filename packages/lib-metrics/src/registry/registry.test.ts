@@ -35,6 +35,14 @@ import {
   REPEAT_RATE_BP,
   _CF_S5_COHORT_LTV_ANCHOR,
   _CF_S5_REPEAT_RATE_ANCHOR,
+  INVENTORY_SELL_THROUGH_BP,
+  INVENTORY_DAYS_LEFT,
+  INVENTORY_INFINITE_DAYS,
+  FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
+  _CF_S6_INV_SELL_THROUGH_ANCHOR,
+  _CF_S6_INV_DAYS_LEFT_ANCHOR,
+  _CF_S6_INV_DAYS_LEFT_INFINITE_ANCHOR,
+  _CF_S6_FP_SECOND_ORDER_ANCHOR,
 } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -56,6 +64,8 @@ describe('METRIC_REGISTRY completeness', () => {
       'mer_bp', 'cac_mu', 'new_customer_revenue_mu', 'nc_cm2_mu', 'cm2_per_nc_mu', 'acquisition_ad_spend_mu',
       // Phase-2 slice-5 (feat-cohorts-ltv): cohorts + LTV
       'cohort_ltv_mu', 'repeat_rate_bp',
+      // Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade
+      'inventory_sell_through_bp', 'inventory_days_left', 'first_product_second_order_rate_bp',
     ];
     for (const id of required) {
       expect(METRIC_REGISTRY).toHaveProperty(id);
@@ -142,6 +152,69 @@ describe('METRIC_REGISTRY completeness', () => {
     expect(REPEAT_RATE_BP.formula_ts(a.repeat_customers, a.new_customers)).toBe(a.expected_bp);
     // Mutant: dividing by total orders (25) → 1200bp — KILLED (different value).
     expect(REPEAT_RATE_BP.formula_ts(a.repeat_customers, a.mutant_total_orders)).toBe(a.mutant_bp);
+    expect(a.expected_bp).not.toBe(a.mutant_bp);
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase-2 slice-6 (feat-catalog-inventory) — definitions + NON-VACUOUS anchors
+  // -------------------------------------------------------------------------
+  it('slice-6: parity classes — sell_through/second_order = shadow_compare; days_left = correctness_fixture', () => {
+    expect(METRIC_REGISTRY['inventory_sell_through_bp'].parity_class).toBe('shadow_compare');
+    expect(METRIC_REGISTRY['inventory_days_left'].parity_class).toBe('correctness_fixture');
+    expect(METRIC_REGISTRY['first_product_second_order_rate_bp'].parity_class).toBe('shadow_compare');
+  });
+
+  it('slice-6: phantom slice-table metrics are NOT in the registry (CM1/turnover/rr90 conflations)', () => {
+    // Products is CM1 (reuses cm1_mu) — no per-SKU CM2 phantom.
+    expect(METRIC_REGISTRY).not.toHaveProperty('product_cm1_mu');
+    expect(METRIC_REGISTRY).not.toHaveProperty('sku_cm2_mu');
+    // Legacy has NO turnover ratio — sellThrough + daysLeft are the real primitives.
+    expect(METRIC_REGISTRY).not.toHaveProperty('inventory_turnover');
+    expect(METRIC_REGISTRY).not.toHaveProperty('inventory_cover_days');
+    // The cascade rate is NOT slice-5 rr90 (the wrong-window conflation).
+    expect(METRIC_REGISTRY).not.toHaveProperty('first_product_repeat_rate');
+  });
+
+  it('slice-6 CF-S6-INV-SELLTHRU-1: sell_through divides by (sales+inventory), not inventory alone', () => {
+    const a = _CF_S6_INV_SELL_THROUGH_ANCHOR;
+    // Canon: 300 / (300+100) = 7500bp (75.00%).
+    expect(INVENTORY_SELL_THROUGH_BP.formula_ts(a.sales365, a.current_inventory)).toBe(a.expected_bp);
+    // Mutant: ÷ inventory only (100) → 30000bp — KILLED (the def divides by sales+inventory).
+    const wrongDenomOnlyInv = Math.trunc((Number(a.sales365) * 10000) / Number(a.current_inventory));
+    expect(wrongDenomOnlyInv).toBe(a.mutant_bp);
+    expect(a.expected_bp).not.toBe(a.mutant_bp);
+  });
+
+  it('slice-6 CF-S6-INV-DAYSLEFT-1: days_left uses the L30→L90→L180→L360 cascade (not always L360)', () => {
+    const a = _CF_S6_INV_DAYS_LEFT_ANCHOR;
+    expect(
+      INVENTORY_DAYS_LEFT.formula_ts(a.current_inventory, a.qty_l30, a.qty_l90, a.qty_l180, a.qty_l360),
+    ).toBe(a.expected_days);
+    // Mutant: "always use L360" — L360=0 here → 999999, the INFINITE sentinel — KILLED.
+    expect(a.qty_l360).toBe(0n);
+    expect(a.expected_days).not.toBe(a.mutant_always_l360_days);
+    expect(a.mutant_always_l360_days).toBe(INVENTORY_INFINITE_DAYS);
+  });
+
+  it('slice-6 CF-S6-INV-DAYSLEFT-INF-1: stock with zero velocity → INFINITE sentinel', () => {
+    const a = _CF_S6_INV_DAYS_LEFT_INFINITE_ANCHOR;
+    expect(
+      INVENTORY_DAYS_LEFT.formula_ts(a.current_inventory, a.qty_l30, a.qty_l90, a.qty_l180, a.qty_l360),
+    ).toBe(a.expected_days);
+    expect(a.expected_days).toBe(INVENTORY_INFINITE_DAYS);
+    // Zero inventory → 0 (NOT infinite).
+    expect(INVENTORY_DAYS_LEFT.formula_ts(0n, 10n, 0n, 0n, 0n)).toBe(0);
+  });
+
+  it('slice-6 CF-S6-FP-2ND-1: second_order_rate divides by cohort customers (not orders)', () => {
+    const a = _CF_S6_FP_SECOND_ORDER_ANCHOR;
+    expect(
+      FIRST_PRODUCT_SECOND_ORDER_RATE_BP.formula_ts(a.customers_with_2plus, a.cohort_customers),
+    ).toBe(a.expected_bp);
+    // Mutant: ÷ orders (20) not customers (8) → 1500bp — KILLED.
+    expect(
+      FIRST_PRODUCT_SECOND_ORDER_RATE_BP.formula_ts(a.customers_with_2plus, a.mutant_orders),
+    ).toBe(a.mutant_bp);
     expect(a.expected_bp).not.toBe(a.mutant_bp);
   });
 });

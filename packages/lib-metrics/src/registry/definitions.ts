@@ -713,6 +713,144 @@ export const _CF_S5_REPEAT_RATE_ANCHOR = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Catalog / inventory / first-product cascade (Phase-2 slice-6: feat-catalog-inventory)
+// Byte-identical pairs with pylibs/.../registry/definitions.py.
+//
+// LEGACY GROUND TRUTH (read at Stage 1, NOT the slice-table shorthand — Rohan Findings):
+//   - Products metric is CM1 (= revenue−cogs−variableCost), NOT per-SKU CM2 → REUSE cm1_mu;
+//     AOV reuses aov_mu. No SKU-grain CM2 exists; building product_cm1_mu/sku_cm2_mu = phantom.
+//   - Inventory has sellThrough + daysLeft, NOT a turnover ratio (lib/inventory-constants.ts).
+//   - First-product cascade "second order rate" = (#cust ≥2 lifetime orders)/cohort over an
+//     observation window — NOT slice-5 repeat_rate_bp (rr90 = repeat-within-90d/new-customers).
+//     Do NOT reuse repeat_rate_bp for it (different window + denominator semantics).
+//
+// SCALE DDR DELTA: legacy emits these as percent (sell-through 1-decimal; cascade rate 0-100).
+//   Brain canonicalizes on basis points (×100 of legacy percent) — registered in the DDR,
+//   NOT silently float-matched. See definitional_delta_register.py rows _ROW_INV_SELL_THROUGH
+//   and _ROW_FP_SECOND_ORDER_RATE.
+// ---------------------------------------------------------------------------
+
+// Inventory sell-through (basis points) = sales365 / (sales365 + currentInventory).
+// Legacy: lib/inventory-constants.ts computeSellThrough (round(sales/(sales+inv)*1000)/10,
+// 1-decimal percent). Brain: bp. Caller guards: NULL if (sales365 + inv) <= 0.
+// WORKED ANCHOR (CF-S6-INV-SELLTHRU-1): sales365=300, inv=100 → intDiv(300*10000,400) = 7500bp
+//   (75.00%). A "÷ inventory only" mutant → intDiv(300*10000,100)=30000bp — KILLED.
+export const INVENTORY_SELL_THROUGH_BP: MetricDefinition = {
+  id: 'inventory_sell_through_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  // Caller guards: NULL if (sales365 + current_inventory) <= 0.
+  formula_ts: (sales365: bigint, current_inventory: bigint): number =>
+    ratioToBasisPoints(sales365, sales365 + current_inventory),
+  clickhouse_sql:
+    'if((sales365 + current_inventory) > 0, intDiv(sales365 * 10000, sales365 + current_inventory), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Inventory days-left (estimated days of cover) — velocity-window CASCADE.
+// Legacy: lib/inventory-constants.ts computeDaysLeft. First NON-ZERO window wins:
+//   inv<=0 → 0 ; avgDaily = qtyL30/30 (if>0) else qtyL90/90 else qtyL180/180 else qtyL360/360
+//   avgDaily<=0 → 999999 (INFINITE sentinel: stock but no recent velocity)
+//   else → round(inv / avgDaily).
+// Integer-exact: round(inv/avgDaily) where avgDaily = qty/window is recast to round(inv*window/qty).
+// WORKED ANCHOR (CF-S6-INV-DAYSLEFT-1): inv=30, L30=0, L90=90 → window 90, qty 90 →
+//   round(30*90/90)=30. A "always use L360" mutant on L360=0 → 999999 — KILLED.
+// WORKED ANCHOR (CF-S6-INV-DAYSLEFT-INF-1): inv=50, all windows 0 → 999999.
+export const INVENTORY_INFINITE_DAYS = 999999;
+export const INVENTORY_DAYS_LEFT: MetricDefinition = {
+  id: 'inventory_days_left',
+  kind: 'count',
+  unit: 'count',
+  scale: 1,
+  // Integer-exact half-up round of inv/avgDaily via the first non-zero window (q,w):
+  // round(inv*w/q) = (inv*w*2 + q) / (q*2)  (banker-free half-up on positive integers).
+  formula_ts: (
+    current_inventory: bigint,
+    qty_l30: bigint,
+    qty_l90: bigint,
+    qty_l180: bigint,
+    qty_l360: bigint,
+  ): number => {
+    if (current_inventory <= 0n) return 0;
+    let q = 0n;
+    let w = 0n;
+    if (qty_l30 > 0n) { q = qty_l30; w = 30n; }
+    else if (qty_l90 > 0n) { q = qty_l90; w = 90n; }
+    else if (qty_l180 > 0n) { q = qty_l180; w = 180n; }
+    else if (qty_l360 > 0n) { q = qty_l360; w = 360n; }
+    if (q <= 0n) return INVENTORY_INFINITE_DAYS;
+    // round(inv*w/q), half-up on positive integers.
+    const numerator = current_inventory * w * 2n + q;
+    return Number(numerator / (q * 2n));
+  },
+  // ClickHouse: replicate the cascade with multiIf + integer half-up rounding.
+  clickhouse_sql:
+    'multiIf(current_inventory <= 0, 0, ' +
+    'qty_l30 > 0, intDiv(current_inventory * 30 * 2 + qty_l30, qty_l30 * 2), ' +
+    'qty_l90 > 0, intDiv(current_inventory * 90 * 2 + qty_l90, qty_l90 * 2), ' +
+    'qty_l180 > 0, intDiv(current_inventory * 180 * 2 + qty_l180, qty_l180 * 2), ' +
+    'qty_l360 > 0, intDiv(current_inventory * 360 * 2 + qty_l360, qty_l360 * 2), ' +
+    '999999)',
+  display_only: false,
+  parity_class: 'correctness_fixture',
+};
+
+// First-product second-order rate (basis points) = (#cust ≥2 lifetime orders) / cohortSize.
+// Legacy: lib/metrics/first-product-cascade.ts secondOrderRate (100 × c2 / n, percent 0-100).
+// Brain: bp. NOT slice-5 repeat_rate_bp (rr90 = repeat-within-90d/new-customers — different
+// window + the cohort here is per-first-product over an observation window). Caller guards:
+// NULL if cohort <= 0.
+// WORKED ANCHOR (CF-S6-FP-2ND-1): 3 of 8 cohort have ≥2 → intDiv(3*10000,8) = 3750bp (37.50%).
+//   A "÷ orders(20) not customers" mutant → intDiv(3*10000,20)=1500bp — KILLED.
+export const FIRST_PRODUCT_SECOND_ORDER_RATE_BP: MetricDefinition = {
+  id: 'first_product_second_order_rate_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  // Caller guards: NULL if cohort_customers == 0.
+  formula_ts: (customers_with_2plus: bigint, cohort_customers: bigint): number =>
+    ratioToBasisPoints(customers_with_2plus, cohort_customers),
+  clickhouse_sql:
+    'if(cohort_customers > 0, intDiv(customers_with_2plus * 10000, cohort_customers), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// CF-S6 NON-VACUOUS FORMULA ANCHORS (slice-6; exported for the cross-language anchor test).
+export const _CF_S6_INV_SELL_THROUGH_ANCHOR = {
+  sales365: 300n,
+  current_inventory: 100n,
+  expected_bp: 7500, // 75.00%; "÷ inventory only" mutant → 30000bp (killed)
+  mutant_bp: 30000,
+} as const;
+export const _CF_S6_INV_DAYS_LEFT_ANCHOR = {
+  current_inventory: 30n,
+  qty_l30: 0n,
+  qty_l90: 90n,
+  qty_l180: 0n,
+  qty_l360: 0n,
+  expected_days: 30, // cascade falls through L30→L90; "always L360" mutant → 999999 (killed)
+  mutant_always_l360_days: 999999,
+} as const;
+export const _CF_S6_INV_DAYS_LEFT_INFINITE_ANCHOR = {
+  current_inventory: 50n,
+  qty_l30: 0n,
+  qty_l90: 0n,
+  qty_l180: 0n,
+  qty_l360: 0n,
+  expected_days: 999999, // stock but no velocity → INFINITE sentinel
+} as const;
+export const _CF_S6_FP_SECOND_ORDER_ANCHOR = {
+  customers_with_2plus: 3n,
+  cohort_customers: 8n,
+  expected_bp: 3750, // 37.50%; "÷ orders(20)" mutant → 1500bp (killed)
+  mutant_orders: 20n,
+  mutant_bp: 1500,
+} as const;
+
+// ---------------------------------------------------------------------------
 // Registry export (all definitions indexed by id)
 // ---------------------------------------------------------------------------
 
@@ -755,6 +893,11 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   // Phase-2 slice-5 (feat-cohorts-ltv): cohorts + LTV.
   cohort_ltv_mu: COHORT_LTV_MU,
   repeat_rate_bp: REPEAT_RATE_BP,
+  // Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade.
+  // (product CM1 reuses cm1_mu; product AOV reuses aov_mu — no phantom duplicates.)
+  inventory_sell_through_bp: INVENTORY_SELL_THROUGH_BP,
+  inventory_days_left: INVENTORY_DAYS_LEFT,
+  first_product_second_order_rate_bp: FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
 } as const;
 
 /** All metric ids that are display_only (must never appear in decision thresholds). */

@@ -47,4 +47,9 @@ export {
   CM2_PER_NC_MU,
   ACQUISITION_AD_SPEND_MU,
   LTV_CAC_BP,
+  // Phase-2 slice-6 (feat-catalog-inventory)
+  INVENTORY_SELL_THROUGH_BP,
+  INVENTORY_DAYS_LEFT,
+  INVENTORY_INFINITE_DAYS,
+  FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
 } from './registry/index.js';

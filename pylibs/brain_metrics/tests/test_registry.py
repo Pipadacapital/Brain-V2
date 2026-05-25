@@ -654,3 +654,127 @@ def test_fx_shadow_rate_matches_legacy():
         "Must match legacy workspace-costs.ts EXCHANGE_RATES {INR: 83.5}. "
         "CF-C4-DDR-FX-RESTATEMENT-1."
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade.
+# NON-VACUOUS anchors — every positive case is paired with a killed mutant.
+# Byte-identity twin: packages/lib-metrics/src/registry/registry.test.ts (slice-6 block).
+# ---------------------------------------------------------------------------
+
+class TestSliceSixInventorySellThrough:
+    """inventory_sell_through_bp = sales365 / (sales365 + inventory) in bp. shadow_compare."""
+
+    def test_worked_example_cf_s6_inv_sellthru_1(self):
+        """sales365=300, inv=100 → intDiv(300×10000, 400) = 7500bp (75.00%)."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        assert f(sales365=300, current_inventory=100) == 7500
+
+    def test_kill_divide_by_inventory_only_mutant(self):
+        """A '÷ inventory only' mutant → intDiv(300×10000,100)=30000bp — must DIFFER from canon."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        canon = f(sales365=300, current_inventory=100)
+        mutant = _ratio_bp(300, 100)  # the wrong denominator
+        assert canon == 7500
+        assert mutant == 30000
+        assert canon != mutant
+
+    def test_zero_denominator_returns_null(self):
+        """sales365=0 and inv=0 → None (fail-closed). CF-C4-RATIO-DIVOP-1."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        assert f(sales365=0, current_inventory=0) is None
+
+    def test_full_sell_through_when_no_inventory(self):
+        """All sold, none on hand → 10000bp (100%)."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        assert f(sales365=500, current_inventory=0) == 10000
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["inventory_sell_through_bp"].parity_class == "shadow_compare"
+
+
+class TestSliceSixInventoryDaysLeft:
+    """inventory_days_left = first non-zero velocity window cascade. correctness_fixture."""
+
+    def test_worked_example_cf_s6_daysleft_1_cascade_falls_through(self):
+        """inv=30, L30=0, L90=90 → window falls to L90, qty 90 → round(30×90/90)=30."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=30, qty_l30=0, qty_l90=90, qty_l180=0, qty_l360=0) == 30
+
+    def test_kill_always_l360_mutant(self):
+        """An 'always L360' mutant on L360=0 → 999999, not 30 — KILLED."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        canon = f(current_inventory=30, qty_l30=0, qty_l90=90, qty_l180=0, qty_l360=0)
+        # The 'always L360' mutant would see qty=0 → infinite sentinel.
+        mutant_infinite = 999999
+        assert canon == 30
+        assert canon != mutant_infinite
+
+    def test_cf_s6_daysleft_inf_stock_no_velocity(self):
+        """inv=50, all windows 0 → 999999 (INFINITE sentinel)."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=50, qty_l30=0, qty_l90=0, qty_l180=0, qty_l360=0) == 999999
+
+    def test_zero_inventory_returns_zero_not_infinite(self):
+        """inv<=0 → 0 days left (out of stock), NEVER the infinite sentinel."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=0, qty_l30=10, qty_l90=0, qty_l180=0, qty_l360=0) == 0
+        assert f(current_inventory=-5, qty_l30=10, qty_l90=0, qty_l180=0, qty_l360=0) == 0
+
+    def test_l30_preferred_over_later_windows(self):
+        """L30 wins when non-zero: inv=60, L30=30 → round(60×30/30)=60 (not the L360 read)."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=60, qty_l30=30, qty_l90=900, qty_l180=0, qty_l360=0) == 60
+
+    def test_half_up_rounding(self):
+        """round(inv×w/q) half-up: inv=10, L30=4 → 10×30/4 = 75.0 → 75 (exact)."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=10, qty_l30=4, qty_l90=0, qty_l180=0, qty_l360=0) == 75
+        # inv=7, L30=2 → 7×30/2 = 105.0 exact → 105
+        assert f(current_inventory=7, qty_l30=2, qty_l90=0, qty_l180=0, qty_l360=0) == 105
+
+    def test_parity_class_correctness_fixture(self):
+        assert METRIC_REGISTRY["inventory_days_left"].parity_class == "correctness_fixture"
+
+
+class TestSliceSixFirstProductSecondOrderRate:
+    """first_product_second_order_rate_bp = custWith2plus / cohort in bp. shadow_compare.
+
+    NOT slice-5 repeat_rate_bp (rr90). Different window + cohort semantics.
+    """
+
+    def test_worked_example_cf_s6_fp_2nd_1(self):
+        """3 of 8 cohort have >=2 orders → intDiv(3×10000, 8) = 3750bp (37.50%)."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        assert f(customers_with_2plus=3, cohort_customers=8) == 3750
+
+    def test_kill_divide_by_orders_mutant(self):
+        """A '÷ orders(20) not customers(8)' mutant → 1500bp — KILLED."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        canon = f(customers_with_2plus=3, cohort_customers=8)
+        mutant = f(customers_with_2plus=3, cohort_customers=20)
+        assert canon == 3750
+        assert mutant == 1500
+        assert canon != mutant
+
+    def test_zero_cohort_returns_null(self):
+        """Empty cohort → None (fail-closed)."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        assert f(customers_with_2plus=0, cohort_customers=0) is None
+
+    def test_zero_repeaters(self):
+        """No one re-ordered → 0bp."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        assert f(customers_with_2plus=0, cohort_customers=50) == 0
+
+    def test_is_distinct_from_repeat_rate_bp(self):
+        """The cascade rate is a SEPARATE metric id from slice-5 repeat_rate_bp (no conflation)."""
+        assert "first_product_second_order_rate_bp" in METRIC_REGISTRY
+        assert "repeat_rate_bp" in METRIC_REGISTRY
+        assert (
+            METRIC_REGISTRY["first_product_second_order_rate_bp"].id
+            != METRIC_REGISTRY["repeat_rate_bp"].id
+        )
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["first_product_second_order_rate_bp"].parity_class == "shadow_compare"
