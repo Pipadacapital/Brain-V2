@@ -127,3 +127,19 @@
 **Festival-window note (Stage-8 calendar, yours + Jatin's):** the irreversible cutovers + DB shutdown must not be scheduled in a festival peak GMV window (maximum blast radius). The runbook names the constraint; you own the calendar.
 
 **Where it lives:** `02-cto-advisor-review.md` §Escalation ruling + the 5 intake rulings; run folder `.engineering-os/runs/2026-05-25T07-12-38Z__1be105__feat-legacy-decommission__rishabhporwal`.
+
+---
+## 2026-05-25 — Candidate rule from a recurring pattern (Rohan, Stage-6, feat-store-order-fact-layer)
+A 3rd occurrence of the "uncommitted working-tree state contaminates a stage's verification/commit set"
+root-cause family (Child-1 + Child-2 divergent-gate-copy; Child-6 stray staged files; this slice's
+pre-existing login-form.tsx `useRouter` break failing 6 login-form tests that the slice never touched).
+Crosses the >=3 codification threshold. CANDIDATE rule written (NOT self-adopted):
+`.engineering-os/rule-proposals/2026-05-25__pre-stage-working-tree-baseline.md`.
+Review with `/adopt-rule 2026-05-25__pre-stage-working-tree-baseline` or
+`/reject-rule 2026-05-25__pre-stage-working-tree-baseline <reason>`.
+
+ALSO surfaced (not a slice blocker, your disposition):
+- 6 failing `apps/web/src/test/login-form.test.tsx` tests from a pre-existing uncommitted
+  `login-form.tsx` change (useRouter not wrapped in an app-router provider in the test).
+- uv workspace fails to build (`brain-cost-router` missing `tool.uv.sources` entry in
+  intelligence-service) — blocks `uv run` for Python tests; worked around with an ephemeral venv.

@@ -1,8 +1,100 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-25T13:10:00Z",
-  "updated_by": "Rohan (cto-advisor) — Child 7 (FINAL) STAGE-6 PASS (runbook-only; my compliance+reversibility design review IS the gate, VETO). Reversibility review PASS: 8-row PoNR ledger, 4 PoNRs (L1 per-connector plaintext-delete [Shiprocket last/no-replay], L3 read-decommission, L6 DB shutdown, L7 archive deletion), each names precondition + positive-proof verification (NO flag-read passes a PoNR) + rollback-until-the-line; no PoNR crosses before its dependency parity signed. DPDP review PASS: §12 archive format named (ALPHA live-read-only scoped-DELETE / BETA S3-Parquet per-workspace; flat pg_dump rejected), ap-south-1, retention-bounded, archive-vs-decommission two dates, §12/§13 close-out + governance handoff. 4 gate classes all real machine-checkable (custody real-seal()+prod-path-200+parity / dwell 24h / DDR Gate-P2-Brain-sourced / festival workspace_festivals query). DDR sequencing correct (2 rows held post-Shopify-cutover, pre-L3; NOT signed now). Over-eng CLEAN. Hard-rule deviation CLEAN -> delegation exercisable. FIRED custody escalation carried as build_gated_on; ARMED archive tripwire DOES NOT FIRE. Independent re-verify 4/4 (custody NotImplementedError stubs, workspace_festivals table, legacy AI path, check-metrics-parity.sh all real). Founder gate SIGNED under standing delegation (12-founder-decision.json). NO commit (pending-founder-commit.md). status=approved, stage 8 readiness. CLOSES the 7-child epic (planning/build); production cutover Founder-gated at Stage-8.",
+  "updated_at": "2026-05-25T13:47:00Z",
+  "updated_by": "cto-advisor",
   "active_requirements": [
+    {
+      "req_id": "feat-store-order-fact-layer",
+      "title": "Shared store/order fact layer + revenue ladder — Brain-native (Phase 2, slice 1)",
+      "status": "approved",
+      "stage": 8,
+      "current_owner": "platform-devops (Jatin) — Stage-8 readiness only (no live deploy, no commit)",
+      "parent_epic": "epic-phase2-feature-parity",
+      "epic_grandparent": "chore-migrate-legacy-to-brain",
+      "slice": "1 of 9 (foundation — forced dependency root)",
+      "run_folder": ".engineering-os/runs/2026-05-25T13-28-50Z__9a31b5__feat-store-order-fact-layer__rishabhporwal",
+      "submitted_by": "rishabhporwal",
+      "submitted_at": "2026-05-25T13:28:50Z",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Trigger-surface scan fires multi-tenancy + money + schema-proto + india-compliance (per-SKU GST) + connectors. Foundational-scaffolding carve-out inapplicable (live multi-tenant money reads). Conservative tie-break moot. Inherited high-stakes from epic.",
+      "trigger_surfaces_touched": [
+        "multi-tenancy",
+        "money",
+        "schema-proto",
+        "india-compliance",
+        "connectors"
+      ],
+      "blocks": [
+        "feat-tenancy-rls-brain-native",
+        "feat-money-minor-units-parity",
+        "feat-connector-framework-cutover",
+        "feat-metric-engine-olap-split"
+      ],
+      "dependency_check": "no-violation — builds on committed contracts (registry types, query gateway, DataPlanePort, format-money, parity harness); additive reversible facts for ONE anchor workspace; executes NO held cutover.",
+      "intake_decision": "ADVANCE",
+      "cto_review_artifact": "02-cto-advisor-review.md",
+      "cto_review_ts": "2026-05-25T13:30:00Z",
+      "paradigm": "sql",
+      "first_pass_paradigm": "sql (zero inference path; any @paradigm LLM decorator or new runtime = violation -> BOUNCE)",
+      "persona_count": 0,
+      "needs_personas": [],
+      "personas_spawned_by_me": false,
+      "persona_count_rationale": "0-persona: clear repeat of a shipped layer-pattern; every risk dimension settled by Child-1/2/3/4 + the epic ai-cost-realist persona; no single dominant UNSETTLED dimension. Within high-stakes cap.",
+      "guardrails": "NO git commit. legacy reference-only. Reuse Phase-1 plumbing wholesale. Per-SKU GST via RegionAdapter, never blended. Money BIGINT minor units. RLS proven per query. Build + verify it runs; no live cutover.",
+      "next_stage_recommendation": "Stage 2 (Aryan): binding plan reusing the registry + query gateway + DataPlanePort + parity harness. MUST: add revenue-ladder defs to BOTH registries (TS+Py byte-identical structural fields); per-SKU GST never blended (source per-SKU OR carry the registered DDR delta with the per-SKU formula pinned, blended legacy NOT silently matched); a StoreSummaryQuery use-case reading CH through the query gateway with mandatory workspace_id; store.summary + store.revenueLadder workspaceProc tRPC (bigint over superjson, requireRole ANALYST); wire /store; @paradigm sql; reversible additive facts; legacy untouched.",
+      "stage6_final_review": {
+        "reviewer": "cto-advisor (Rohan)",
+        "ts": "2026-05-25T13:47:00Z",
+        "verdict": "PASS",
+        "recommendation": "APPROVE",
+        "founder_gate": "SIGNED under standing delegation (no hard-rule deviation per 11-final-review.md §9)",
+        "artifact": "11-final-review.md",
+        "retro": "14-retro.md",
+        "founder_decision_delegated": "12-founder-decision.json",
+        "independent_reverification": {
+          "parity_gate": "exit 0 (25 vectors byte-identical; realized_revenue_mu correctness_fixture SQL match + DDR coverage; 20 shared structural-match; 2 mutants killed)",
+          "api_gateway_store_tests": "8 passed",
+          "analytics_store_gst_tests": "20 passed",
+          "live_boot": "store.revenueLadder = [218000000,206000000,188000000,191000000,185000000] bigint meta + fresh request_id UUID",
+          "verify_the_verifier": "I disabled getStoreSummary tenancy guard -> cross-ws test RED; reverted byte-identical (0 MUTANT; 8 green; tsc 0)",
+          "dashboard_store_consistency": "kpiSummary.net_revenue_mu == store.realized_revenue_mu == 185000000 (same canonical fact)",
+          "tenancy_live": "cross-workspace header -> UnscopedQueryError not authorized"
+        },
+        "plan_binding_confirmed": "feature-vertical: revenue-ladder defs (TS+Py parity) + india_gst per-SKU adapter + StoreSummaryQuery use-case + getStoreSummary DataPlanePort method + store.summary/revenueLadder tRPC + /store wiring + unified canonical seed. Per-SKU GST never blended; realized_revenue_mu DDR row; @paradigm sql; reversible additive; legacy untouched.",
+        "over_engineering_audit": "CLEAN — every file maps to plan; ZERO new dependency (web package.json churn is pre-existing Child-6, git-diff-confirmed); no speculative abstraction (india_gst = single pure fn, not a multi-region framework); dead test helper removed during build",
+        "single_primitive": "CLEAN — ONE formatMoney; TS+Py registries are the byte-identity pair (not a fork); ONE store-read path; no second net_of_tax id",
+        "hard_rule_deviation_check": "NONE — dependency clean (committed contracts, no held cutover executed); delegation exercisable",
+        "four_tenancy_layers": "PRESENT — query gateway + use-case re-assert + workspaceProc/requireRole(ANALYST) + data plane fail-closed; cross-ws live-refused",
+        "paradigm_audit": "sql on all new files; zero LLM/ML; defends %-of-GMV cost model",
+        "committed": false,
+        "commit_note": "NO commit. Slice-scoped paths in pending-founder-commit.md (no git add -A; pre-existing Child-6 web churn EXCLUDED).",
+        "carried_nonblocking": [
+          "B0 PRE-EXISTING login-form.test.tsx breakage (not this slice; git-attribution verified)",
+          "L1 reversal facts + per-SKU tax live wires held on Child-3"
+        ],
+        "auto_candidate_rule": "PROPOSED (not self-adopted): rule-proposals/2026-05-25__pre-stage-working-tree-baseline.md (3rd occurrence of uncommitted-working-tree-contaminates-verification family)"
+      },
+      "_superseded_status": "cto-review",
+      "files_changed": [
+        "packages/lib-metrics/src/registry/definitions.ts",
+        "pylibs/brain_metrics/brain_metrics/registry/definitions.py",
+        "pylibs/brain_metrics/brain_metrics/parity/definitional_delta_register.py",
+        "apps/analytics-service/src/domain/region/__init__.py",
+        "apps/analytics-service/src/domain/region/india_gst.py",
+        "apps/analytics-service/src/application/store/__init__.py",
+        "apps/analytics-service/src/application/store/store_summary_query.py",
+        "apps/analytics-service/tests/test_india_gst.py",
+        "apps/analytics-service/tests/test_store_summary_query.py",
+        "apps/api-gateway/src/domain/proto-types.ts",
+        "apps/api-gateway/src/domain/registry-mapper.ts",
+        "apps/api-gateway/src/infrastructure/loopback-data-plane.ts",
+        "apps/api-gateway/src/application/router.ts",
+        "apps/api-gateway/src/application/router.store.test.ts",
+        "apps/web/src/interfaces/components/store/revenue-ladder-strip.tsx",
+        "apps/web/src/interfaces/components/store/store-content.tsx",
+        "apps/web/src/app/(shell)/store/page.tsx"
+      ]
+    },
     {
       "req_id": "feat-legacy-decommission",
       "title": "Legacy decommission — final cutover sequence + retirement runbook (Child 7)",
@@ -41,7 +133,10 @@
       "_superseded_owner": "cto-advisor (Rohan) — Stage 6",
       "stage2_plan": {
         "shape": "runbook-only (no app code, no @paradigm decorator, no new runtime)",
-        "artifacts": ["06-decommission-runbook.md", "07-handoff-to-developer.md"],
+        "artifacts": [
+          "06-decommission-runbook.md",
+          "07-handoff-to-developer.md"
+        ],
         "paradigm": "sql/runbook (Rohan Stage-1 sign-off carried; affirmed)",
         "ponr_ledger_summary": "4 PoNRs across 8 ledger rows (L0-L7): L0 HOLD-AT-FORCE (no PoNR; reversible DDL; ramp completes at Shiprocket) -> L1 HOLD-AT-CUTOVER per-connector PoNR #1 = legacy plaintext-credential DELETE (Shiprocket LAST, no replay) -> L2 read-flip to legacy-reads-fallback (Gate P1, reversible, no PoNR) -> L3 read-flip to legacy-reads-decommissioned PoNR #2 (Gate P2 + 24h dwell) -> L4 HOLD-AT-SERVE (coupled, no own PoNR; rollback dies at L3) -> L5 HOLD-AT-ROUTE-FLIP per-route-group (reversible, no PoNR) -> L6 legacy DB shutdown PoNR #3 (TERMINAL) -> L7 archive deletion PoNR #4 (SEPARATE DATE at retention-expiry). Invariant: no PoNR crossed before its dependency parity signed AND its CF-C7 gate GREEN AND festival gate GREEN AND Founder authorizes at console.",
         "five_gates": {
@@ -2728,6 +2823,183 @@
         "apps/intelligence-service/src/infrastructure/db/cache_purge.py",
         "apps/intelligence-service/migrations/postgres/up.sql",
         "apps/intelligence-service/migrations/postgres/down.sql"
+      ]
+    },
+    {
+      "req_id": "epic-phase2-feature-parity",
+      "title": "Phase 2 — feature-breadth parity: port the ~40 legacy workspace feature endpoints onto the Brain architecture",
+      "status": "awaiting-founder-ratification",
+      "stage": 1,
+      "current_owner": "founder",
+      "surface_to_founder": true,
+      "parent_epic": "chore-migrate-legacy-to-brain",
+      "epic": true,
+      "submitted_by": "rishabhporwal",
+      "submitted_at": "2026-05-25T13:22:45Z",
+      "run_folder": "2026-05-25T13-22-45Z__ed6fdf__epic-phase2-feature-parity__rishabhporwal",
+      "lane": "high-stakes",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Inherits the migration epic's maximal trigger-surface set; every slice touches live data, multi-tenancy/RLS, money minor-units, the metric registry (TS<->Python parity); most touch connectors/PII/india-compliance. No carve-out; conservative tie-break forbids downgrade. Applies to the EPIC and every child slice.",
+      "trigger_surfaces_touched": [
+        "multi-tenancy",
+        "money",
+        "schema-proto",
+        "connectors",
+        "pii",
+        "india-compliance",
+        "mcp-tools",
+        "outbound-channels"
+      ],
+      "intake_decision": "ADVANCE",
+      "needs_personas": [
+        "ai-cost-realist:sonnet"
+      ],
+      "personas_synthesized": [],
+      "cto_review_artifact": "02-cto-advisor-review.md",
+      "recommended_first_child": "feat-store-order-fact-layer",
+      "proposed_children": [
+        {
+          "req_id": "feat-store-order-fact-layer",
+          "slice": 1,
+          "blocks": [
+            "feat-tenancy-rls-brain-native",
+            "feat-money-minor-units-parity",
+            "feat-connector-framework-cutover",
+            "feat-metric-engine-olap-split"
+          ],
+          "title": "Shared store/order fact layer + revenue ladder (the foundation)",
+          "target_service": "ingestion->analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/store",
+            "/dashboard"
+          ]
+        },
+        {
+          "req_id": "feat-pnl-cm-waterfall",
+          "slice": 2,
+          "blocks": [
+            "feat-store-order-fact-layer"
+          ],
+          "title": "Honest P&L + CM waterfall",
+          "target_service": "analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/pnl",
+            "/waterfall"
+          ]
+        },
+        {
+          "req_id": "feat-rto-cod-economics",
+          "slice": 3,
+          "blocks": [
+            "feat-store-order-fact-layer"
+          ],
+          "title": "RTO + COD/prepaid economics + pincode",
+          "target_service": "analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/rto-analytics",
+            "/cod-prepaid",
+            "/logistics",
+            "/pincode-intelligence"
+          ]
+        },
+        {
+          "req_id": "feat-marketing-acquisition",
+          "slice": 4,
+          "blocks": [
+            "feat-store-order-fact-layer"
+          ],
+          "title": "MER/aMER/CAC + acquisition + distributions",
+          "target_service": "analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/acquisition",
+            "/distributions"
+          ]
+        },
+        {
+          "req_id": "feat-cohorts-ltv",
+          "slice": 5,
+          "blocks": [
+            "feat-store-order-fact-layer"
+          ],
+          "title": "Cohorts + LTV",
+          "target_service": "analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/cohorts",
+            "/lifetime-value"
+          ]
+        },
+        {
+          "req_id": "feat-catalog-inventory",
+          "slice": 6,
+          "blocks": [
+            "feat-store-order-fact-layer"
+          ],
+          "title": "Catalog/inventory + first-product cascade",
+          "target_service": "analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/products",
+            "/inventory",
+            "/first-product-cascade"
+          ]
+        },
+        {
+          "req_id": "feat-finance-settings-goals",
+          "slice": 7,
+          "blocks": [
+            "feat-store-order-fact-layer",
+            "feat-pnl-cm-waterfall"
+          ],
+          "title": "COGS/costs/goals/festivals/calendar",
+          "target_service": "core+analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/costs",
+            "/settings/goals",
+            "/settings/festivals",
+            "/calendar",
+            "/settings/ad-campaigns"
+          ]
+        },
+        {
+          "req_id": "feat-lifecycle-timings-email",
+          "slice": 8,
+          "blocks": [
+            "feat-store-order-fact-layer",
+            "feat-cohorts-ltv"
+          ],
+          "title": "Lifecycle states + timings + email/SMS performance",
+          "target_service": "analytics",
+          "paradigm": "sql",
+          "pages": [
+            "/customer-lifecycle",
+            "/timings",
+            "/email-sms"
+          ]
+        },
+        {
+          "req_id": "feat-ai-insight-narration",
+          "slice": 9,
+          "blocks": [
+            "feat-pnl-cm-waterfall",
+            "feat-rto-cod-economics",
+            "feat-marketing-acquisition",
+            "feat-cohorts-ltv",
+            "feat-catalog-inventory",
+            "feat-lifecycle-timings-email"
+          ],
+          "title": "Page-level AI insight narration (cost-gated)",
+          "target_service": "intelligence",
+          "paradigm": "small_llm",
+          "pages": [
+            "overlay-all"
+          ]
+        }
       ]
     }
   ]
