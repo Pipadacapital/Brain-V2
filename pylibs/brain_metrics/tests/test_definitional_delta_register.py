@@ -102,9 +102,9 @@ class TestStructuralRule1ParityGap:
             "CF-C4-DDR-TRUE-CM2-1."
         )
 
-    def test_pamer_has_parity_gap_true(self):
-        row = DEFINITIONAL_DELTA_REGISTER["pamer_bp"]
-        assert row.parity_gap is True
+    def test_pamer_decommissioned_no_ddr_row(self):
+        """pamer_bp DECOMMISSIONED (slice-4) — no DDR row remains (no legacy comparand)."""
+        assert "pamer_bp" not in DEFINITIONAL_DELTA_REGISTER
 
     def test_amer_has_parity_gap_true(self):
         row = DEFINITIONAL_DELTA_REGISTER["amer_bp"]
@@ -144,7 +144,6 @@ class TestStructuralRule1ParityGap:
 
     def test_is_parity_gap_true_for_brain_native_metrics(self):
         assert is_parity_gap("true_cm2_mu") is True
-        assert is_parity_gap("pamer_bp") is True
         assert is_parity_gap("amer_bp") is True
         assert is_parity_gap("ltv_cac_bp") is True
 
@@ -360,9 +359,9 @@ class TestAdjudicationDiscipline:
         assert row.parity_gap is False
 
     def test_parity_gap_metrics_list_completeness(self):
-        """All 4 required Brain-native metrics must be in the parity_gap list."""
+        """Required Brain-native parity_gap metrics (pamer_bp decommissioned slice-4)."""
         parity_gap = get_parity_gap_metrics()
-        required = {"true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp"}
+        required = {"true_cm2_mu", "amer_bp", "ltv_cac_bp"}
         for mid in required:
             assert mid in parity_gap, (
                 f"{mid!r} must be in get_parity_gap_metrics(). "

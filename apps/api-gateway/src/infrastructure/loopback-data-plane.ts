@@ -33,6 +33,13 @@ import type {
   PincodeIntelligenceResult,
   PincodeRow,
   PincodeFilterInput,
+  MarketingEfficiencyResult,
+  AcquisitionSummaryResult,
+  AcquisitionDailyRow,
+  DistributionsResult,
+  DistributionsProductRow,
+  DistributionsGraphPoint,
+  DistributionsFilterInput,
 } from '../domain/proto-types.js';
 
 // ---------------------------------------------------------------------------
@@ -124,6 +131,19 @@ const SUGANDH_LOK_CANONICAL = {
   cod_charges_mu: 1_200_000n,
   rto_charges_mu: 4_480_000n,
   delivered_count: 980n,
+  // -------------------------------------------------------------------
+  // Slice-4 (feat-marketing-acquisition) facts. Chosen so:
+  //   - MER numerator == net_revenue_mu (191_000_000) for cross-surface consistency with /store.
+  //   - aMER uses a CLASSIFICATION SPLIT: total spend 65_000_000 but only 26_000_000 acquisition.
+  //   - new customers 4000; nc_revenue 78_000_000; nc_cm2 13_000_000.
+  // All money in paise.
+  // -------------------------------------------------------------------
+  new_customers_count: 4_000n,
+  new_customer_revenue_mu: 78_000_000n,    // aMER numerator
+  acquisition_ad_spend_mu: 26_000_000n,    // aMER denominator (40% of total spend, classified)
+  nc_cm2_mu: 13_000_000n,
+  meta_spend_mu: 39_000_000n,              // 60% of total spend
+  google_spend_mu: 26_000_000n,            // 40% of total spend (== acquisition seed here)
 } as const;
 
 /** Sugandh-Lok seed KPI data — DERIVED from the canonical seed (single source). */
@@ -424,6 +444,194 @@ function buildSugandhlokPincode(filters?: PincodeFilterInput): PincodeIntelligen
   };
 }
 
+// ---------------------------------------------------------------------------
+// Slice-4 (feat-marketing-acquisition) builders — derived from SUGANDH_LOK_CANONICAL.
+// Mirror the analytics-service marketing use-case math (registry formulas; integer FLOOR).
+// ONE seed → /acquisition + /distributions share consistent facts; MER numerator ==
+// the /store net_revenue (cross-surface consistency); aMER uses acquisition-classified spend.
+// ---------------------------------------------------------------------------
+
+function buildSugandhlokMarketingEfficiency(): MarketingEfficiencyResult {
+  const c = SUGANDH_LOK_CANONICAL;
+  const mer = _ratioBp(c.net_revenue_mu, c.total_ad_spend_mu);            // 191M/65M = 29384bp
+  const amer = _ratioBp(c.new_customer_revenue_mu, c.acquisition_ad_spend_mu); // 78M/26M = 30000bp
+  const acos = _ratioBp(c.total_ad_spend_mu, c.net_revenue_mu);           // display
+  const roas =
+    c.total_ad_spend_mu > 0n ? Number((c.net_revenue_mu * 100n) / c.total_ad_spend_mu) : null; // ×100
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    net_revenue_mu: c.net_revenue_mu,
+    total_ad_spend_mu: c.total_ad_spend_mu,
+    new_customer_revenue_mu: c.new_customer_revenue_mu,
+    acquisition_ad_spend_mu: c.acquisition_ad_spend_mu,
+    meta_spend_mu: c.meta_spend_mu,
+    google_spend_mu: c.google_spend_mu,
+    mer_bp: mer,
+    amer_bp: amer,
+    acos_bp: acos,
+    blended_roas_x100: roas,
+  };
+}
+
+function buildSugandhlokAcquisition(): AcquisitionSummaryResult {
+  const c = SUGANDH_LOK_CANONICAL;
+  const cac = c.new_customers_count > 0n ? c.total_ad_spend_mu / c.new_customers_count : null; // 16250
+  const cm2PerNc = c.new_customers_count > 0n ? c.nc_cm2_mu / c.new_customers_count : null;     // 3250
+  const amer = _ratioBp(c.new_customer_revenue_mu, c.acquisition_ad_spend_mu);                  // 30000bp
+  // Two representative days summing to the period totals (cross-surface consistent).
+  const daily: AcquisitionDailyRow[] = [
+    {
+      date: '2026-04-01', new_customers: 1_600n, nc_cm2_mu: 5_200_000n, nc_revenue_mu: 31_200_000n,
+      ad_spend_mu: 26_000_000n, acquisition_ad_spend_mu: 10_400_000n,
+      cac_mu: 26_000_000n / 1_600n, cm2_per_nc_mu: 5_200_000n / 1_600n,
+      amer_bp: _ratioBp(31_200_000n, 10_400_000n), meta_spend_mu: 15_600_000n, google_spend_mu: 10_400_000n,
+    },
+    {
+      date: '2026-04-02', new_customers: 2_400n, nc_cm2_mu: 7_800_000n, nc_revenue_mu: 46_800_000n,
+      ad_spend_mu: 39_000_000n, acquisition_ad_spend_mu: 15_600_000n,
+      cac_mu: 39_000_000n / 2_400n, cm2_per_nc_mu: 7_800_000n / 2_400n,
+      amer_bp: _ratioBp(46_800_000n, 15_600_000n), meta_spend_mu: 23_400_000n, google_spend_mu: 15_600_000n,
+    },
+  ];
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    new_customers_count: c.new_customers_count,
+    nc_cm2_mu: c.nc_cm2_mu,
+    new_customer_revenue_mu: c.new_customer_revenue_mu,
+    total_ad_spend_mu: c.total_ad_spend_mu,
+    acquisition_ad_spend_mu: c.acquisition_ad_spend_mu,
+    meta_spend_mu: c.meta_spend_mu,
+    google_spend_mu: c.google_spend_mu,
+    cac_mu: cac,
+    cm2_per_nc_mu: cm2PerNc,
+    amer_bp: amer,
+    daily,
+  };
+}
+
+// Per-product per-order value arrays (paise) for the distributions histogram.
+const _DISTRIBUTIONS_SEED: { product: string; sales: bigint[]; cm1: bigint[] }[] = [
+  {
+    product: 'Sugandh Oud Attar 12ml',
+    sales: [120_000n, 120_000n, 120_000n, 240_000n, 360_000n, 120_000n],
+    cm1: [48_000n, 48_000n, 48_000n, 96_000n, 144_000n, 48_000n],
+  },
+  {
+    product: 'Rose Mist 50ml',
+    sales: [60_000n, 60_000n, 90_000n, 60_000n],
+    cm1: [24_000n, 24_000n, 36_000n, 24_000n],
+  },
+  {
+    product: 'Sandalwood Soap (Pack of 3)',
+    sales: [45_000n, 45_000n, 45_000n, 90_000n],
+    cm1: [18_000n, 18_000n, 18_000n, 36_000n],
+  },
+];
+
+function _modeMu(values: bigint[]): bigint {
+  if (values.length === 0) return 0n;
+  const rounded = values.map((v) => ((v + 50n) / 100n) * 100n);
+  const freq = new Map<bigint, number>();
+  for (const r of rounded) freq.set(r, (freq.get(r) ?? 0) + 1);
+  let best = rounded[0]!;
+  let bestCount = 0;
+  for (const [val, count] of freq) {
+    if (count > bestCount || (count === bestCount && val < best)) {
+      best = val;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+function _meanMu(values: bigint[]): bigint {
+  if (values.length === 0) return 0n;
+  return values.reduce((s, v) => s + v, 0n) / BigInt(values.length);
+}
+
+function buildSugandhlokDistributions(filters?: DistributionsFilterInput): DistributionsResult {
+  const c = SUGANDH_LOK_CANONICAL;
+  const metric: 'sales' | 'cm1' = filters?.metric === 'sales' ? 'sales' : 'cm1';
+  const all: bigint[] = [];
+  let rows: DistributionsProductRow[] = _DISTRIBUTIONS_SEED.map((p) => {
+    const v = metric === 'sales' ? p.sales : p.cm1;
+    all.push(...v);
+    const mode = _modeMu(v);
+    const mean = _meanMu(v);
+    return {
+      product: p.product,
+      orders: BigInt(p.sales.length),
+      mode_mu: mode,
+      mean_mu: mean,
+      diff_mu: mode - mean,
+    };
+  });
+  if (filters?.search) {
+    const q = filters.search.toLowerCase();
+    rows = rows.filter((r) => r.product.toLowerCase().includes(q));
+  }
+  const totalRows = rows.length;
+  const sort = filters?.sort && ['product', 'orders', 'mode', 'mean', 'diff'].includes(filters.sort)
+    ? filters.sort : 'orders';
+  const asc = filters?.order === 'asc';
+  rows.sort((a, b) => {
+    let d = 0;
+    if (sort === 'product') d = a.product.localeCompare(b.product);
+    else if (sort === 'mode') d = Number(a.mode_mu - b.mode_mu);
+    else if (sort === 'mean') d = Number(a.mean_mu - b.mean_mu);
+    else if (sort === 'diff') d = Number(a.diff_mu - b.diff_mu);
+    else d = Number(a.orders - b.orders);
+    return asc ? d : -d;
+  });
+  const page = Math.max(1, filters?.page ?? 1);
+  const pageSize = Math.min(100, Math.max(10, filters?.page_size ?? 20));
+  const paginated = rows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+  // 60-bucket histogram (integer paise; density bp).
+  const points: DistributionsGraphPoint[] = [];
+  let globalMode = 0n;
+  let globalMean = 0n;
+  if (all.length > 0) {
+    globalMode = _modeMu(all);
+    globalMean = _meanMu(all);
+    const lo = all.reduce((m, v) => (v < m ? v : m), all[0]!);
+    const hi = all.reduce((m, v) => (v > m ? v : m), all[0]!);
+    const rng = hi - lo > 0n ? hi - lo : 1n;
+    const bucketWidth = rng / 60n > 0n ? rng / 60n : 1n;
+    const counts = new Array(60).fill(0);
+    for (const v of all) {
+      let idx = Number((v - lo) / bucketWidth);
+      if (idx < 0) idx = 0;
+      if (idx >= 60) idx = 59;
+      counts[idx]++;
+    }
+    const total = all.length;
+    for (let i = 0; i < 60; i++) {
+      points.push({
+        value_mu: lo + BigInt(i) * bucketWidth + bucketWidth / 2n,
+        density_bp: total > 0 ? Math.floor((counts[i] * 10000) / total) : 0,
+      });
+    }
+  }
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    metric,
+    rows: paginated,
+    total_rows: BigInt(totalRows),
+    graph_points: points,
+    global_mode_mu: globalMode,
+    global_mean_mu: globalMean,
+  };
+}
+
 /** Sugandh-Lok Morning Brief seed (registry-derived; NOT LLM numbers). */
 function buildSugandhlokBrief(): MorningBrief {
   return {
@@ -658,6 +866,37 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { result: buildSugandhlokPincode(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  async getMarketingEfficiency(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: MarketingEfficiencyResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokMarketingEfficiency(), data_epoch: DATA_EPOCH };
+  }
+
+  async getAcquisitionSummary(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: AcquisitionSummaryResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokAcquisition(), data_epoch: DATA_EPOCH };
+  }
+
+  async getDistributions(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: DistributionsFilterInput;
+  }): Promise<{ result: DistributionsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokDistributions(params.filters), data_epoch: DATA_EPOCH };
   }
 
   async getMorningBrief(params: {

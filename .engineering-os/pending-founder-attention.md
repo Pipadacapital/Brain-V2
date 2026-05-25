@@ -165,3 +165,5 @@ Evidence #8 appended to the existing proposal (NOT self-adopted):
 `/reject-rule verify-the-verifier-mutation-on-gate <reason>`. 8 occurrences strongly argue for adoption:
 the gate was already green in production and hid a real bug — it was caught only because a reviewer
 recalled the lineage, which is not a repeatable control.
+
+- **📋 CANDIDATE RULE (Rohan, Stage-6, 2026-05-25) — `feat-marketing-acquisition` (Phase-2 slice 4).** Recurring root cause across ≥3 runs (slices 3 & 4 + metric-engine/pnl divergence retros): the ratified slice-table shorthand cannot be trusted as a spec, and speculative pre-builds hidden behind a parity "shadow-phase" carve diverge from legacy silently. Proposal `.engineering-os/rule-proposals/2026-05-25__verify-legacy-formula-at-stage1-not-slice-table.md` would make "read the real legacy formula at Stage 1/2 + reconcile/decommission divergent pre-builds" a mandatory gate. Review with `/brain-engineering-os:adopt-rule .engineering-os/rule-proposals/2026-05-25__verify-legacy-formula-at-stage1-not-slice-table.md` or `/reject-rule verify-legacy-formula-at-stage1-not-slice-table <reason>`.

@@ -274,6 +274,96 @@ export interface PincodeFilterInput {
 }
 
 // ---------------------------------------------------------------------------
+// Marketing efficiency / acquisition / distributions (Phase-2 slice-4:
+// feat-marketing-acquisition). RECONCILED to legacy: aMER uses acquisition-classified
+// spend; ROAS/ACOS display_only; pamer_bp decommissioned.
+// ---------------------------------------------------------------------------
+
+export interface MarketingEfficiencyResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  net_revenue_mu: bigint;
+  total_ad_spend_mu: bigint;
+  new_customer_revenue_mu: bigint;
+  acquisition_ad_spend_mu: bigint;
+  meta_spend_mu: bigint;
+  google_spend_mu: bigint;
+  mer_bp: number | null;
+  amer_bp: number | null;
+  acos_bp: number | null;            // display_only
+  blended_roas_x100: number | null;  // display_only
+}
+
+export interface AcquisitionDailyRow {
+  date: string;
+  new_customers: bigint;
+  nc_cm2_mu: bigint;
+  nc_revenue_mu: bigint;
+  ad_spend_mu: bigint;
+  acquisition_ad_spend_mu: bigint;
+  cac_mu: bigint | null;
+  cm2_per_nc_mu: bigint | null;
+  amer_bp: number | null;
+  meta_spend_mu: bigint;
+  google_spend_mu: bigint;
+}
+
+export interface AcquisitionSummaryResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  new_customers_count: bigint;
+  nc_cm2_mu: bigint;
+  new_customer_revenue_mu: bigint;
+  total_ad_spend_mu: bigint;
+  acquisition_ad_spend_mu: bigint;
+  meta_spend_mu: bigint;
+  google_spend_mu: bigint;
+  cac_mu: bigint | null;
+  cm2_per_nc_mu: bigint | null;
+  amer_bp: number | null;
+  daily: AcquisitionDailyRow[];
+}
+
+export interface DistributionsProductRow {
+  product: string;
+  orders: bigint;
+  mode_mu: bigint;
+  mean_mu: bigint;
+  diff_mu: bigint;
+}
+
+export interface DistributionsGraphPoint {
+  value_mu: bigint;
+  density_bp: number;
+}
+
+export interface DistributionsResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+  metric: 'sales' | 'cm1';
+  rows: DistributionsProductRow[];
+  total_rows: bigint;
+  graph_points: DistributionsGraphPoint[];
+  global_mode_mu: bigint;
+  global_mean_mu: bigint;
+}
+
+export interface DistributionsFilterInput {
+  metric?: 'sales' | 'cm1';
+  search?: string;
+  sort?: string;
+  order?: 'asc' | 'desc';
+  page?: number;
+  page_size?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Intelligence proto types (brain.intelligence.v1)
 // ---------------------------------------------------------------------------
 
@@ -429,6 +519,26 @@ export interface DataPlanePort {
     date_range: DateRange;
     filters?: PincodeFilterInput;
   }): Promise<{ result: PincodeIntelligenceResult; data_epoch: Date }>;
+
+  /**
+   * Phase-2 slice-4 (feat-marketing-acquisition): MER/aMER/CAC + acquisition + distributions.
+   * CF-C6-DATA-SEAM-1: additive methods on the SAME port — no second code path.
+   */
+  getMarketingEfficiency(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: MarketingEfficiencyResult; data_epoch: Date }>;
+
+  getAcquisitionSummary(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: AcquisitionSummaryResult; data_epoch: Date }>;
+
+  getDistributions(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: DistributionsFilterInput;
+  }): Promise<{ result: DistributionsResult; data_epoch: Date }>;
 
   getMorningBrief(params: {
     workspace_id: string;

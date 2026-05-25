@@ -26,9 +26,15 @@ export {
   BLENDED_ROAS_X100,
   // Brain-native correctness-fixture metrics (parity_gap:true)
   TRUE_CM2_MU,
-  PAMER_BP,
   AMER_BP,
   LTV_CAC_BP,
+  // Phase-2 slice-4: marketing efficiency reconciled to legacy (pamer_bp decommissioned)
+  MER_BP,
+  CAC_MU,
+  NEW_CUSTOMER_REVENUE_MU,
+  NC_CM2_MU,
+  CM2_PER_NC_MU,
+  ACQUISITION_AD_SPEND_MU,
   // Phase-2 slice-3: RTO/COD/logistics/pincode economics
   RTO_COST_MU,
   RTO_REVENUE_LOST_MU,

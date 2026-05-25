@@ -357,54 +357,140 @@ export const TRUE_CM2_MU: MetricDefinition = {
   parity_class: 'correctness_fixture',  // parity_gap:true — no legacy shadow
 };
 
-export const PAMER_BP: MetricDefinition = {
-  id: 'pamer_bp',
+// ---------------------------------------------------------------------------
+// Marketing efficiency (Phase-2 slice-4: feat-marketing-acquisition)
+// RECONCILED to legacy ground truth (lib/metrics/marketing-efficiency.ts +
+// lib/acquisition/compute.ts). Child-4 had pre-built amer_bp (=true_cm2/total_spend)
+// and pamer_bp (=cm2/total_spend) that did NOT match legacy; pamer_bp had NO legacy
+// comparand and is DECOMMISSIONED. amer_bp is REDEFINED below to the legacy semantics.
+// See DDR _ROW_AMER_REDEF / _ROW_MER_BASIS / _ROW_NC_REVENUE_CM2 and Rohan's Stage-1 finding.
+// ROAS/ACOS remain display_only (CM2-first; ROAS never a decision metric).
+// ---------------------------------------------------------------------------
+
+// MER = store net revenue ÷ total ad spend (basis points). Legacy: marketing-efficiency.ts:21-24
+// (mer = storeNetRevenue/totalAdSpend). Brain numerator = the slice-1 net_revenue_mu rung so
+// /acquisition MER == /store net revenue for the same range (cross-surface consistency).
+// Child-4 PY used net_sales_mu — reconciled to net_revenue_mu. DDR _ROW_MER_BASIS.
+// WORKED ANCHOR (CF-S4-MER-1): net_revenue=12_000_000p, total_ad_spend=10_000_000p →
+//   intDiv(12_000_000×10000, 10_000_000) = 12000bp (1.20×). NULL if total_ad_spend == 0.
+export const MER_BP: MetricDefinition = {
+  id: 'mer_bp',
   kind: 'ratio',
   unit: 'bp',
   scale: 10000,
-  // paMER = CM2 / Total Ad Spend (profit-adjusted MER, basis points).
-  // "How many ₹ of CM2 does each ad ₹ generate?" Higher = better efficiency.
-  // Canon: SKILL.md §"Marketing efficiency" "paMER = profit-adjusted variant (CM2 basis)".
-  // Brain-native: no legacy comparand. parity_gap:true.
-  // Worked example: cm2=8000000p, ad_spend=5000000p → intDiv(8000000×10000,5000000) = 16000bp
-  formula_ts: (cm2_mu: bigint, total_ad_spend_mu: bigint): number =>
-    ratioToBasisPoints(cm2_mu, total_ad_spend_mu),
+  formula_ts: (net_revenue_mu: bigint, total_ad_spend_mu: bigint): number =>
+    ratioToBasisPoints(net_revenue_mu, total_ad_spend_mu),
   clickhouse_sql:
-    'if(total_ad_spend_mu > 0, intDiv(cm2_mu * 10000, total_ad_spend_mu), NULL)',
+    'if(total_ad_spend_mu > 0, intDiv(net_revenue_mu * 10000, total_ad_spend_mu), NULL)',
   display_only: false,
-  parity_class: 'correctness_fixture',
+  parity_class: 'shadow_compare',
 };
 
+// aMER = new-customer revenue ÷ ACQUISITION-CLASSIFIED ad spend (basis points).
+// Legacy: marketing-efficiency.ts:25-28 (aMer = newCustomerRevenue/acquisitionAdSpend) where
+// acquisitionAdSpend is the acquisition campaign-intent bucket ONLY (ads-spend.ts:82-84) —
+// unclassified/brand/non_acquisition spend is EXCLUDED (conservative). The denominator is its
+// OWN def (acquisition_ad_spend_mu), NOT total_ad_spend_mu — this is the load-bearing correction
+// vs the Child-4 placeholder. DDR _ROW_AMER_REDEF. NULL when acquisition spend == 0.
+// WORKED ANCHOR (CF-S4-AMER-1): nc_revenue=6_000_000p, acquisition_ad_spend=4_000_000p
+//   (total spend 10_000_000p but only 4_000_000p is acquisition-classified) →
+//   intDiv(6_000_000×10000, 4_000_000) = 15000bp (1.50×). A "use total_ad_spend" mutant
+//   (10_000_000p) yields 6000bp — KILLED by this anchor.
 export const AMER_BP: MetricDefinition = {
   id: 'amer_bp',
   kind: 'ratio',
   unit: 'bp',
   scale: 10000,
-  // aMER = True CM2 / Total Ad Spend (RTO-adjusted MER, basis points).
-  // More conservative than paMER because True-CM2 ≤ CM2 always (RTO provision reduces it).
-  // Canon: arch plan §10 DDR + SKILL.md §"Marketing efficiency".
-  // Brain-native: no legacy comparand. parity_gap:true.
-  // Worked example: true_cm2=6620000p, ad_spend=5000000p → intDiv(6620000×10000,5000000) = 13240bp
-  // aMER (1.324×) < paMER (1.600×) — the delta reflects the RTO cost.
-  // The formula inlines true_cm2 computation so ClickHouse SQL is self-contained (per DDR snapshot).
-  formula_ts: (
-    cm2_mu: bigint,
-    rto_orders: bigint,
-    total_ad_spend_mu: bigint,
-    variable_costs_mu: bigint,
-    cogs_mu: bigint,
-    total_orders_count: bigint,
-  ): number => {
-    if (total_orders_count <= 0n || total_ad_spend_mu <= 0n) return 0;
-    const cost_base = total_ad_spend_mu + variable_costs_mu + cogs_mu;
-    const rto_provision = (rto_orders * cost_base) / total_orders_count;
-    const true_cm2 = cm2_mu - rto_provision;
-    return ratioToBasisPoints(true_cm2, total_ad_spend_mu);
+  formula_ts: (new_customer_revenue_mu: bigint, acquisition_ad_spend_mu: bigint): number =>
+    ratioToBasisPoints(new_customer_revenue_mu, acquisition_ad_spend_mu),
+  clickhouse_sql:
+    'if(acquisition_ad_spend_mu > 0, intDiv(new_customer_revenue_mu * 10000, acquisition_ad_spend_mu), NULL)',
+  display_only: false,
+  parity_class: 'correctness_fixture', // parity_gap:true — redefined from Child-4 placeholder
+};
+
+// Blended CAC = total ad spend ÷ new customers (money/paise). Legacy: acquisition/compute.ts:430
+// (blendedCac = totalAdSpend/newCustomers). Integer FLOOR; NULL on zero new customers.
+// WORKED ANCHOR (CF-S4-CAC-1): total_ad_spend=10_000_000p, new_customers=200 → intDiv = 50_000p (₹500).
+export const CAC_MU: MetricDefinition = {
+  id: 'cac_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  // Callers MUST guard new_customers_count > 0 (mirrors ratio convention); throws on zero.
+  formula_ts: (total_ad_spend_mu: bigint, new_customers_count: bigint): bigint => {
+    if (new_customers_count <= 0n) {
+      throw new Error('cac_mu: new_customers_count must be > 0 (caller must guard)');
+    }
+    return total_ad_spend_mu / new_customers_count;
   },
   clickhouse_sql:
-    'if(total_ad_spend_mu > 0 AND total_orders_count > 0, intDiv( (cm2_mu - intDiv(rto_orders * (total_ad_spend_mu + variable_costs_mu + cogs_mu), total_orders_count)) * 10000, total_ad_spend_mu), NULL)',
+    'if(new_customers_count > 0, intDiv(total_ad_spend_mu, new_customers_count), NULL)',
   display_only: false,
-  parity_class: 'correctness_fixture',
+  parity_class: 'shadow_compare',
+};
+
+// New-customer revenue: SUM of per-NC-order (totalPrice − totalTax − refundShare), RTO orders → 0.
+// Legacy: acquisition/compute.ts:402-403. Per-order tax uses the per-SKU GST slab upstream (NEVER
+// blended). Passthrough aggregate — the per-order RTO/tax/refund exclusion is the use-case's job.
+// DDR _ROW_NC_REVENUE_CM2 (child_dependency:child-3-shopify-connector).
+export const NEW_CUSTOMER_REVENUE_MU: MetricDefinition = {
+  id: 'new_customer_revenue_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (new_customer_revenue_mu: bigint): bigint => new_customer_revenue_mu,
+  clickhouse_sql: 'toInt64(new_customer_revenue_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// New-customer CM2: SUM of per-NC-order CM2 (price − COGS − per-order variable − per-order
+// adSpend − refundShare), RTO → 0. Legacy: acquisition/compute.ts:394,400. Passthrough aggregate.
+export const NC_CM2_MU: MetricDefinition = {
+  id: 'nc_cm2_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (nc_cm2_mu: bigint): bigint => nc_cm2_mu,
+  clickhouse_sql: 'toInt64(nc_cm2_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// CM2 per new customer = nc_cm2_mu ÷ new_customers_count (money/paise). Legacy: cm2PerNc
+// (compute.ts:429). Integer FLOOR; NULL on zero new customers.
+// WORKED ANCHOR (CF-S4-CM2NC-1): nc_cm2=2_000_000p, new_customers=200 → intDiv = 10_000p (₹100).
+export const CM2_PER_NC_MU: MetricDefinition = {
+  id: 'cm2_per_nc_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  // Callers MUST guard new_customers_count > 0 (mirrors ratio convention); throws on zero.
+  formula_ts: (nc_cm2_mu: bigint, new_customers_count: bigint): bigint => {
+    if (new_customers_count <= 0n) {
+      throw new Error('cm2_per_nc_mu: new_customers_count must be > 0 (caller must guard)');
+    }
+    return nc_cm2_mu / new_customers_count;
+  },
+  clickhouse_sql:
+    'if(new_customers_count > 0, intDiv(nc_cm2_mu, new_customers_count), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Acquisition-classified ad spend: SUM of spend on campaigns whose resolved intent == 'acquisition'
+// (ads-spend.ts). This is the aMER denominator — DISTINCT from total_ad_spend_mu. Passthrough
+// aggregate (the classification is the connector/use-case's job). DDR _ROW_NC_REVENUE_CM2.
+export const ACQUISITION_AD_SPEND_MU: MetricDefinition = {
+  id: 'acquisition_ad_spend_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (acquisition_ad_spend_mu: bigint): bigint => acquisition_ad_spend_mu,
+  clickhouse_sql: 'toInt64(acquisition_ad_spend_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
 };
 
 export const LTV_CAC_BP: MetricDefinition = {
@@ -586,9 +672,16 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   acos_bp: ACOS_BP,
   blended_roas_x100: BLENDED_ROAS_X100,
   true_cm2_mu: TRUE_CM2_MU,
-  pamer_bp: PAMER_BP,
-  amer_bp: AMER_BP,
   ltv_cac_bp: LTV_CAC_BP,
+  // Phase-2 slice-4 (feat-marketing-acquisition): marketing efficiency reconciled to legacy.
+  // pamer_bp DECOMMISSIONED (no legacy comparand); amer_bp redefined to legacy semantics.
+  mer_bp: MER_BP,
+  amer_bp: AMER_BP,
+  cac_mu: CAC_MU,
+  new_customer_revenue_mu: NEW_CUSTOMER_REVENUE_MU,
+  nc_cm2_mu: NC_CM2_MU,
+  cm2_per_nc_mu: CM2_PER_NC_MU,
+  acquisition_ad_spend_mu: ACQUISITION_AD_SPEND_MU,
   // Phase-2 slice-3 (feat-rto-cod-economics): RTO/COD/logistics/pincode economics.
   rto_cost_mu: RTO_COST_MU,
   rto_revenue_lost_mu: RTO_REVENUE_LOST_MU,

@@ -490,3 +490,26 @@
 **Independent Stage-6 verification:** re-ran parity gate (PASS, non-vacuous), 31 use-case tests, 10 router tests, live wire re-smoke (break-even=500≠9493), hand re-derivation (pincode 6938).
 **Open questions:** NDR metric deferred (no honest pre-Child-3 source); rto_cost_mu/rto_revenue_lost_mu DDR rows UNSIGNED-PENDING child-3-shopify-connector.
 **Next:** orchestrator commits slice-scoped paths (pending-founder-commit.md), then slice 4 (feat-marketing-acquisition) on its turn.
+
+## 2026-05-25T14:56:06Z — Rohan (cto-advisor) — feat-marketing-acquisition (Phase 2, slice 4)
+**Stage:** 1 (intake)
+**Action:** ADVANCE → Stage 2 (Aryan), with a binding reconciliation mandate + slice-table correction
+**Personas spawned (Stage 1):** marketing-efficiency-numeric-parity-realist:sonnet (6 concerns, all bound — accepted, non-vacuous)
+**Decision:** ADVANCE (no CHALLENGE-BACK, no KILL)
+**Rationale:** Slice 4 = MER/aMER/CAC + acquisition + distributions ported to LEGACY semantics. Applied the slice-2/3 lesson: READ the real legacy formulas. Found (a) the ratified slice-table shorthand wrong — paMER has NO legacy basis, payback + placed→realized→incremental are COHORT/slice-5 concepts, not slice 4; (b) Child-4 SPECULATIVELY PRE-BUILT marketing defs that DIVERGE from legacy and are split unevenly across TS/PY behind the parity gate's "shadow phase" carve: amer_bp(TS)=true_cm2/total_spend vs legacy NCrev/acq-spend; pamer_bp=cm2/total_spend (phantom, no comparand); mer_bp/cac_mu/cac_payback_months PY-only (no cross-language parity bites them). Bound a reconciliation: redefine amer_bp to legacy (NCrev/acquisition-classified-spend), decommission pamer_bp, define mer_bp + cac_mu in BOTH registries with DDR numerator-basis rows, keep payback/attribution out (slice 5).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion
+**Lane:** high-stakes (money + multi-tenancy + schema/registry); 1 persona (numeric/definitional parity is the sole dominant net-new dimension); @paradigm sql, zero LLM.
+**Open questions:** confirm aMER acquisition-classified-spend split survives the StubDataPlane seed (cross-surface consistency vs /store net revenue for MER numerator).
+**Next:** Aryan Stage 2 binding plan.
+
+## 2026-05-25T15:22:00Z — Rohan (cto-advisor) — feat-marketing-acquisition (Phase 2, slice 4)
+**Stage:** 6 (final review) — full high-stakes pipeline driven end-to-end (slice 4 of 9)
+**Action:** PASS → APPROVE, signed under standing delegation (no hard-rule deviation); Stage-8 readiness (no commit, no deploy)
+**Decision:** PASS / APPROVE
+**Rationale:** Slice 4 ports MER/aMER/CAC + acquisition + distributions to LEGACY semantics on 2 real pages. The slice's headline value was a Stage-1 FINDING I caught and the build RESOLVED: Child-4 had speculatively pre-built marketing defs diverging from legacy behind the parity gate's "shadow-phase" carve (amer_bp=true_cm2/total_spend vs legacy nc_rev/acquisition-classified-spend; pamer_bp phantom; mer_bp/cac_mu PY-only). Reconciled: amer_bp REDEFINED to legacy, pamer_bp DECOMMISSIONED, mer_bp/cac_mu brought into both registries. Slice-table shorthand corrected (paMER/payback/attribution-ladder are slice-5, not slice-4). 4 new defs TS<->Python byte-identical + non-vacuous anchors (aMER 15000bp on a classification split; "use total spend" mutant KILLED in gate+unit+router tests); 3 fail-closed use-cases; marketing.* tRPC group; 2 live pages. @paradigm sql; per-SKU GST honest; ROAS/ACOS display-only.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion
+**Independent Stage-6 verification (re-ran, captured):** parity gate PASS (non-vacuous, both kill-mutants fire); 142 TS lib-metrics + 73 api-gateway + 299 brain_metrics + 136 analytics tests; tsc 0 on 3 packages; live wire smoke (mer 29384, amer 30000 on acquisition spend, cac 16250, distributions mode 48000; foreign workspace → UnscopedQueryError). Replicated every Tanvi PASS.
+**Over-engineering audit:** 7/7 PASS — no files beyond plan; no new deps/runtime; pamer_bp REMOVED (net-negative dead code); ONE format helper; DataPlanePort seam reused.
+**Auto-candidate rule (step 8a):** root cause "slice-table shorthand + speculative pre-builds diverge from legacy" recurs across ≥3 runs → generated candidate rule verify-legacy-formula-at-stage1-not-slice-table (human-gated, surfaced to Founder).
+**Open questions:** new_customer_revenue_mu/nc_cm2_mu/cm2_per_nc_mu/acquisition_ad_spend_mu DDR rows UNSIGNED-PENDING child-3-shopify-connector (connector facts; flips at held cutover).
+**Next:** orchestrator stages Stage-8 readiness (Jatin); Founder gives "commit it" to commit the slice-scoped paths (pending-founder-commit.md); then slice 5 (feat-cohorts-ltv) on its turn. STOP — do not auto-start slice 5.

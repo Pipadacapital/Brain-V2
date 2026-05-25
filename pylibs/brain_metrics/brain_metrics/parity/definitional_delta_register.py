@@ -382,58 +382,115 @@ _ROW_REALIZED_REVENUE = DDRRow(
     ),
 )
 
-_ROW_PAMER = DDRRow(
-    legacy_formula="NONE — paMER is Brain-native; no legacy comparand",
-    brain_formula="pamer_bp",
-    reason=(
-        "paMER (performance-adjusted MER) = CM2 / Total Ad Spend (basis points). "
-        "Brain-native metric — the legacy system does not compute this ratio. "
-        "paMER replaces blended ROAS as the primary ad efficiency signal (CM2-first). "
-        "Correctness fixture: paMER_bp = intDiv(cm2_mu × 10000, total_ad_spend_mu)."
-    ),
-    shadow_compare_classification=CORRECTNESS_FIXTURE,
-    delta_direction_and_magnitude=(
-        "Not applicable — no legacy comparand. "
-        "Example: cm2=₹80,000 (8000000 paise), ad_spend=₹50,000 (5000000 paise). "
-        "paMER_bp = intDiv(8000000×10000, 5000000) = intDiv(80000000000, 5000000) = 16000 bp = 1.60x."
-    ),
-    business_impact=(
-        "paMER is the primary decision metric for ad budget allocation in Brain. "
-        "A paMER > 10000 (1.0x) means ads are profitable after variable costs. "
-        "This replaces the legacy ROAS (display-only) for decision-making."
-    ),
-    parity_gap=True,
-    child_dependency=None,
-    formula_snapshot="pamer_bp = intDiv(cm2_mu * 10000, total_ad_spend_mu); NULL if total_ad_spend_mu <= 0",
-)
+# _ROW_PAMER DECOMMISSIONED (Phase-2 slice-4, feat-marketing-acquisition).
+# pamer_bp (= cm2/total_ad_spend) was a Child-4 pre-build with NO legacy comparand.
+# It was never consumed by any page and conflated "profit-adjusted MER" with the real
+# legacy aMER. Removed from both registries; see _ROW_PAMER_DECOMMISSION (informational)
+# in the .md register for the audit trail. No DDRRow object remains for pamer_bp.
 
+# aMER REDEFINED to legacy ground truth (slice-4). Previously (Child-4) it was
+# true_cm2/total_ad_spend with no legacy comparand. Legacy aMER = new-customer revenue
+# / ACQUISITION-CLASSIFIED ad spend (marketing-efficiency.ts:25-28; ads-spend.ts:82-84).
 _ROW_AMER = DDRRow(
-    legacy_formula="NONE — aMER is Brain-native; no legacy comparand",
+    legacy_formula=(
+        "marketing-efficiency.ts:25-28 — aMer = newCustomerRevenue / acquisitionAdSpend "
+        "where acquisitionAdSpend is the acquisition campaign-intent bucket ONLY "
+        "(ads-spend.ts:82-84; unclassified/brand/non_acquisition EXCLUDED)."
+    ),
     brain_formula="amer_bp",
     reason=(
-        "aMER (adjusted MER) = True CM2 / Total Ad Spend (basis points). "
-        "Brain-native metric. More conservative than paMER: adjusts for RTO provisioning. "
-        "Correctness fixture: amer_bp = intDiv(true_cm2_mu × 10000, total_ad_spend_mu)."
+        "REDEFINED from the Child-4 placeholder (true_cm2/total_ad_spend) to the legacy "
+        "semantics: aMER = new_customer_revenue_mu / acquisition_ad_spend_mu (basis points). "
+        "The denominator is acquisition-classified spend ONLY (its own def "
+        "acquisition_ad_spend_mu) — NOT total_ad_spend_mu. This is the load-bearing "
+        "correction (Rohan Stage-1 finding + persona Concern 1). correctness_fixture: "
+        "amer_bp = intDiv(new_customer_revenue_mu × 10000, acquisition_ad_spend_mu)."
     ),
     shadow_compare_classification=CORRECTNESS_FIXTURE,
     delta_direction_and_magnitude=(
-        "Not applicable — no legacy comparand. "
-        "Example (continuing true_cm2 example): true_cm2=₹66,200 (6620000 paise), "
-        "ad_spend=₹50,000 (5000000 paise). "
-        "aMER_bp = intDiv(6620000×10000, 5000000) = intDiv(66200000000, 5000000) = 13240 bp = 1.32x. "
-        "aMER < paMER (1.32x vs 1.60x) — reflects RTO cost."
+        "Brain integerizes the legacy float (Math.round(nc_rev/acq_spend×100)/100) to a "
+        "single FLOOR-to-bp. Worked anchor (CF-S4-AMER-1): nc_revenue=₹60,000 (6000000 paise), "
+        "acquisition_ad_spend=₹40,000 (4000000 paise) — note total spend may be ₹100,000 but "
+        "only ₹40,000 is acquisition-classified. amer_bp = intDiv(6000000×10000, 4000000) = "
+        "15000 bp = 1.50x. A 'use total_ad_spend (10000000)' mutant yields 6000 bp — KILLED."
     ),
     business_impact=(
-        "aMER is a leading indicator of true post-RTO profitability. "
-        "For high-RTO categories, aMER < 10000 (< 1.0x) signals unprofitable ad spend "
-        "even if paMER appears healthy."
+        "aMER is THE new-customer acquisition-efficiency decision metric. Using total spend "
+        "instead of acquisition-classified spend understates aMER for any brand that classifies "
+        "campaigns, mis-flagging healthy acquisition as unprofitable."
     ),
     parity_gap=True,
     child_dependency=None,
     formula_snapshot=(
-        "amer_bp = intDiv(true_cm2_mu * 10000, total_ad_spend_mu); "
-        "true_cm2_mu = cm2_mu - intDiv(rto_orders × cost_base, total_orders_count); "
-        "NULL if total_ad_spend_mu <= 0 or total_orders_count <= 0"
+        "amer_bp = intDiv(new_customer_revenue_mu * 10000, acquisition_ad_spend_mu); "
+        "NULL if acquisition_ad_spend_mu <= 0"
+    ),
+)
+
+# MER numerator-basis reconciliation (slice-4). Legacy mer = storeNetRevenue/totalAdSpend.
+# Child-4 PY mer_bp used net_sales_mu; reconciled to net_revenue_mu (the slice-1 /store rung)
+# for cross-surface consistency (MER on /acquisition == /store net revenue ÷ spend).
+_ROW_MER_BASIS = DDRRow(
+    legacy_formula=(
+        "marketing-efficiency.ts:21-24 — mer = storeNetRevenue / totalAdSpend; "
+        "storeNetRevenue from ads-spend.ts:fetchStoreNetRevenueForPeriod "
+        "(net-of-tax minus refund share, analytics+gap-fill reconciled)."
+    ),
+    brain_formula="mer_bp",
+    reason=(
+        "Brain MER numerator = net_revenue_mu (the slice-1 store net-revenue rung) so the "
+        "/acquisition MER equals the /store net revenue for the same range (cross-surface "
+        "consistency; persona Concern 3). Child-4 used net_sales_mu — reconciled to net_revenue_mu."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Numerator basis change net_sales_mu → net_revenue_mu (net_revenue = net_net_tax + "
+        "shipping_revenue). Worked anchor (CF-S4-MER-1): net_revenue=₹120,000 (12000000 paise), "
+        "total_ad_spend=₹100,000 (10000000 paise) → intDiv(12000000×10000, 10000000) = 12000 bp = 1.20x."
+    ),
+    business_impact=(
+        "MER must visibly match the /store net revenue figure or operators distrust the number. "
+        "Numerator-basis drift between surfaces erodes trust in the whole workbench."
+    ),
+    parity_gap=False,  # legacy comparand EXISTS (storeNetRevenue/totalAdSpend) — expected definitional delta, not a no-comparand fixture
+    child_dependency=None,
+    formula_snapshot=(
+        "mer_bp = intDiv(net_revenue_mu * 10000, total_ad_spend_mu); NULL if total_ad_spend_mu <= 0"
+    ),
+)
+
+# New-customer revenue / CM2 / per-NC (slice-4). Connector-sourced first-order facts;
+# unmeasurable pre-Child-3 (mirrors _ROW_TOTAL_TAX). Per-order tax uses per-SKU GST (never blended).
+_ROW_NC_REVENUE_CM2 = DDRRow(
+    legacy_formula=(
+        "acquisition/compute.ts:384-423 — per-NC-order: newCustomerRevenue += totalPrice - "
+        "totalTax - orderShareRefunds (RTO excluded); ncCm2 = totalPrice - cogs - perOrder("
+        "shipping+packaging+website+adSpend) - refundShare (RTO→0); blendedCac = totalAdSpend/"
+        "newCustomers; cm2PerNc = totalNcCm2/newCustomers. New customer = first order in range."
+    ),
+    brain_formula="new_customer_revenue_mu / nc_cm2_mu / cm2_per_nc_mu / acquisition_ad_spend_mu",
+    reason=(
+        "Connector-sourced first-order facts + per-order COGS/variable/adSpend allocation + "
+        "refund share + RTO exclusion + per-SKU GST tax (NEVER blended). The use-case assembles; "
+        "the registry rungs are passthrough aggregates. Unmeasurable pre-Child-3 connector cutover."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "child_dependency: child-3-shopify-connector — not signable until the connector gate is "
+        "GREEN (Rule 2; mirrors _ROW_TOTAL_TAX). Anchors: cac_mu ₹500 (10000000/200); "
+        "cm2_per_nc_mu ₹100 (2000000/200)."
+    ),
+    business_impact=(
+        "New-customer CM2/revenue are the acquisition-quality core. Per-order per-SKU tax (not "
+        "blended) keeps the India GST-2.0 honesty; RTO exclusion keeps CM2 honest."
+    ),
+    parity_gap=False,
+    child_dependency="child-3-shopify-connector",
+    formula_snapshot=(
+        "new_customer_revenue_mu = SUM per-NC-order (totalPrice - totalTax - refundShare), RTO->0; "
+        "nc_cm2_mu = SUM per-NC-order (price - cogs - perOrderVariable - perOrderAdSpend - refundShare), RTO->0; "
+        "cm2_per_nc_mu = intDiv(nc_cm2_mu, new_customers_count); "
+        "acquisition_ad_spend_mu = SUM spend where campaign intent == 'acquisition'"
     ),
 )
 
@@ -743,7 +800,7 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     "cogs_mu":                   _ROW_COGS,
     "true_cm2_mu":               _ROW_TRUE_CM2,
     "realized_revenue_mu":       _ROW_REALIZED_REVENUE,
-    "pamer_bp":                  _ROW_PAMER,
+    # pamer_bp DECOMMISSIONED (slice-4) — no DDRRow; audit trail in the .md register.
     "amer_bp":                   _ROW_AMER,
     "ltv_cac_bp":                _ROW_LTV_CAC,
     "total_tax_mu":              _ROW_TOTAL_TAX,
@@ -754,6 +811,9 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     "breakeven_cod_rto_rate_bp": _ROW_BREAKEVEN_COD_RTO,
     "pincode_reliability_score": _ROW_PINCODE_RELIABILITY,
     "rto_cost_mu":               _ROW_RTO_COST_VALUE,
+    # Phase-2 slice-4 (feat-marketing-acquisition): marketing efficiency reconciled to legacy
+    "mer_bp":                    _ROW_MER_BASIS,
+    "new_customer_revenue_mu":   _ROW_NC_REVENUE_CM2,
 }
 
 

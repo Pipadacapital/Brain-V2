@@ -58,7 +58,7 @@ class TestMetricDefinitionStructure:
     def test_parity_gap_metrics_are_correctness_fixture(self):
         """parity_gap metrics must use correctness_fixture gate. CF-C4-DDR-1 Rule 1."""
         parity_gap_ids = {
-            "true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp",
+            "true_cm2_mu", "amer_bp", "ltv_cac_bp",
             # Phase-2 slice-3 (feat-rto-cod-economics): Brain-native econ canon
             "breakeven_cod_rto_rate_bp", "pincode_reliability_score",
         }
@@ -114,7 +114,7 @@ class TestMetricDefinitionStructure:
             "gross_sales_mu", "total_discount_mu", "total_tax_mu",
             "net_sales_mu", "net_revenue_mu", "cogs_mu", "variable_costs_mu",
             "cm1_mu", "total_ad_spend_mu", "cm2_mu", "misc_expenses_prorated_mu",
-            "cm3_mu", "true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp",
+            "cm3_mu", "true_cm2_mu", "amer_bp", "ltv_cac_bp",
             "blended_roas_x100", "acos_bp", "rto_rate_bp", "prepaid_rate_bp",
             "aov_mu", "conversion_rate_bp",
         ]
@@ -418,44 +418,74 @@ class TestTrueCm2CorrectnessFixture:
 # paMER / aMER correctness fixtures (M2)
 # ---------------------------------------------------------------------------
 
-class TestPamerAmerCorrectnessFixtures:
-    """paMER + aMER Brain-native metrics. parity_gap:true. CF-C4-DDR-TRUE-CM2-1."""
+class TestMarketingEfficiencyReconciledToLegacy:
+    """MER / aMER / CAC reconciled to legacy (slice-4). pamer_bp DECOMMISSIONED.
 
-    def test_pamer_bp_worked_example(self):
-        """paMER = CM2 / Ad Spend in bp. 8000000/5000000 = 1.6x = 16000 bp."""
-        f = METRIC_REGISTRY["pamer_bp"].formula_py
-        result = f(cm2_mu=8_000_000, total_ad_spend_mu=5_000_000)
-        # intDiv(8000000 × 10000, 5000000) = intDiv(80000000000, 5000000) = 16000
-        assert result == 16_000
+    aMER = new_customer_revenue / ACQUISITION-classified ad spend (NOT total spend).
+    Legacy: marketing-efficiency.ts:25-28 + ads-spend.ts:82-84.
+    """
 
-    def test_pamer_zero_ad_spend_returns_null(self):
-        f = METRIC_REGISTRY["pamer_bp"].formula_py
-        assert f(cm2_mu=8_000_000, total_ad_spend_mu=0) is None
+    def test_pamer_decommissioned(self):
+        """pamer_bp had no legacy comparand — removed from the registry (slice-4)."""
+        assert "pamer_bp" not in METRIC_REGISTRY
 
-    def test_amer_bp_worked_example(self):
-        """aMER = True CM2 / Ad Spend in bp. 6620000/5000000 ≈ 1.324x = 13240 bp."""
+    def test_mer_bp_worked_example(self):
+        """MER = net_revenue / total_ad_spend in bp. 12000000/10000000 = 1.20x = 12000 bp."""
+        f = METRIC_REGISTRY["mer_bp"].formula_py
+        result = f(net_revenue_mu=12_000_000, total_ad_spend_mu=10_000_000)
+        assert result == 12_000
+
+    def test_mer_zero_ad_spend_returns_null(self):
+        f = METRIC_REGISTRY["mer_bp"].formula_py
+        assert f(net_revenue_mu=12_000_000, total_ad_spend_mu=0) is None
+
+    def test_amer_bp_worked_example_acquisition_split(self):
+        """aMER = nc_revenue / ACQUISITION spend. 6000000/4000000 = 1.50x = 15000 bp.
+
+        The acquisition bucket (₹40k) is LESS than total spend (₹100k) — the load-bearing
+        legacy semantics (Rohan Stage-1 finding + persona Concern 1).
+        """
         f = METRIC_REGISTRY["amer_bp"].formula_py
-        result = f(true_cm2_mu=6_620_000, total_ad_spend_mu=5_000_000)
-        # intDiv(6620000 × 10000, 5000000) = intDiv(66200000000, 5000000) = 13240
-        assert result == 13_240
+        result = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=4_000_000)
+        assert result == 15_000
 
-    def test_amer_zero_ad_spend_returns_null(self):
+    def test_amer_kill_use_total_spend_mutant(self):
+        """The 'use total_ad_spend' mutant (10000000) yields 6000, NOT the canon 15000."""
         f = METRIC_REGISTRY["amer_bp"].formula_py
-        assert f(true_cm2_mu=6_620_000, total_ad_spend_mu=0) is None
+        canon = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=4_000_000)
+        mutant = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=10_000_000)
+        assert canon == 15_000
+        assert mutant == 6_000
+        assert canon != mutant, "aMER must use acquisition-classified spend, not total spend"
 
-    def test_amer_lt_pamer_when_rto_positive(self):
-        """aMER must be ≤ paMER (RTO provisioning reduces profitability)."""
-        pamer_f = METRIC_REGISTRY["pamer_bp"].formula_py
-        amer_f = METRIC_REGISTRY["amer_bp"].formula_py
-        pamer = pamer_f(cm2_mu=8_000_000, total_ad_spend_mu=5_000_000)
-        amer = amer_f(true_cm2_mu=6_620_000, total_ad_spend_mu=5_000_000)
-        assert amer <= pamer, f"aMER ({amer}) must be ≤ paMER ({pamer})"
+    def test_amer_zero_acquisition_spend_returns_null(self):
+        f = METRIC_REGISTRY["amer_bp"].formula_py
+        assert f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=0) is None
 
-    def test_parity_class_pamer(self):
-        assert METRIC_REGISTRY["pamer_bp"].parity_class == "correctness_fixture"
+    def test_cac_mu_worked_example(self):
+        """Blended CAC = total_ad_spend / new_customers. 10000000/200 = 50000p (₹500)."""
+        f = METRIC_REGISTRY["cac_mu"].formula_py
+        assert f(total_ad_spend_mu=10_000_000, new_customers_count=200) == 50_000
+
+    def test_cac_mu_zero_customers_returns_null(self):
+        f = METRIC_REGISTRY["cac_mu"].formula_py
+        assert f(total_ad_spend_mu=10_000_000, new_customers_count=0) is None
+
+    def test_cm2_per_nc_worked_example(self):
+        """CM2 per NC = nc_cm2 / new_customers. 2000000/200 = 10000p (₹100)."""
+        f = METRIC_REGISTRY["cm2_per_nc_mu"].formula_py
+        assert f(nc_cm2_mu=2_000_000, new_customers_count=200) == 10_000
+
+    def test_cm2_per_nc_zero_customers_returns_null(self):
+        f = METRIC_REGISTRY["cm2_per_nc_mu"].formula_py
+        assert f(nc_cm2_mu=2_000_000, new_customers_count=0) is None
 
     def test_parity_class_amer(self):
         assert METRIC_REGISTRY["amer_bp"].parity_class == "correctness_fixture"
+
+    def test_parity_class_mer_cac_shadow(self):
+        assert METRIC_REGISTRY["mer_bp"].parity_class == "shadow_compare"
+        assert METRIC_REGISTRY["cac_mu"].parity_class == "shadow_compare"
 
 
 # ---------------------------------------------------------------------------

@@ -428,18 +428,21 @@ def run_comparator(ts_m, py_m):
                 divs.append(f"{mid}.clickhouse_sql")
     return divs
 
-# ── Mutant 1: inject old wrong pamer_bp clickhouse_sql ────────────────────
-# pamer_bp is a correctness_fixture metric. The original bug had the reciprocal formula.
-# Injecting it back should cause the gate to fire.
-MUTANT_ID = "pamer_bp"
+# ── Mutant 1: inject the OLD wrong amer_bp clickhouse_sql ─────────────────
+# amer_bp is a correctness_fixture metric (slice-4 redefined to legacy: nc_revenue/
+# acquisition_ad_spend). pamer_bp was decommissioned in slice-4 (no legacy comparand),
+# so this mutant retargets to amer_bp. Injecting the Child-4 placeholder formula
+# (true_cm2/total_ad_spend) — or the wrong "use total spend" denominator — must fire.
+MUTANT_ID = "amer_bp"
 if MUTANT_ID not in ts_map or MUTANT_ID not in py_map:
     print(f"  SKIP: {MUTANT_ID!r} not shared — mutant test skipped.", file=sys.stderr)
     sys.exit(0)
 
 ts_mutant1 = copy.deepcopy(ts_map)
-# OLD WRONG FORMULA: ad_spend/net_revenue (reciprocal)
+# OLD WRONG FORMULA: the "use total_ad_spend (not acquisition-classified spend)" mutant —
+# the exact correctness landmine Rohan's Stage-1 finding caught.
 ts_mutant1[MUTANT_ID]["clickhouse_sql"] = (
-    "if(net_revenue_mu > 0, intDiv(total_ad_spend_mu * 10000, net_revenue_mu), NULL)"
+    "if(total_ad_spend_mu > 0, intDiv(new_customer_revenue_mu * 10000, total_ad_spend_mu), NULL)"
 )
 divs1 = run_comparator(ts_mutant1, py_map)
 if not divs1:

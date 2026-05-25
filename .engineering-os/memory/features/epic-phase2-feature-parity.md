@@ -34,3 +34,23 @@
 **Cadence:** assembly-line, one slice at a time, full high-stakes pipeline (Rohan S1 -> Aryan S2 -> Maya/Vikram S3 -> Shreya S4 -> Tanvi S5 -> Rohan S6 -> Founder S7), each ending in a real data-backed page; nothing committed without Founder "commit it"; no slice starts until its data-dependency slice ships. On all 9 done -> Brain at functional parity -> Child-7 HELD cutovers become flippable.
 
 **Open for cost-realist / Aryan:** ML-vs-SQL ruling per feature (slice 9 + ltv/rto/response); slice-9 narration cost ceiling; join-heavy metric rollup-vs-MV; CM2 definitional-delta at slice 2.
+
+## 2026-05-25T15:22:00Z — Slice 4 SHIPPED (Stage 6 PASS) — feat-marketing-acquisition — Rohan
+
+**MER/aMER/CAC + acquisition + distributions** on 2 real pages (`/acquisition`, `/distributions`). Full high-stakes pipeline (Rohan S1 → Aryan S2 → Maya/Vikram/Ananya S3 → Shreya S4 → Tanvi S5 → Rohan S6), signed under standing delegation. Stage-8 readiness; nothing committed (pending-founder-commit.md).
+
+**The slice-2/3 lesson applied again — and it bit:** reading the actual legacy formulas at Stage 1 found (a) the ratified slice-table shorthand WRONG (paMER has NO legacy comparand; payback + placed→realized→incremental are slice-5 cohort concepts, not slice-4); (b) Child-4 had SPECULATIVELY PRE-BUILT marketing defs diverging from legacy behind the parity gate's "shadow-phase" carve. **Reconciled, not wired:**
+- `amer_bp` REDEFINED to legacy: `nc_revenue / acquisition-classified spend` (was `true_cm2/total_spend`). The denominator is its own def (`acquisition_ad_spend_mu`), NOT total spend — the load-bearing correction.
+- `pamer_bp` DECOMMISSIONED (phantom; no legacy comparand) — removed from both registries, barrels, DDR, and all locked-canon tests; parity gate's non-vacuity mutant retargeted to `amer_bp`.
+- `mer_bp` (numerator reconciled net_sales→net_revenue for /store cross-surface consistency) + `cac_mu` brought into BOTH registries (closed the uneven TS/PY split).
+- 4 new defs: `new_customer_revenue_mu`, `nc_cm2_mu`, `cm2_per_nc_mu`, `acquisition_ad_spend_mu`.
+
+**Bar met:** TS↔Python parity-green + NON-VACUOUS (aMER 15000bp on a classification split; "use total spend" mutant killed in gate + unit + router tests); 3 fail-closed analytics use-cases; `marketing.*` tRPC (workspaceProc/ANALYST/bigint); RLS fail-closed proven at the wire (foreign workspace → UnscopedQueryError); per-SKU GST never blended; ROAS/ACOS display-only; @paradigm sql, zero LLM; real-network smoke PASS (mer 29384, amer 30000, cac 16250, dist-mode 48000); typecheck 0. DDR: 10 SIGNED, 3 UNSIGNED-PENDING child-3, 1 DECOMMISSIONED.
+
+**Tests:** 142 TS lib-metrics + 73 api-gateway + 299 brain_metrics + 136 analytics (29+11 net-new), all green.
+
+**Candidate rule generated** (≥3-run recurring root cause): `verify-legacy-formula-at-stage1-not-slice-table` — human-gated, awaiting Founder /adopt-rule.
+
+**Deferred (non-goals):** acquisition trend/composition; WooCommerce path; campaign-classification CRUD (slice 7); goals overlay (slice 7); payback + cohort/LTV attribution ladder (slice 5).
+
+**Progress: slices 1-4 done (4/9).** Next: slice 5 `feat-cohorts-ltv` (cohorts + LTV; payback + placed→realized→incremental ladder live HERE). Do NOT auto-start — orchestrator drives the loop + commits.

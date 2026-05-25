@@ -220,6 +220,41 @@ export function assertLogisticsDefinitionId(definitionId: string): void {
   }
 }
 
+// MARKETING_DEFINITION_IDS: registry ids on the slice-4 marketing surfaces.
+// Phase-2 slice-4 (feat-marketing-acquisition). aMER uses acquisition-classified spend;
+// ROAS/ACOS are display_only; pamer_bp is DECOMMISSIONED (must NOT appear here).
+export const MARKETING_DEFINITION_IDS = [
+  'mer_bp',
+  'amer_bp',
+  'cac_mu',
+  'cm2_per_nc_mu',
+  'new_customer_revenue_mu',
+  'nc_cm2_mu',
+  'acquisition_ad_spend_mu',
+  'total_ad_spend_mu',
+  'net_revenue_mu',
+  'aov_mu',
+  'acos_bp',
+  'blended_roas_x100',
+] as const;
+
+/**
+ * Validate that a marketing definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived marketing field in the BFF.
+ * Mutant probe: id "pamer_bp" (decommissioned) or "foo_mu" → this throws.
+ */
+export function assertMarketingDefinitionId(definitionId: string): void {
+  const isKnown =
+    MARKETING_DEFINITION_IDS.includes(definitionId as (typeof MARKETING_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: marketing definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
 /**
  * Look up a MetricDefinition by id. Returns undefined for count metrics (no registry entry).
  */

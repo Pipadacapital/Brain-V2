@@ -33,6 +33,7 @@ import {
   assertLadderDefinitionId,
   assertPnlStatementTraceability,
   assertLogisticsDefinitionId,
+  assertMarketingDefinitionId,
   getMetricScale,
 } from '../domain/registry-mapper.js';
 import {
@@ -474,6 +475,100 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // marketing router — workspace tier, requireRole(ANALYST)
+  // Phase-2 slice-4 (feat-marketing-acquisition): MER/aMER/CAC + acquisition + distributions.
+  // aMER uses acquisition-classified spend; ROAS/ACOS display_only; pamer_bp decommissioned.
+  // -------------------------------------------------------------------
+  const marketingRouter = router({
+    /** MER / aMER / ACOS / blended-ROAS. requireRole(ANALYST). */
+    efficiency: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `marketing.efficiency requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getMarketingEfficiency({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: input.date_start, end: input.date_end },
+      });
+      assertMarketingDefinitionId('mer_bp');
+      assertMarketingDefinitionId('amer_bp');
+      assertMarketingDefinitionId('acos_bp');
+      assertMarketingDefinitionId('blended_roas_x100');
+      return { result: result.result, data_epoch: result.data_epoch, request_id: ctx.requestId };
+    }),
+
+    /** New-customer acquisition: CAC, CM2-per-NC, aMER, meta/google split, daily. requireRole(ANALYST). */
+    acquisition: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `marketing.acquisition requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getAcquisitionSummary({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: input.date_start, end: input.date_end },
+      });
+      assertMarketingDefinitionId('cac_mu');
+      assertMarketingDefinitionId('cm2_per_nc_mu');
+      assertMarketingDefinitionId('amer_bp');
+      assertMarketingDefinitionId('new_customer_revenue_mu');
+      return {
+        summary: result.result,
+        daily: result.result.daily,
+        data_epoch: result.data_epoch,
+        request_id: ctx.requestId,
+      };
+    }),
+
+    /** Per-product distributions (mode/mean/diff + histogram). requireRole(ANALYST). */
+    distributions: workspaceProc
+      .input(
+        dateInput.extend({
+          metric: z.enum(['sales', 'cm1']).optional(),
+          search: z.string().optional(),
+          sort: z.string().optional(),
+          order: z.enum(['asc', 'desc']).optional(),
+          page: z.number().int().min(1).optional(),
+          page_size: z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.distributions requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getDistributions({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: {
+            metric: input.metric,
+            search: input.search,
+            sort: input.sort,
+            order: input.order,
+            page: input.page,
+            page_size: input.page_size,
+          },
+        });
+        assertMarketingDefinitionId('aov_mu');
+        return {
+          rows: result.result.rows,
+          total_rows: result.result.total_rows,
+          graph_points: result.result.graph_points,
+          global_mode_mu: result.result.global_mode_mu,
+          global_mean_mu: result.result.global_mean_mu,
+          metric: result.result.metric,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // morningBrief router — workspace tier
   // CF-C6-MB-IDEMPOTENCY-1: submitResponse uses Redis dedup.
   // CF-C6-MB-GRADUATED-LABEL-1: status is server-driven.
@@ -627,6 +722,7 @@ export function createBrainRouter(
     store: storeRouter,
     pnl: pnlRouter,
     logistics: logisticsRouter,
+    marketing: marketingRouter,
     morningBrief: morningBriefRouter,
     device: deviceRouter,
   });

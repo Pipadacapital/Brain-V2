@@ -39,7 +39,12 @@ export {
   ACOS_BP,
   BLENDED_ROAS_X100,
   TRUE_CM2_MU,
-  PAMER_BP,
   AMER_BP,
+  MER_BP,
+  CAC_MU,
+  NEW_CUSTOMER_REVENUE_MU,
+  NC_CM2_MU,
+  CM2_PER_NC_MU,
+  ACQUISITION_AD_SPEND_MU,
   LTV_CAC_BP,
 } from './registry/index.js';

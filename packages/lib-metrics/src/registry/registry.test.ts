@@ -18,8 +18,10 @@ import {
   BLENDED_ROAS_X100,
   MISC_EXPENSES_PRORATED_MU,
   TRUE_CM2_MU,
-  PAMER_BP,
   AMER_BP,
+  MER_BP,
+  CAC_MU,
+  CM2_PER_NC_MU,
   LTV_CAC_BP,
   AOV_MU,
   CONVERSION_RATE_BP,
@@ -42,10 +44,12 @@ describe('METRIC_REGISTRY completeness', () => {
       'variable_costs_mu', 'cm1_mu', 'cm2_mu', 'misc_expenses_prorated_mu', 'cm3_mu',
       'rto_rate_bp', 'prepaid_rate_bp', 'conversion_rate_bp', 'aov_mu',
       'acos_bp', 'blended_roas_x100',
-      'true_cm2_mu', 'pamer_bp', 'amer_bp', 'ltv_cac_bp',
+      'true_cm2_mu', 'amer_bp', 'ltv_cac_bp',
       // Phase-2 slice-3 (feat-rto-cod-economics)
       'rto_cost_mu', 'rto_revenue_lost_mu', 'cod_realization_rate_bp',
       'breakeven_cod_rto_rate_bp', 'pincode_reliability_score',
+      // Phase-2 slice-4 (feat-marketing-acquisition): marketing efficiency reconciled to legacy
+      'mer_bp', 'cac_mu', 'new_customer_revenue_mu', 'nc_cm2_mu', 'cm2_per_nc_mu', 'acquisition_ad_spend_mu',
     ];
     for (const id of required) {
       expect(METRIC_REGISTRY).toHaveProperty(id);
@@ -83,7 +87,7 @@ describe('METRIC_REGISTRY completeness', () => {
 
   it('correctness_fixture metrics have parity_class=correctness_fixture', () => {
     const cfMetrics = [
-      'true_cm2_mu', 'pamer_bp', 'amer_bp', 'ltv_cac_bp',
+      'true_cm2_mu', 'amer_bp', 'ltv_cac_bp',
       // Phase-2 slice-3: Brain-native econ canon (no legacy byte comparand)
       'breakeven_cod_rto_rate_bp', 'pincode_reliability_score',
     ];
@@ -123,9 +127,10 @@ describe('derived metric id sets', () => {
 
   it('CORRECTNESS_FIXTURE_METRIC_IDS contains parity_gap:true metrics', () => {
     expect(CORRECTNESS_FIXTURE_METRIC_IDS.has('true_cm2_mu')).toBe(true);
-    expect(CORRECTNESS_FIXTURE_METRIC_IDS.has('pamer_bp')).toBe(true);
     expect(CORRECTNESS_FIXTURE_METRIC_IDS.has('amer_bp')).toBe(true);
     expect(CORRECTNESS_FIXTURE_METRIC_IDS.has('ltv_cac_bp')).toBe(true);
+    // pamer_bp DECOMMISSIONED (slice-4) — must NOT be present
+    expect(CORRECTNESS_FIXTURE_METRIC_IDS.has('pamer_bp')).toBe(false);
     // The old wrong id must NOT be present
     expect(CORRECTNESS_FIXTURE_METRIC_IDS.has('ltv_cac_x100')).toBe(false);
   });
@@ -380,62 +385,64 @@ describe('formula_ts: Brain-native correctness-fixture metrics — LOCKED CANON'
     expect(actual).toBe(canonResult);
   });
 
-  // pamer_bp: CM2 / Total Ad Spend (not ad_spend / net_revenue — that was the wrong reciprocal)
-  // Canon source: SKILL.md §"Marketing efficiency" "paMER = profit-adjusted variant (CM2 basis)"
-  it('pamer_bp: CM2/ad_spend canon — 8000000p cm2 / 5000000p spend = 16000 bp (1.60×)', () => {
-    // Canon: cm2=8000000p, ad_spend=5000000p → intDiv(8000000×10000, 5000000) = 16000bp
-    const result = PAMER_BP.formula_ts(8000000n, 5000000n);
-    expect(result).toBe(16000);
+  // ── Marketing efficiency RECONCILED to legacy (slice-4, feat-marketing-acquisition) ──
+  // pamer_bp DECOMMISSIONED (no legacy comparand). amer_bp REDEFINED to legacy semantics:
+  // aMER = new_customer_revenue / ACQUISITION-CLASSIFIED ad spend (NOT total_ad_spend).
+  // Legacy: marketing-efficiency.ts:25-28 + ads-spend.ts:82-84.
+
+  // mer_bp: net_revenue / total_ad_spend (legacy mer = storeNetRevenue/totalAdSpend).
+  it('mer_bp: net_revenue/total_ad_spend canon — 12000000p / 10000000p = 12000 bp (1.20×)', () => {
+    const result = MER_BP.formula_ts(12_000_000n, 10_000_000n);
+    expect(result).toBe(12000);
   });
 
-  it('pamer_bp: KILL — old reciprocal formula (spend/revenue) gives WRONG result', () => {
-    // Old (wrong) formula: ratioToBasisPoints(total_ad_spend_mu, net_revenue_mu)
-    //   = intDiv(spend × 10000, revenue)
-    // With spend=5000000p, net_revenue=8000000p (approx): intDiv(50000000000, 8000000) = 6250
-    // Canon formula: intDiv(cm2 × 10000, spend) = intDiv(80000000000, 5000000) = 16000
-    // They produce different numbers → old formula was wrong.
-    const wrongResult = Math.floor((5000000 * 10000) / 8000000); // old wrong path
-    const canonResult = 16000;
-    expect(wrongResult).not.toBe(canonResult);
-    const actual = PAMER_BP.formula_ts(8000000n, 5000000n);
-    expect(actual).toBe(canonResult);
+  it('mer_bp: throws on zero ad_spend (caller must guard)', () => {
+    expect(() => MER_BP.formula_ts(12_000_000n, 0n)).toThrow();
   });
 
-  it('pamer_bp: throws on zero ad_spend (caller must guard)', () => {
-    expect(() => PAMER_BP.formula_ts(8000000n, 0n)).toThrow();
+  // amer_bp: NON-VACUOUS anchor with a CLASSIFICATION SPLIT — denominator is the
+  // acquisition bucket only (₹40k), NOT total spend (₹100k). This kills the "use total
+  // spend" mutant (Rohan Stage-1 finding + persona Concern 1).
+  it('amer_bp: nc_revenue/acquisition_spend canon — 6000000p / 4000000p = 15000 bp (1.50×)', () => {
+    const result = AMER_BP.formula_ts(6_000_000n, 4_000_000n);
+    expect(result).toBe(15000);
   });
 
-  // amer_bp: True-CM2 / Total Ad Spend (RTO-adjusted, more conservative than paMER)
-  // Canon source: arch plan §10 DDR + SKILL.md
-  it('amer_bp: True-CM2/ad_spend canon — worked example continues from true_cm2', () => {
-    // Canon: true_cm2=6620000p, ad_spend=5000000p → intDiv(6620000×10000, 5000000) = 13240bp
-    // Inputs: cm2=8000000p, rto=18, ad_spend=5000000p, variable=1200000p, cogs=3000000p, orders=120
-    const result = AMER_BP.formula_ts(8000000n, 18n, 5000000n, 1200000n, 3000000n, 120n);
-    expect(result).toBe(13240);
+  it('amer_bp: KILL — "use total_ad_spend" mutant gives WRONG result (6000 not 15000)', () => {
+    // The landmine: using total_ad_spend (10000000p) instead of the acquisition bucket (4000000p).
+    const wrongUseTotalSpend = Math.floor((6_000_000 * 10000) / 10_000_000); // 6000
+    const canonAcquisitionOnly = 15000;
+    expect(wrongUseTotalSpend).not.toBe(canonAcquisitionOnly);
+    const actual = AMER_BP.formula_ts(6_000_000n, 4_000_000n);
+    expect(actual).toBe(canonAcquisitionOnly);
   });
 
-  it('amer_bp: aMER < paMER always when RTO > 0 (true_cm2 < cm2)', () => {
-    const pamer = PAMER_BP.formula_ts(8000000n, 5000000n);
-    const amer = AMER_BP.formula_ts(8000000n, 18n, 5000000n, 1200000n, 3000000n, 120n);
-    expect(Number(amer)).toBeLessThan(Number(pamer)); // 13240 < 16000
+  it('amer_bp: throws on zero acquisition_ad_spend (caller must guard / NULL)', () => {
+    expect(() => AMER_BP.formula_ts(6_000_000n, 0n)).toThrow();
   });
 
-  it('amer_bp: when rto_orders=0, aMER == paMER (no RTO provision)', () => {
-    const pamer = PAMER_BP.formula_ts(8000000n, 5000000n);
-    const amer = AMER_BP.formula_ts(8000000n, 0n, 5000000n, 1200000n, 3000000n, 120n);
-    expect(Number(amer)).toBe(Number(pamer)); // both 16000
+  it('pamer_bp: DECOMMISSIONED — not in the registry (no legacy comparand)', () => {
+    expect(METRIC_REGISTRY).not.toHaveProperty('pamer_bp');
   });
 
-  it('amer_bp: KILL — old gross_sales denominator formula gives WRONG result', () => {
-    // Old (wrong) formula: ratioToBasisPoints(total_ad_spend_mu, gross_sales_mu)
-    //   = intDiv(spend × 10000, gross_sales) — completely different metric
-    // With spend=5000000p, gross_sales=10000000p: intDiv(50000000000, 10000000) = 5000
-    // Canon formula gives 13240. They differ → old formula was wrong.
-    const wrongResult = Math.floor((5000000 * 10000) / 10000000); // old wrong path
-    const canonResult = 13240;
-    expect(wrongResult).not.toBe(canonResult);
-    const actual = AMER_BP.formula_ts(8000000n, 18n, 5000000n, 1200000n, 3000000n, 120n);
-    expect(actual).toBe(canonResult);
+  // cac_mu: total_ad_spend / new_customers (legacy blendedCac). Integer FLOOR; NULL on zero.
+  it('cac_mu: 10000000p / 200 customers = 50000p (₹500 blended CAC)', () => {
+    const result = CAC_MU.formula_ts(10_000_000n, 200n);
+    expect(result).toBe(50_000n);
+  });
+
+  it('cac_mu: zero new customers → throws (caller must guard)', () => {
+    expect(() => CAC_MU.formula_ts(10_000_000n, 0n)).toThrow();
+  });
+
+  // cm2_per_nc_mu: nc_cm2 / new_customers. Integer FLOOR; NULL on zero.
+  it('cm2_per_nc_mu: 2000000p / 200 = 10000p (₹100 CM2 per new customer)', () => {
+    const result = CM2_PER_NC_MU.formula_ts(2_000_000n, 200n);
+    expect(result).toBe(10_000n);
+  });
+
+  it('cm2_per_nc_mu: zero new customers → throws (caller must guard)', () => {
+    expect(() => CM2_PER_NC_MU.formula_ts(2_000_000n, 0n)).toThrow();
   });
 
   // ltv_cac_bp: ×10000 (bp), NOT ×100 (x100). Decision metric → Brain bp convention.

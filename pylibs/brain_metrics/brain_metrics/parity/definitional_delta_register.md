@@ -1,7 +1,7 @@
 # Definitional-Delta Register — Child 4 (Brain-native Metric Engine)
 
 > **Status:** **PARTIALLY SIGNED by Rohan (cto-advisor) at Stage 6, 2026-05-25.** 9 rows SIGNED · 2 rows UNSIGNED-PENDING-child-dependency.
-> **Signed:** `cm2_mu`, `misc_expenses_prorated_mu`, `cogs_mu`, `true_cm2_mu` (correctness-fixture, no-legacy-shadow acknowledged), `pamer_bp`, `amer_bp`, `ltv_cac_bp` (correctness-fixture), `blended_roas_x100`, `acos_bp`.
+> **Signed:** `cm2_mu`, `misc_expenses_prorated_mu`, `cogs_mu`, `true_cm2_mu` (correctness-fixture, no-legacy-shadow acknowledged), `amer_bp` (correctness-fixture, REDEFINED to legacy in slice-4), `ltv_cac_bp` (correctness-fixture), `blended_roas_x100`, `acos_bp`, `mer_bp` (slice-4). **Decommissioned:** `pamer_bp` (slice-4 — no legacy comparand). **Unsigned-pending child-3:** `new_customer_revenue_mu`/`nc_cm2_mu`/`cm2_per_nc_mu`/`acquisition_ad_spend_mu`.
 > **UNSIGNED-PENDING-child-dependency:** `total_tax_mu` (unlocks when `child-3-shopify-connector` is GREEN — per-SKU GST tax) · `fx_restatement` (unlocks when `child-3-workspace-cost-currency-migration` is GREEN — live FX).
 > **True-CM2 RTO-provision formula recorded as Phase-0 proxy canon** (cost-base-per-order); refine toward the canon's granular forward/reverse/restock/write-down + refund/payment-failure form in a later child (tracked by `formula_snapshot` immutability). See `11-final-review.md` §DDR.
 > **Adjudication source:** `.engineering-os/runs/2026-05-24T22-25-29Z__0e76f7__feat-metric-engine-olap-split__rishabhporwal/11-final-review.md`.
@@ -94,39 +94,30 @@ Rohan sign-off: ☑ SIGNED (Rohan, Stage-6, 2026-05-25)
 
 ---
 
-### 5. `pamer_bp` — paMER (performance-adjusted MER) — Brain-native
+### 5. `pamer_bp` — paMER — **DECOMMISSIONED (Phase-2 slice-4, feat-marketing-acquisition)**
 
-| Field | Value |
-|---|---|
-| **legacy_formula** | NONE — Brain-native |
-| **brain_formula** | `pamer_bp` |
-| **reason** | paMER = CM2 / Total Ad Spend (bp). Brain replaces blended ROAS as primary ad efficiency signal (CM2-first). |
-| **shadow_compare_classification** | `CORRECTNESS_FIXTURE` |
-| **delta_direction_and_magnitude** | No legacy comparand. Example: CM2=₹80k, ad_spend=₹50k. `paMER_bp = intDiv(8000000×10000, 5000000) = 16000 bp = 1.60x`. |
-| **business_impact** | Primary decision metric for ad budget allocation. paMER > 10000 (1.0x) = profitable ad spend after variable costs. |
-| **parity_gap** | **`True`** |
-| **child_dependency** | `null` |
-| **formula_snapshot** | `pamer_bp = intDiv(cm2_mu * 10000, total_ad_spend_mu); NULL if total_ad_spend_mu <= 0` |
-
-Rohan sign-off: ☑ SIGNED (Rohan, Stage-6, 2026-05-25)
+paMER (= cm2/total_ad_spend) was a Child-4 pre-build with **NO legacy comparand** — an invented
+"profit-adjusted MER" that never matched the legacy acquisition surface and was never consumed by any
+page. Rohan's slice-4 Stage-1 review caught it and **removed `pamer_bp` from both registries + the DDR**.
+No DDRRow remains for `pamer_bp`. This row is retained as an audit-trail marker only.
 
 ---
 
-### 6. `amer_bp` — aMER (adjusted MER) — Brain-native
+### 6. `amer_bp` — aMER — **REDEFINED to legacy (Phase-2 slice-4)**
 
 | Field | Value |
 |---|---|
-| **legacy_formula** | NONE — Brain-native |
+| **legacy_formula** | `marketing-efficiency.ts:25-28` — `aMer = newCustomerRevenue / acquisitionAdSpend` (acquisition campaign-intent bucket ONLY; `ads-spend.ts:82-84`). |
 | **brain_formula** | `amer_bp` |
-| **reason** | aMER = True CM2 / Total Ad Spend (bp). More conservative than paMER: adjusts for RTO provisioning. |
+| **reason** | REDEFINED from the Child-4 placeholder (`true_cm2/total_ad_spend`) to the legacy semantics: `nc_revenue / ACQUISITION-classified spend`. The denominator is its own def (`acquisition_ad_spend_mu`), NOT `total_ad_spend_mu` — the load-bearing correction (Rohan Stage-1 finding + persona Concern 1). |
 | **shadow_compare_classification** | `CORRECTNESS_FIXTURE` |
-| **delta_direction_and_magnitude** | No legacy comparand. Example (continuing true_cm2 example): true_cm2=₹66,200, ad_spend=₹50k. `aMER_bp = intDiv(6620000×10000, 5000000) = 13240 bp = 1.32x`. aMER < paMER (1.32x vs 1.60x). |
-| **business_impact** | aMER < 10000 (< 1.0x) on high-RTO SKUs = unprofitable ad spend even if paMER looks healthy. |
+| **delta_direction_and_magnitude** | Brain integerizes the legacy float to a single FLOOR-to-bp. Anchor (classification split): nc_revenue=₹60k (6000000p), acquisition_ad_spend=₹40k (4000000p) — total spend may be ₹100k but only ₹40k is acquisition-classified → `amer_bp = intDiv(6000000×10000, 4000000) = 15000 bp = 1.50x`. "Use total spend" mutant → 6000 bp (KILLED). |
+| **business_impact** | aMER is THE new-customer acquisition-efficiency decision metric. Using total spend understates aMER for any brand that classifies campaigns. |
 | **parity_gap** | **`True`** |
 | **child_dependency** | `null` |
-| **formula_snapshot** | `amer_bp = intDiv(true_cm2_mu * 10000, total_ad_spend_mu)`; `true_cm2_mu` per row 4 above; `NULL` if denom <= 0 |
+| **formula_snapshot** | `amer_bp = intDiv(new_customer_revenue_mu * 10000, acquisition_ad_spend_mu); NULL if acquisition_ad_spend_mu <= 0` |
 
-Rohan sign-off: ☑ SIGNED (Rohan, Stage-6, 2026-05-25)
+Rohan sign-off: ☑ SIGNED (Rohan, Stage-6, 2026-05-25; redefined to legacy semantics)
 
 ---
 
@@ -280,6 +271,42 @@ Rohan sign-off (Stage-6): ☐ UNSIGNED-PENDING until `child-3-shopify-connector`
 
 ---
 
+## Phase-2 slice-4 rows (feat-marketing-acquisition)
+
+### 15. `mer_bp` — MER numerator-basis reconciliation
+
+| Field | Value |
+|---|---|
+| **legacy_formula** | `marketing-efficiency.ts:21-24` — `mer = storeNetRevenue / totalAdSpend`; `storeNetRevenue` from `ads-spend.ts:fetchStoreNetRevenueForPeriod` (net-of-tax minus refund share, analytics+gap-fill reconciled). |
+| **brain_formula** | `mer_bp` |
+| **reason** | Brain MER numerator = `net_revenue_mu` (the slice-1 /store rung) so /acquisition MER == /store net revenue for the same range (cross-surface consistency; persona Concern 3). Child-4 used `net_sales_mu` — reconciled to `net_revenue_mu`. |
+| **shadow_compare_classification** | `EXPECTED_DEFINITIONAL_DELTA` |
+| **delta_direction_and_magnitude** | Numerator basis `net_sales_mu` → `net_revenue_mu`. Anchor: net_revenue=₹120k (12000000p), total_ad_spend=₹100k (10000000p) → `intDiv(12000000×10000, 10000000) = 12000 bp = 1.20x`. |
+| **business_impact** | MER must visibly match the /store net revenue or operators distrust the number. |
+| **parity_gap** | `False` |
+| **child_dependency** | `null` |
+| **formula_snapshot** | `mer_bp = intDiv(net_revenue_mu * 10000, total_ad_spend_mu); NULL if total_ad_spend_mu <= 0` |
+
+Rohan sign-off: ☑ SIGNED (Rohan, Stage-6, 2026-05-25)
+
+### 16. `new_customer_revenue_mu` (+ `nc_cm2_mu` / `cm2_per_nc_mu` / `acquisition_ad_spend_mu`) — connector-sourced acquisition facts
+
+| Field | Value |
+|---|---|
+| **legacy_formula** | `acquisition/compute.ts:384-423` — per-NC-order revenue/CM2 with COGS/variable/adSpend allocation + refund share + RTO exclusion; new customer = first order in range. |
+| **brain_formula** | `new_customer_revenue_mu / nc_cm2_mu / cm2_per_nc_mu / acquisition_ad_spend_mu` |
+| **reason** | Connector-sourced first-order facts + per-order per-SKU GST tax (NEVER blended) + RTO→0. Use-case assembles; registry rungs are passthrough aggregates. Unmeasurable pre-Child-3 (mirrors `total_tax_mu`). |
+| **shadow_compare_classification** | `EXPECTED_DEFINITIONAL_DELTA` |
+| **delta_direction_and_magnitude** | child_dependency: child-3-shopify-connector (Rule 2). Anchors: cac_mu ₹500 (10000000/200); cm2_per_nc_mu ₹100 (2000000/200). |
+| **business_impact** | New-customer CM2/revenue are the acquisition-quality core; per-order per-SKU tax keeps GST-2.0 honesty; RTO exclusion keeps CM2 honest. |
+| **parity_gap** | `False` |
+| **child_dependency** | `child-3-shopify-connector` |
+| **formula_snapshot** | `new_customer_revenue_mu = SUM(price − tax − refundShare), RTO→0`; `cm2_per_nc_mu = intDiv(nc_cm2_mu, new_customers_count)`; `acquisition_ad_spend_mu = SUM spend where intent=='acquisition'` |
+
+Rohan sign-off (Stage-6): ☐ UNSIGNED-PENDING until `child-3-shopify-connector` gate GREEN (Rule 2)
+
+---
+
 ## Structural enforcement (code-level)
 
 The two rules are enforced in `definitional_delta_register.py::DDRRow.assert_signable()`:
@@ -307,11 +334,14 @@ Rohan cannot sign any row without `assert_signable()` passing first.
 - [x] `misc_expenses_prorated_mu` — verified `toDaysInMonth(date)` correct; Feb-boundary example re-derived (35714; wrong-30=33333, −2381); NOT a wrong-constant bug — **SIGNED**
 - [x] `cogs_mu` — full-recompute model confirmed; no incremental MV — **SIGNED**
 - [x] `true_cm2_mu` — **parity_gap acknowledged; correctness-fixture worked example re-derived (6620000); no legacy shadow; Phase-0 proxy canon** — **SIGNED (correctness-fixture)**
-- [x] `pamer_bp` / `amer_bp` / `ltv_cac_bp` — correctness-fixture examples re-derived (16000 / 13240 / 30000; aMER<paMER ✓) — **SIGNED (correctness-fixture)**
+- [x] `amer_bp` / `ltv_cac_bp` — correctness-fixture examples re-derived; **slice-4: amer_bp REDEFINED to legacy (15000bp on acquisition split; "use total spend" mutant→6000 KILLED)** — **SIGNED (correctness-fixture)**
+- [x] `pamer_bp` — **DECOMMISSIONED (slice-4, no legacy comparand); removed from registry + DDR** — **N/A**
+- [x] `mer_bp` — slice-4 numerator reconciled to `net_revenue_mu` (12000bp anchor) — **SIGNED**
 - [ ] `total_tax_mu` — **UNSIGNED-PENDING until `child-3-shopify-connector` gate GREEN** (Rule 2)
 - [ ] `fx_restatement` — **UNSIGNED-PENDING until `child-3-workspace-cost-currency-migration` gate GREEN** (Rule 2)
+- [ ] `new_customer_revenue_mu` (+nc_cm2/cm2_per_nc/acquisition_ad_spend) — **UNSIGNED-PENDING until `child-3-shopify-connector` gate GREEN** (Rule 2)
 - [x] `blended_roas_x100` / `acos_bp` — display-only confirmed; non-blocking — **SIGNED**
 
-**DDR sign-off: 9 SIGNED · 2 UNSIGNED-PENDING-child-dependency.**
+**DDR sign-off: 10 SIGNED · 3 UNSIGNED-PENDING-child-dependency · 1 DECOMMISSIONED.**
 
 _Signed:_ **Rohan (cto-advisor) — partial sign-off per above** _Date:_ **2026-05-25** _Authority:_ CF-C4-DDR-1 / M-A1-Q2 (Stage-6 VETO + governance gate). Live read-source flip remains HELD (`HOLD-AT-READ-FLIP`) until the 2 pending rows unlock and I re-sign at the Stage-8 live-flip re-review.

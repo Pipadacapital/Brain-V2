@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-25T14:32:17Z",
-  "updated_by": "cto-advisor (Rohan) \u2014 slice-3 Stage-6 PASS",
+  "updated_at": "2026-05-25T15:22:00Z",
+  "updated_by": "cto-advisor",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3061,6 +3061,36 @@
       "ddr_signoff": "breakeven_cod_rto_rate_bp + pincode_reliability_score SIGNED (correctness-fixture); rto_cost_mu/rto_revenue_lost_mu UNSIGNED-PENDING child-3-shopify-connector",
       "commit": "pending-founder-commit.md (nothing committed)",
       "updated_at": "2026-05-25T14:32:17Z"
+    },
+    {
+      "req_id": "feat-marketing-acquisition",
+      "parent_epic": "epic-phase2-feature-parity",
+      "slice": 4,
+      "title": "MER/aMER/CAC + acquisition + distributions (Phase 2 slice 4)",
+      "status": "approved",
+      "stage": 8,
+      "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "money + multi-tenancy + schema/registry change; numeric/definitional parity is the dominant net-new risk",
+      "trigger_surfaces_touched": [
+        "money",
+        "multi-tenancy",
+        "schema-proto-registry"
+      ],
+      "needs_personas": [
+        "marketing-efficiency-numeric-parity-realist:sonnet"
+      ],
+      "blocks": [
+        "feat-store-order-fact-layer",
+        "feat-pnl-cm-waterfall",
+        "feat-rto-cod-economics"
+      ],
+      "run_folder": ".engineering-os/runs/2026-05-25T14-56-06Z__slice4m__feat-marketing-acquisition__rishabhporwal",
+      "paradigm": "sql",
+      "updated_at": "2026-05-25T15:22:00Z",
+      "updated_by": "cto-advisor",
+      "final_review": "PASS",
+      "founder_decision": "APPROVE (signed under standing delegation)"
     }
   ]
 }

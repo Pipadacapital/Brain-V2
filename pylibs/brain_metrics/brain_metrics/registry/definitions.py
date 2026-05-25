@@ -525,44 +525,24 @@ true_cm2_mu = MetricDefinition(
 # Neither has a legacy comparand in compute-daily.ts.
 # parity_gap:true → correctness_fixture gate.
 
-def _pamer_bp(cm2_mu: int, total_ad_spend_mu: int) -> int | None:
-    """paMER = CM2 / Total Ad Spend in basis points.
+# ---------------------------------------------------------------------------
+# Phase-2 slice-4 (feat-marketing-acquisition): marketing efficiency RECONCILED
+# to legacy (lib/metrics/marketing-efficiency.ts + lib/acquisition/compute.ts).
+# pamer_bp DECOMMISSIONED — it had NO legacy comparand (cm2/total_spend was invented
+# in Child-4). amer_bp REDEFINED to the legacy semantics below. DDR _ROW_AMER_REDEF.
+# ---------------------------------------------------------------------------
 
-    @paradigm: sql — integer FLOOR. No float.
-    parity_gap:true — Brain-native metric, no legacy comparand.
+def _amer_bp(new_customer_revenue_mu: int, acquisition_ad_spend_mu: int) -> int | None:
+    """aMER = new-customer revenue / ACQUISITION-CLASSIFIED ad spend in basis points.
 
-    Returns:
-        int: paMER in bp (e.g. 16000 = 1.6x = 160%), or None if no ad spend.
+    Legacy: marketing-efficiency.ts:25-28 (aMer = newCustomerRevenue/acquisitionAdSpend).
+    The denominator is the acquisition campaign-intent bucket ONLY (ads-spend.ts) —
+    unclassified/brand/non_acquisition spend is EXCLUDED (conservative). This is the
+    load-bearing correction vs the Child-4 placeholder (true_cm2/total_spend).
+
+    @paradigm: sql — integer FLOOR. No float. None when acquisition spend == 0.
     """
-    return _ratio_bp(cm2_mu, total_ad_spend_mu)
-
-
-pamer_bp = MetricDefinition(
-    id="pamer_bp",
-    kind="ratio",
-    unit="bp",
-    formula_py=_pamer_bp,
-    clickhouse_sql=(
-        "if(total_ad_spend_mu > 0, "
-        "intDiv(cm2_mu * 10000, total_ad_spend_mu), NULL)"
-    ),
-    parity_class="correctness_fixture",  # parity_gap:true
-    scale=10000,  # CF-C6-ROAS-DISPLAY-CONTRACT-1
-)
-
-
-def _amer_bp(true_cm2_mu: int, total_ad_spend_mu: int) -> int | None:
-    """aMER = True CM2 / Total Ad Spend in basis points.
-
-    @paradigm: sql — integer FLOOR. No float.
-    parity_gap:true — Brain-native metric, no legacy comparand.
-
-    Returns:
-        int: aMER in bp, or None if no ad spend.
-    """
-    if true_cm2_mu is None:
-        return None
-    return _ratio_bp(true_cm2_mu, total_ad_spend_mu)
+    return _ratio_bp(new_customer_revenue_mu, acquisition_ad_spend_mu)
 
 
 amer_bp = MetricDefinition(
@@ -571,13 +551,10 @@ amer_bp = MetricDefinition(
     unit="bp",
     formula_py=_amer_bp,
     clickhouse_sql=(
-        "if(total_ad_spend_mu > 0 AND total_orders_count > 0, "
-        "intDiv("
-        "  (cm2_mu - intDiv(rto_orders * (total_ad_spend_mu + variable_costs_mu + cogs_mu), total_orders_count))"
-        "  * 10000, total_ad_spend_mu"
-        "), NULL)"
+        "if(acquisition_ad_spend_mu > 0, "
+        "intDiv(new_customer_revenue_mu * 10000, acquisition_ad_spend_mu), NULL)"
     ),
-    parity_class="correctness_fixture",  # parity_gap:true
+    parity_class="correctness_fixture",  # parity_gap:true — redefined from Child-4 placeholder
     scale=10000,  # CF-C6-ROAS-DISPLAY-CONTRACT-1
 )
 
@@ -781,15 +758,17 @@ cac_mu = MetricDefinition(
     parity_class="shadow_compare",
 )
 
-# ── MER (Marketing Efficiency Ratio = Net Sales / Total Ad Spend) ─────────
-def _mer_bp(net_sales_mu: int, total_ad_spend_mu: int) -> int | None:
-    """MER = Net Sales / Total Ad Spend in basis points.
+# ── MER (Marketing Efficiency Ratio = Net Revenue / Total Ad Spend) ───────
+# RECONCILED (slice-4): numerator is net_revenue_mu (the slice-1 /store net-revenue
+# rung) so /acquisition MER == /store net revenue for the same range. Legacy:
+# marketing-efficiency.ts:21-24 (mer = storeNetRevenue/totalAdSpend). Child-4 used
+# net_sales_mu — reconciled to net_revenue_mu. DDR _ROW_MER_BASIS.
+def _mer_bp(net_revenue_mu: int, total_ad_spend_mu: int) -> int | None:
+    """MER = store net revenue / Total Ad Spend in basis points.
 
     @paradigm: sql — integer FLOOR. CF-C4-RATIO-DIVOP-1.
-    Note: paMER (CM2/AdSpend) is the Brain-preferred metric; MER is provided
-    for reference / legacy comparison.
     """
-    return _ratio_bp(net_sales_mu, total_ad_spend_mu)
+    return _ratio_bp(net_revenue_mu, total_ad_spend_mu)
 
 
 mer_bp = MetricDefinition(
@@ -799,8 +778,88 @@ mer_bp = MetricDefinition(
     formula_py=_mer_bp,
     clickhouse_sql=(
         "if(total_ad_spend_mu > 0, "
-        "intDiv(net_sales_mu * 10000, total_ad_spend_mu), NULL)"
+        "intDiv(net_revenue_mu * 10000, total_ad_spend_mu), NULL)"
     ),
+    parity_class="shadow_compare",
+    scale=10000,  # CF-C6-ROAS-DISPLAY-CONTRACT-1
+)
+
+
+# ── New-customer revenue / CM2 / per-NC / acquisition spend (slice-4) ──────
+# Passthrough money aggregates ported from acquisition/compute.ts. The per-order
+# RTO/tax/refund-share exclusion + acquisition classification live in the use-case +
+# the connector; these defs are the registry-traceable rungs. DDR _ROW_NC_REVENUE_CM2.
+
+def _new_customer_revenue_mu(new_customer_revenue_mu: int) -> int:
+    """New-customer revenue (paise): SUM per-NC-order (price − tax − refundShare), RTO→0.
+
+    Legacy: acquisition/compute.ts:402-403. Per-order tax uses per-SKU GST (never blended).
+    @paradigm: sql — passthrough aggregate.
+    """
+    return new_customer_revenue_mu
+
+
+new_customer_revenue_mu = MetricDefinition(
+    id="new_customer_revenue_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_new_customer_revenue_mu,
+    clickhouse_sql="toInt64(new_customer_revenue_mu)",
+    parity_class="shadow_compare",
+)
+
+
+def _nc_cm2_mu(nc_cm2_mu: int) -> int:
+    """New-customer CM2 (paise): SUM per-NC-order CM2, RTO→0. acquisition/compute.ts:394,400."""
+    return nc_cm2_mu
+
+
+nc_cm2_mu = MetricDefinition(
+    id="nc_cm2_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_nc_cm2_mu,
+    clickhouse_sql="toInt64(nc_cm2_mu)",
+    parity_class="shadow_compare",
+)
+
+
+def _cm2_per_nc_mu(nc_cm2_mu: int, new_customers_count: int) -> int | None:
+    """CM2 per new customer (paise) = nc_cm2_mu / new_customers_count. compute.ts:429.
+
+    @paradigm: sql — integer FLOOR; None on zero new customers.
+    """
+    return _int_floor_div_or_null(nc_cm2_mu, new_customers_count)
+
+
+cm2_per_nc_mu = MetricDefinition(
+    id="cm2_per_nc_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_cm2_per_nc_mu,
+    clickhouse_sql=(
+        "if(new_customers_count > 0, "
+        "intDiv(nc_cm2_mu, new_customers_count), NULL)"
+    ),
+    parity_class="shadow_compare",
+)
+
+
+def _acquisition_ad_spend_mu(acquisition_ad_spend_mu: int) -> int:
+    """Acquisition-classified ad spend (paise) — the aMER denominator. ads-spend.ts.
+
+    DISTINCT from total_ad_spend_mu: only campaigns with resolved intent=='acquisition'.
+    @paradigm: sql — passthrough aggregate.
+    """
+    return acquisition_ad_spend_mu
+
+
+acquisition_ad_spend_mu = MetricDefinition(
+    id="acquisition_ad_spend_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_acquisition_ad_spend_mu,
+    clickhouse_sql="toInt64(acquisition_ad_spend_mu)",
     parity_class="shadow_compare",
 )
 
@@ -1040,8 +1099,8 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "misc_expenses_prorated_mu": misc_expenses_prorated_mu,
     "cm3_mu":                    cm3_mu,
     # Brain-native (parity_gap:true — correctness_fixture)
+    # pamer_bp DECOMMISSIONED (slice-4) — no legacy comparand. amer_bp redefined to legacy.
     "true_cm2_mu":               true_cm2_mu,
-    "pamer_bp":                  pamer_bp,
     "amer_bp":                   amer_bp,
     "ltv_cac_bp":                ltv_cac_bp,
     # Display-only ratios (CM2-first; ROAS/ACOS never decision metrics)
@@ -1052,10 +1111,14 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "prepaid_rate_bp":           prepaid_rate_bp,
     "aov_mu":                    aov_mu,
     "conversion_rate_bp":        conversion_rate_bp,
-    # Marketing efficiency
+    # Marketing efficiency (slice-4 reconciled to legacy)
     "mer_bp":                    mer_bp,
     "cac_mu":                    cac_mu,
-    "cac_payback_months":        cac_payback_months,
+    "cac_payback_months":        cac_payback_months,  # PY-only; slice-5 (cohorts), not wired in slice-4
+    "new_customer_revenue_mu":   new_customer_revenue_mu,
+    "nc_cm2_mu":                 nc_cm2_mu,
+    "cm2_per_nc_mu":             cm2_per_nc_mu,
+    "acquisition_ad_spend_mu":   acquisition_ad_spend_mu,
     # Phase-2 slice-3 (feat-rto-cod-economics): RTO/COD/logistics/pincode economics
     "rto_cost_mu":               rto_cost_mu,
     "rto_revenue_lost_mu":       rto_revenue_lost_mu,
