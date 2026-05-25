@@ -1,0 +1,132 @@
+{
+  "_meta": {
+    "description": "ClickHouse round-trip fixtures for intDiv vs '/' divergence. CF-C4-RATIO-DIVOP-1.",
+    "paradigm": "sql",
+    "constraint": "NO live data. Fixtures are synthetic and exactly computed. CF-C2-NO-LIVE-1.",
+    "purpose": "These fixtures prove that ClickHouse '/' on Int64 returns Float64 (not FLOOR), and that intDiv produces correct integer results. The kill-test: reverting one MV division from intDiv(...) to '/' causes the zero-denominator or divergent fixture to go RED.",
+    "gate": "CF-C4-RATIO-DIVOP-1 — MUST bind before any MV DDL is authored."
+  },
+  "intdiv_non_zero_remainder": [
+    {
+      "id": "ch-rt-1",
+      "description": "1/3 ratio → 3333 bp. intDiv(1 * 10000, 3) = intDiv(10000, 3) = 3333 (FLOOR). Float64: 10000/3 = 3333.333... which truncates to 3333 for positive (coincides with FLOOR for positives). Proof: intDiv and '/' agree for this case — the divergence is on ZERO-DENOM and larger inputs.",
+      "numerator": 1,
+      "denominator": 3,
+      "scale": 10000,
+      "expected_intdiv_result": 3333,
+      "float_division_result": 3333.3333333333,
+      "float_truncated": 3333,
+      "intdiv_matches_floor": true,
+      "zero_denom": false,
+      "note": "Non-zero-remainder: intDiv = 3333, float64 truncation = 3333 (positive coincidence). The bug is visible ONLY on zero-denominator days."
+    },
+    {
+      "id": "ch-rt-2",
+      "description": "7/3 ratio → 23333 bp. intDiv(7 * 10000, 3) = intDiv(70000, 3) = 23333 (FLOOR of 23333.33). float64: 70000.0/3 = 23333.333... truncates to 23333 in Int64 cast. Still agrees for positive non-edge cases.",
+      "numerator": 7,
+      "denominator": 3,
+      "scale": 10000,
+      "expected_intdiv_result": 23333,
+      "float_division_result": 23333.3333333333,
+      "float_truncated": 23333,
+      "intdiv_matches_floor": true,
+      "zero_denom": false,
+      "note": "Positive non-zero-remainder: intDiv == float truncation. Safe for positive values."
+    }
+  ],
+  "intdiv_zero_denominator": [
+    {
+      "id": "ch-rt-zero-1",
+      "description": "CRITICAL: zero denominator. rto_orders=1, total_shipments=0. intDiv with null-guard: if(total_shipments > 0, intDiv(rto_orders * 10000, total_shipments), NULL) → NULL. ClickHouse '/' without guard: 10000 / 0 → inf (Float64 +Inf). This is a real bug that PASSES all positive-integer tests.",
+      "rto_orders": 1,
+      "total_shipments": 0,
+      "numerator_scaled": 10000,
+      "denominator": 0,
+      "expected_intdiv_null_guarded": null,
+      "float_division_result_ch": "inf (Float64 positive infinity)",
+      "int64_cast_of_inf": "INT64_MAX = 9223372036854775807 (coercion garbage / undefined behavior)",
+      "zero_denom": true,
+      "kill_test": "Removing the null-guard (using '/' instead of 'if(denom>0, intDiv(...), NULL)') causes this fixture to return INT64_MAX instead of NULL — the test must go RED.",
+      "note": "CF-C4-RATIO-DIVOP-1: this is the canonical zero-denominator kill-test. Child-5 anomaly detection ingests INT64_MAX as a legitimate spike if not guarded."
+    },
+    {
+      "id": "ch-rt-zero-2",
+      "description": "zero denominator on AOV: net_sales=50000 paise, orders=0. intDiv with guard: NULL. Float64: 50000.0/0 = inf → INT64_MAX coercion.",
+      "net_sales_mu": 50000,
+      "orders_count": 0,
+      "expected_intdiv_null_guarded": null,
+      "float_division_result_ch": "inf",
+      "zero_denom": true,
+      "kill_test": "Without null-guard, aov_mu returns INT64_MAX on zero-order days.",
+      "note": "CF-C4-RATIO-DIVOP-1: AOV zero-denominator case."
+    }
+  ],
+  "float64_vs_floor_divergent": [
+    {
+      "id": "ch-rt-div-1",
+      "description": "Float64-vs-FLOOR divergent case. This case is designed to expose a scenario where ClickHouse Float64 intermediate value, when cast to Int64, differs from intDiv result due to floating-point representation. Example: intDiv(2147483647 * 10000, 3) = intDiv(21474836470000, 3) = 7158278823333. Float64: 21474836470000.0 / 3 = 7158278823333.333... In Float64 (IEEE-754 double), 21474836470000 cannot be represented exactly (53-bit mantissa limit for large integers). The Float64 result may be 7158278823333.0 or 7158278823334.0 depending on rounding — this is where Float64 diverges from intDiv.",
+      "numerator": 2147483647,
+      "scale": 10000,
+      "denominator": 3,
+      "numerator_scaled": 21474836470000,
+      "expected_intdiv_result": 7158278823333,
+      "float64_exact_result": 7158278823333.333,
+      "float64_precision_note": "For large integers (>2^53 = 9007199254740992), IEEE-754 double cannot represent all integers exactly. 21474836470000 > 2^44 but < 2^53, so it IS representable. However, the quotient 7158278823333.333 is NOT exactly representable; Float64 stores the nearest representable double.",
+      "potential_float64_cast": 7158278823333,
+      "intdiv_vs_float64_agree": true,
+      "note": "This case happens to agree for this specific value. The REAL divergence risk is at values > 2^53 where the integer itself is not exactly representable in Float64. The zero-denominator case (ch-rt-zero-1) is the concrete kill-test."
+    },
+    {
+      "id": "ch-rt-div-2",
+      "description": "Prorated misc expense: monthly_amount_mu=1000000 paise, days_in_month=28 (Feb 2026). intDiv(1000000, 28) = 35714 (FLOOR of 35714.285...). ClickHouse '/': 1000000.0/28 = 35714.285714...; toInt64 in ClickHouse truncates toward zero for positive → 35714. This case agrees. The ROUNDING_MODE_MISMATCH comes from Postgres ROUND_HALF_UP on the STORED legacy value, not from ClickHouse Float64 here.",
+      "monthly_amount_mu": 1000000,
+      "days_in_month": 28,
+      "expected_intdiv_result": 35714,
+      "float_division_result": 35714.285714,
+      "float_truncated_toward_zero": 35714,
+      "intdiv_matches_floor": true,
+      "cf_constraint": "CF-C4-PRORATED-DIVOP-1: use intDiv(monthly_amount_mu, toDaysInMonth(date)) — NEVER '30' constant",
+      "note": "Feb 2026 = 28 days. Feb 2024 (leap) = 29 days. A hardcoded '30' gives intDiv(1000000,30)=33333 — WRONG by 2381 paise (₹23.81/day). This is a bug, not a rounding delta."
+    },
+    {
+      "id": "ch-rt-div-3",
+      "description": "Hardcoded-30 constant bug exposure. monthly_amount_mu=1000000 paise, Feb 2026 (28 days). Wrong: intDiv(1000000, 30) = 33333. Correct: intDiv(1000000, 28) = 35714. Delta = 35714 - 33333 = 2381 paise (₹23.81/day). This is CF-C4-PRORATED-DIVOP-1 / CF-C4-DDR-MISC-PRORATE-1.",
+      "monthly_amount_mu": 1000000,
+      "correct_days_in_month": 28,
+      "wrong_constant_30": 30,
+      "expected_correct_result": 35714,
+      "wrong_result_with_30": 33333,
+      "delta_paise": 2381,
+      "delta_rupees": "23.81",
+      "cf_constraint": "CF-C4-PRORATED-DIVOP-1: adjudication must NOT let this bug hide as ROUNDING_MODE_MISMATCH",
+      "kill_test": "A test that uses days=30 for February MUST go RED when compared against expected_correct_result=35714."
+    }
+  ],
+  "cogs_settings_change_delta": [
+    {
+      "id": "ch-cogs-1",
+      "description": "COGS_SETTINGS_CHANGE_DELTA: coq-settings-change mid-day. Full-recompute model produces zero delta vs legacy. Incremental MV model produces non-zero delta.",
+      "workspace_id": "ws_test_cogs_001",
+      "date": "2026-01-15",
+      "scenario": "coq_settings_changed_at_14:00_UTC",
+      "product_id": "shopify_prod_001",
+      "old_coq_paise": 5000,
+      "new_coq_paise": 7500,
+      "orders_before_change": 10,
+      "orders_after_change": 8,
+      "total_orders": 18,
+      "full_recompute_cogs_mu": 135000,
+      "full_recompute_formula": "18 orders × 7500 paise (new coq, applied to ALL orders at recompute time) = 135000 paise",
+      "incremental_mv_cogs_mu": 110000,
+      "incremental_mv_formula": "10 orders × 5000 (old coq, captured before change) + 8 orders × 7500 (new coq) = 50000 + 60000 = 110000 paise",
+      "delta_paise": 25000,
+      "delta_rupees": "250.00",
+      "expected_brain_result": 135000,
+      "expected_legacy_result": 135000,
+      "brain_vs_legacy_delta": 0,
+      "category": "COGS_SETTINGS_CHANGE_DELTA",
+      "note": "CF-C4-COGS-MV-REFRESH-1: full-recompute = zero delta vs legacy. Incremental MV = ₹250 error. Brain uses full daily recompute to match legacy exactly.",
+      "kill_test": "If the model reverts to incremental MV, expected_brain_result would be 110000 ≠ 135000 — the test must go RED."
+    }
+  ]
+}
