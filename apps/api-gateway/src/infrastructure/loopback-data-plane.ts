@@ -20,6 +20,7 @@ import type {
   MetricRow,
   KpiSummaryRow,
   PnlWaterfallRow,
+  PnlStatementRow,
   StoreSummaryRow,
   StoreRevenueLadderStep,
   MorningBrief,
@@ -66,7 +67,27 @@ const SUGANDH_LOK_CANONICAL = {
   realized_revenue_mu: 185_000_000n, // ₹18.5L — net_revenue − 6_000_000 reversals
   order_count: 1_247n,
   aov_mu: 1_483n,                    // ~₹14.83 mean (display)
-  // Margin ladder (unchanged from prior dashboard seed)
+  // ---------------------------------------------------------------------
+  // Cost ladder (Phase-2 slice-2: feat-pnl-cm-waterfall). All paise.
+  // The CM ladder is RE-DERIVED from these via the registry formulas so the
+  // /pnl + /waterfall numbers are registry-traced and internally consistent.
+  // cm1 = net_revenue − cogs − variable_costs (the HONEST CM1; slice-2 fix).
+  // realized_revenue is the head used for the honest waterfall.
+  // ---------------------------------------------------------------------
+  cogs_mu: 82_000_000n,              // ₹8.2L COGS
+  variable_costs_mu: 6_000_000n,     // ₹0.6L shipping + packaging + website
+  total_ad_spend_mu: 65_000_000n,    // ₹6.5L ad spend
+  misc_expenses_prorated_mu: 4_000_000n, // ₹0.4L fixed overheads (prorated)
+  rto_orders: 224n,                  // ~18% of 1247 orders (matches rto_rate_bp 1800)
+  // Margin ladder RE-DERIVED via the honest registry formulas from the head
+  // (realized_revenue = 185_000_000) and the cost facts above — and pinned here so
+  // the existing dashboard KPI seed (cm2=₹3.2L, cm3=₹2.8L) stays consistent:
+  //   cm1 = 185_000_000 − 82_000_000 − 6_000_000 = 97_000_000
+  //   cm2 = 97_000_000 − 65_000_000             = 32_000_000  (== KPI seed)
+  //   cm3 = 32_000_000 − 4_000_000              = 28_000_000  (== KPI seed)
+  // The /pnl statement, the /waterfall chart, and the /dashboard KPI strip therefore
+  // all show the SAME CM2/CM3 — one canonical fact source (CF: cross-surface consistency).
+  cm1_mu: 97_000_000n,
   cm2_mu: 32_000_000n,
   cm3_mu: 28_000_000n,
   rto_rate_bp: 1_800,
@@ -124,67 +145,64 @@ function buildSugandhlokStoreSummary(): {
   return { summary, ladder };
 }
 
-/** Sugandh-Lok P&L waterfall seed. */
-function buildSugandhlokWaterfall(): PnlWaterfallRow[] {
+/**
+ * Sugandh-Lok HONEST CM waterfall — Phase-2 slice-2 (feat-pnl-cm-waterfall).
+ * Derived from SUGANDH_LOK_CANONICAL so /pnl, /waterfall and /dashboard share ONE
+ * fact source. The head is realized_revenue (the honest billing base). cm1 SUBTRACTS
+ * variable_costs (the slice-2 correction; the prior seed was COGS-only and used the
+ * net_revenue head). RTO is NOT folded into CM1 — it is the Brain-native True-CM2.
+ * cumulative_mu at each CM subtotal equals that subtotal (the chart invariant).
+ */
+function buildSugandhlokCmWaterfall(): PnlWaterfallRow[] {
+  const c = SUGANDH_LOK_CANONICAL;
   const epoch = DATA_EPOCH;
+  const head = c.realized_revenue_mu;          // 185_000_000
+  const cm1 = head - c.cogs_mu - c.variable_costs_mu;       // 97_000_000
+  const cm2 = cm1 - c.total_ad_spend_mu;                    // 32_000_000
+  const cm3 = cm2 - c.misc_expenses_prorated_mu;            // 28_000_000
   return [
-    {
-      definition_id: 'net_revenue_mu',
-      label: 'Net Revenue',
-      value_mu: 185_000_000n,
-      cumulative_mu: 185_000_000n,
-      currency_code: 'INR',
-      data_epoch: epoch,
-    },
-    {
-      definition_id: 'cogs_mu',
-      label: 'COGS',
-      value_mu: -82_000_000n,
-      cumulative_mu: 103_000_000n,
-      currency_code: 'INR',
-      data_epoch: epoch,
-    },
-    {
-      definition_id: 'cm1_mu',
-      label: 'CM1 (Gross Margin)',
-      value_mu: 103_000_000n,
-      cumulative_mu: 103_000_000n,
-      currency_code: 'INR',
-      data_epoch: epoch,
-    },
-    {
-      definition_id: 'total_ad_spend_mu',
-      label: 'Ad Spend',
-      value_mu: -65_000_000n,
-      cumulative_mu: 38_000_000n,
-      currency_code: 'INR',
-      data_epoch: epoch,
-    },
-    {
-      definition_id: 'cm2_mu',
-      label: 'CM2 (After Ads)',
-      value_mu: 38_000_000n,
-      cumulative_mu: 38_000_000n,
-      currency_code: 'INR',
-      data_epoch: epoch,
-    },
-    {
-      definition_id: 'misc_expenses_prorated_mu',
-      label: 'Fixed Overheads (Prorated)',
-      value_mu: -6_000_000n,
-      cumulative_mu: 32_000_000n,
-      currency_code: 'INR',
-      data_epoch: epoch,
-    },
-    {
-      definition_id: 'cm3_mu',
-      label: 'CM3 (After Overheads)',
-      value_mu: 32_000_000n,
-      cumulative_mu: 32_000_000n,
-      currency_code: 'INR',
-      data_epoch: epoch,
-    },
+    { definition_id: 'net_revenue_mu', label: 'Realized Revenue', value_mu: head, cumulative_mu: head, currency_code: 'INR', data_epoch: epoch },
+    { definition_id: 'cogs_mu', label: 'COGS', value_mu: -c.cogs_mu, cumulative_mu: head - c.cogs_mu, currency_code: 'INR', data_epoch: epoch },
+    { definition_id: 'variable_costs_mu', label: 'Variable Costs', value_mu: -c.variable_costs_mu, cumulative_mu: cm1, currency_code: 'INR', data_epoch: epoch },
+    { definition_id: 'cm1_mu', label: 'CM1 (Gross Contribution)', value_mu: cm1, cumulative_mu: cm1, currency_code: 'INR', data_epoch: epoch },
+    { definition_id: 'total_ad_spend_mu', label: 'Ad Spend', value_mu: -c.total_ad_spend_mu, cumulative_mu: cm2, currency_code: 'INR', data_epoch: epoch },
+    { definition_id: 'cm2_mu', label: 'CM2 (After Ads)', value_mu: cm2, cumulative_mu: cm2, currency_code: 'INR', data_epoch: epoch },
+    { definition_id: 'misc_expenses_prorated_mu', label: 'Fixed Overheads (Prorated)', value_mu: -c.misc_expenses_prorated_mu, cumulative_mu: cm3, currency_code: 'INR', data_epoch: epoch },
+    { definition_id: 'cm3_mu', label: 'CM3 (After Overheads)', value_mu: cm3, cumulative_mu: cm3, currency_code: 'INR', data_epoch: epoch },
   ];
+}
+
+/**
+ * Sugandh-Lok HONEST P&L statement — Phase-2 slice-2. Derived from the canonical seed.
+ * true_cm2 = cm2 − RTO provision (Brain-native), using the same registry formula shape:
+ *   rto_provision = intDiv(rto_orders × (ad_spend + variable_costs + cogs), order_count)
+ */
+function buildSugandhlokPnlStatement(): PnlStatementRow {
+  const c = SUGANDH_LOK_CANONICAL;
+  const net_revenue = c.realized_revenue_mu;
+  const cm1 = net_revenue - c.cogs_mu - c.variable_costs_mu;
+  const cm2 = cm1 - c.total_ad_spend_mu;
+  const cm3 = cm2 - c.misc_expenses_prorated_mu;
+  // True-CM2 (integer FLOOR; mirrors true_cm2_mu registry formula).
+  const costBase = c.total_ad_spend_mu + c.variable_costs_mu + c.cogs_mu;
+  const rtoProvision = (c.rto_orders * costBase) / c.order_count; // bigint / = FLOOR
+  const trueCm2 = cm2 - rtoProvision;
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    net_revenue_mu: net_revenue,
+    cogs_mu: c.cogs_mu,
+    variable_costs_mu: c.variable_costs_mu,
+    cm1_mu: cm1,
+    total_ad_spend_mu: c.total_ad_spend_mu,
+    cm2_mu: cm2,
+    misc_expenses_prorated_mu: c.misc_expenses_prorated_mu,
+    cm3_mu: cm3,
+    true_cm2_mu: trueCm2,
+    order_count: c.order_count,
+  };
 }
 
 /** Sugandh-Lok Morning Brief seed (registry-derived; NOT LLM numbers). */
@@ -344,10 +362,30 @@ export class StubDataPlane implements DataPlanePort {
     workspace_id: string;
     date_range: DateRange;
   }): Promise<{ steps: PnlWaterfallRow[]; data_epoch: Date }> {
+    // Phase-2 slice-2: re-pointed to the SAME honest builder as getCmWaterfall —
+    // ONE CM-waterfall source of truth (Single-Primitive Rule). metrics.pnlWaterfall
+    // (Child-6 alias) and pnl.cmWaterfall therefore never diverge.
+    return this.getCmWaterfall(params);
+  }
+
+  async getCmWaterfall(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ steps: PnlWaterfallRow[]; data_epoch: Date }> {
     if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
-    return { steps: buildSugandhlokWaterfall(), data_epoch: DATA_EPOCH };
+    return { steps: buildSugandhlokCmWaterfall(), data_epoch: DATA_EPOCH };
+  }
+
+  async getPnlStatement(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ statement: PnlStatementRow; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { statement: buildSugandhlokPnlStatement(), data_epoch: DATA_EPOCH };
   }
 
   async getStoreSummary(params: {

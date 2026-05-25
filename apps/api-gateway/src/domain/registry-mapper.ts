@@ -12,7 +12,12 @@
 // invariant — not just a static type check.
 
 import { METRIC_REGISTRY, type MetricDefinition } from '@brain/lib-metrics';
-import type { KpiSummaryRow, PnlWaterfallRow, StoreRevenueLadderStep } from './proto-types.js';
+import type {
+  KpiSummaryRow,
+  PnlWaterfallRow,
+  PnlStatementRow,
+  StoreRevenueLadderStep,
+} from './proto-types.js';
 
 // _METRIC_COLUMNS mirrors query_gateway.py's _METRIC_COLUMNS tuple.
 // Every BFF output field must be in this set (CF-C6-REGISTRY-ONLY-BFF-1).
@@ -64,14 +69,32 @@ export const KPI_FIELDS_TO_DEFINITION_ID: Record<string, string> = {
 
 // PNL_WATERFALL_DEFINITION_IDS: the ordered set of registry ids for the P&L waterfall.
 // Each step MUST trace to a registry definition (CF-C6-REGISTRY-ONLY-BFF-1).
+// Phase-2 slice-2 (feat-pnl-cm-waterfall): variable_costs_mu added (the honest CM1 line)
+// and true_cm2_mu permitted (the RTO-honest CM2 rung).
 export const PNL_WATERFALL_DEFINITION_IDS = [
   'net_revenue_mu',
   'cogs_mu',
+  'variable_costs_mu',
   'cm1_mu',
   'total_ad_spend_mu',
   'cm2_mu',
   'misc_expenses_prorated_mu',
   'cm3_mu',
+  'true_cm2_mu',
+] as const;
+
+// PNL_STATEMENT_DEFINITION_IDS: the registry ids that appear as P&L statement lines.
+// Phase-2 slice-2. Every PnlStatementRow money field must trace to one of these.
+export const PNL_STATEMENT_DEFINITION_IDS = [
+  'net_revenue_mu',
+  'cogs_mu',
+  'variable_costs_mu',
+  'cm1_mu',
+  'total_ad_spend_mu',
+  'cm2_mu',
+  'misc_expenses_prorated_mu',
+  'cm3_mu',
+  'true_cm2_mu',
 ] as const;
 
 /**
@@ -114,6 +137,26 @@ export function assertWaterfallDefinitionId(step: PnlWaterfallRow): void {
       `G-REGISTRY-ONLY VIOLATION: P&L waterfall definition_id="${step.definition_id}" ` +
         `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
     );
+  }
+}
+
+/**
+ * Validate that every money field on a PnlStatementRow traces to a registry definition_id.
+ * Phase-2 slice-2 (feat-pnl-cm-waterfall). G-REGISTRY-ONLY: no ad-hoc derived P&L line.
+ * Mutant probe: add an orphan `gross_margin_pct` field → this throws.
+ */
+export function assertPnlStatementTraceability(row: PnlStatementRow): void {
+  const nonMetricFields = ['workspace_id', 'period', 'data_epoch', 'currency_code', 'order_count'];
+  const fieldNames = Object.keys(row).filter((k) => !nonMetricFields.includes(k));
+  const allowed = new Set<string>(PNL_STATEMENT_DEFINITION_IDS);
+
+  for (const field of fieldNames) {
+    if (!allowed.has(field) && !(field in METRIC_REGISTRY)) {
+      throw new Error(
+        `G-REGISTRY-ONLY VIOLATION: P&L statement field "${field}" does not trace to ` +
+          `any registry definition_id. CF-C6-REGISTRY-ONLY-BFF-1. No ad-hoc P&L lines.`,
+      );
+    }
   }
 }
 

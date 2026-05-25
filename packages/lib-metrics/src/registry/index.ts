@@ -11,6 +11,7 @@ export {
   NET_NET_TAX_MU,
   NET_REVENUE_MU,
   // Cost ladder
+  VARIABLE_COSTS_MU,
   CM1_MU,
   CM2_MU,
   MISC_EXPENSES_PRORATED_MU,

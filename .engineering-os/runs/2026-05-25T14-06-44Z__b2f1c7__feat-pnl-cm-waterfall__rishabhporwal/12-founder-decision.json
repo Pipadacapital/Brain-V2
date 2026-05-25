@@ -1,0 +1,10 @@
+{
+  "req_id": "feat-pnl-cm-waterfall",
+  "stage": 7,
+  "decision": "APPROVE",
+  "decided_by": "cto-advisor (Rohan) on Founder's behalf",
+  "delegation_basis": "Standing Founder delegation: Rohan signs every Founder gate (feedback_founder_delegates_to_cto_advisor). Final-review §7 confirms NO hard-rule deviation (no dependency violation, Single-Primitive honored, no compliance gap, SQL-only, no gate-skip).",
+  "ts": "2026-05-25T14:30:00Z",
+  "commit_status": "NOT COMMITTED — awaits Founder free-text 'commit it' (harness guard). Mechanical slice-scoped command in pending-founder-commit.md.",
+  "next": "Stage 8 readiness only (no live deploy, no commit)."
+}

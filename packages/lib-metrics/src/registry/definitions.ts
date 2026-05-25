@@ -139,14 +139,38 @@ export const REALIZED_REVENUE_MU: MetricDefinition = {
 // Cost ladder
 // ---------------------------------------------------------------------------
 
+// Variable Costs (Shipping + Packaging + Website charges). Byte-identical pair with
+// the Python registry (definitions.py:273). Added here in Phase-2 slice-2 — it was
+// previously Python-only, which is why TS cm1_mu was COGS-only and silently diverged
+// from Python's honest cm1_mu = net_revenue − cogs − variable_costs. The shadow_compare
+// parity gate checks structural fields, not formula text, so the divergence shipped
+// unnoticed (same root cause as the feat-metric-engine-olap-split Shreya H-1 bounce).
+export const VARIABLE_COSTS_MU: MetricDefinition = {
+  id: 'variable_costs_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (shipping_mu: bigint, packaging_mu: bigint, website_charges_mu: bigint): bigint =>
+    shipping_mu + packaging_mu + website_charges_mu,
+  clickhouse_sql: 'toInt64(shipping_mu + packaging_mu + website_charges_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// CM1 = Net Revenue − COGS − Variable Costs. Phase-2 slice-2 CORRECTION: the prior
+// TS formula was net_revenue − cogs (COGS-only), diverging from the honest Python
+// definition (definitions.py:285) and from legacy compute-daily.ts:187
+// (cm1 = netSales − cogs − shipping − packaging − website). Now byte-identical to
+// Python. DDR row _ROW_CM1 documents the canonical CM1 and why RTO is NOT folded in
+// here (RTO is provisioned at CM2 via the Brain-native true_cm2_mu, the honest place).
 export const CM1_MU: MetricDefinition = {
   id: 'cm1_mu',
   kind: 'money',
   unit: 'mu',
   scale: 1,
-  formula_ts: (net_revenue_mu: bigint, cogs_mu: bigint): bigint =>
-    net_revenue_mu - cogs_mu,
-  clickhouse_sql: 'net_revenue_mu - cogs_mu',
+  formula_ts: (net_revenue_mu: bigint, cogs_mu: bigint, variable_costs_mu: bigint): bigint =>
+    net_revenue_mu - cogs_mu - variable_costs_mu,
+  clickhouse_sql: 'toInt64(net_revenue_mu - cogs_mu - variable_costs_mu)',
   display_only: false,
   parity_class: 'shadow_compare',
 };
@@ -413,6 +437,7 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   net_net_tax_mu: NET_NET_TAX_MU,
   net_revenue_mu: NET_REVENUE_MU,
   realized_revenue_mu: REALIZED_REVENUE_MU,
+  variable_costs_mu: VARIABLE_COSTS_MU,
   cm1_mu: CM1_MU,
   cm2_mu: CM2_MU,
   misc_expenses_prorated_mu: MISC_EXPENSES_PRORATED_MU,

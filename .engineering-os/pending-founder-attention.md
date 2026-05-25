@@ -143,3 +143,25 @@ ALSO surfaced (not a slice blocker, your disposition):
   `login-form.tsx` change (useRouter not wrapped in an app-router provider in the test).
 - uv workspace fails to build (`brain-cost-router` missing `tool.uv.sources` entry in
   intelligence-service) — blocks `uv run` for Python tests; worked around with an ephemeral venv.
+
+---
+
+## 2026-05-25T14:30Z — Recurring-pattern candidate rule (8th occurrence) — feat-pnl-cm-waterfall
+
+The "verify-the-verifier / vacuous gate" root cause recurred for the **8th time** (7th high-stakes
+child of the migration epic), now in Phase-2 slice-2. The `shadow_compare` registry parity gate —
+already shipped and GREEN across prior slices — was silently permitting a TS↔Python `cm1_mu` formula
+divergence (TS shipped COGS-only `net_revenue − cogs`; Python honest `net_revenue − cogs − variable_costs`),
+because it compares structural fields + decimal-conversion vectors, never the formula text. This was a
+real, material correctness bug (CM1 overstated by the entire variable-cost line) that passed every gate.
+
+Caught at Stage-1 by Rohan via code-read + recall of the Child-4 H-1 bounce; closed in slice-2 with a
+production-path cross-language formula anchor and re-verified at Stage-6.
+
+Evidence #8 appended to the existing proposal (NOT self-adopted):
+`.engineering-os/rule-proposals/2026-05-25__verify-the-verifier-mutation-on-gate.md`
+
+**Action:** review with `/adopt-rule verify-the-verifier-mutation-on-gate` or
+`/reject-rule verify-the-verifier-mutation-on-gate <reason>`. 8 occurrences strongly argue for adoption:
+the gate was already green in production and hid a real bug — it was caught only because a reviewer
+recalled the lineage, which is not a repeatable control.

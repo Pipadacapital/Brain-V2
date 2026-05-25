@@ -31,6 +31,7 @@ import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
+  assertPnlStatementTraceability,
   getMetricScale,
 } from '../domain/registry-mapper.js';
 import {
@@ -155,6 +156,10 @@ export function createBrainRouter(
           });
         }
 
+        // Phase-2 slice-2: getPnlWaterfall now delegates to the honest getCmWaterfall
+        // (ONE CM-waterfall source of truth). metrics.pnlWaterfall is the Child-6 alias
+        // kept so the existing web component query key keeps working; pnl.cmWaterfall is
+        // the canonical name. No second computation path.
         const result = await dataPlane.getPnlWaterfall({
           workspace_id: ctx.workspaceId,
           date_range: { start: input.date_start, end: input.date_end },
@@ -279,6 +284,78 @@ export function createBrainRouter(
         return {
           ladder: result.ladder,
           currency_code: result.summary.currency_code,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
+  // pnl router — workspace tier, requireRole(ANALYST)
+  // Phase-2 slice-2 (feat-pnl-cm-waterfall): the honest P&L statement + CM waterfall.
+  // CF-C6-RENDER-ONLY-1: zero arithmetic here — values from the data plane.
+  // CF-C6-REGISTRY-ONLY-BFF-1: every line/step traces to a registry definition_id.
+  // CF-C6-BIGINT-JSON-1: _mu = bigint over superjson.
+  // -------------------------------------------------------------------
+  const pnlRouter = router({
+    /** Honest P&L statement ladder (net_revenue → cm3 + True-CM2). requireRole(ANALYST). */
+    statement: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `pnl.statement requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        const result = await dataPlane.getPnlStatement({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+
+        // G-REGISTRY-ONLY: every P&L line must trace to a registry definition_id.
+        assertPnlStatementTraceability(result.statement);
+
+        return {
+          statement: result.statement,
+          data_epoch: result.data_epoch,   // CF-C6-AS-OF-STAMP-1
+          request_id: ctx.requestId,
+        };
+      }),
+
+    /** Honest CM waterfall steps (signed, cumulative; Visx chart data). requireRole(ANALYST). */
+    cmWaterfall: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `pnl.cmWaterfall requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        const result = await dataPlane.getCmWaterfall({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+
+        for (const step of result.steps) {
+          assertWaterfallDefinitionId(step);
+        }
+
+        return {
+          steps: result.steps,
           data_epoch: result.data_epoch,
           request_id: ctx.requestId,
         };
@@ -437,6 +514,7 @@ export function createBrainRouter(
     workspace: workspaceRouter,
     metrics: metricsRouter,
     store: storeRouter,
+    pnl: pnlRouter,
     morningBrief: morningBriefRouter,
     device: deviceRouter,
   });

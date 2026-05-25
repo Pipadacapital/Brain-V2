@@ -10,6 +10,8 @@ import {
   DISPLAY_ONLY_METRIC_IDS,
   CORRECTNESS_FIXTURE_METRIC_IDS,
   NET_SALES_MU,
+  VARIABLE_COSTS_MU,
+  CM1_MU,
   CM2_MU,
   RTO_RATE_BP,
   ACOS_BP,
@@ -32,7 +34,7 @@ describe('METRIC_REGISTRY completeness', () => {
   it('contains all required metric ids', () => {
     const required = [
       'net_sales_mu', 'net_net_tax_mu', 'net_revenue_mu',
-      'cm1_mu', 'cm2_mu', 'misc_expenses_prorated_mu', 'cm3_mu',
+      'variable_costs_mu', 'cm1_mu', 'cm2_mu', 'misc_expenses_prorated_mu', 'cm3_mu',
       'rto_rate_bp', 'prepaid_rate_bp', 'conversion_rate_bp', 'aov_mu',
       'acos_bp', 'blended_roas_x100',
       'true_cm2_mu', 'pamer_bp', 'amer_bp', 'ltv_cac_bp',
@@ -79,7 +81,7 @@ describe('METRIC_REGISTRY completeness', () => {
   });
 
   it('shadow_compare metrics do NOT have parity_class=correctness_fixture', () => {
-    const shadowMetrics = ['net_sales_mu', 'cm1_mu', 'cm2_mu', 'rto_rate_bp', 'acos_bp'];
+    const shadowMetrics = ['net_sales_mu', 'variable_costs_mu', 'cm1_mu', 'cm2_mu', 'rto_rate_bp', 'acos_bp'];
     for (const id of shadowMetrics) {
       expect(METRIC_REGISTRY[id].parity_class).toBe('shadow_compare');
     }
@@ -124,6 +126,43 @@ describe('formula_ts: revenue ladder arithmetic', () => {
   it('cm2_mu: cm1 - total_ad_spend', () => {
     const result = CM2_MU.formula_ts(500000n, 80000n);
     expect(result).toBe(420000n);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase-2 slice-2: CM-ladder cross-language formula anchor (NON-VACUOUS gate).
+// These assertions pin the EXACT formula outputs and MIRROR the Python anchors in
+// pylibs/brain_metrics/tests/test_registry.py (test_cm1_mu / test_variable_costs_mu).
+// The shadow_compare structural gate does NOT compare formula text — so a formula
+// divergence (the cm1_mu COGS-only bug) passes it silently. THESE assertions bite:
+// the pre-fix TS cm1_mu(779000n, 200000n) returned 579000n; the honest 3-arg form
+// returns 529000n. Same numeric anchor on both sides = a real cross-language gate.
+// ---------------------------------------------------------------------------
+describe('formula_ts: CM ladder cross-language anchor (slice-2)', () => {
+  it('variable_costs_mu: shipping + packaging + website (mirrors Python)', () => {
+    const result = VARIABLE_COSTS_MU.formula_ts(30000n, 12000n, 8000n);
+    expect(result).toBe(50000n);
+  });
+
+  it('cm1_mu: net_revenue - cogs - variable_costs (honest; mirrors Python test_cm1_mu)', () => {
+    // Python anchor: f(net_revenue_mu=779000, cogs_mu=200000, variable_costs_mu=50000) == 529000
+    const result = CM1_MU.formula_ts(779000n, 200000n, 50000n);
+    expect(result).toBe(529000n);
+  });
+
+  it('cm1_mu: negative when variable costs + cogs exceed net revenue (mirrors Python)', () => {
+    const result = CM1_MU.formula_ts(100000n, 200000n, 50000n);
+    expect(result).toBe(-150000n);
+  });
+
+  it('cm1_mu is 3-arg (variable costs NOT dropped) — kills the COGS-only mutant', () => {
+    // The old COGS-only formula ignored variable_costs entirely: cm1(779000,200000,X)
+    // would equal 579000 for ANY X. The honest formula MUST move with the 3rd arg.
+    // cm1_mu is a money formula → always bigint; cast the union return for arithmetic.
+    const withVar = CM1_MU.formula_ts(779000n, 200000n, 50000n) as bigint;
+    const withMoreVar = CM1_MU.formula_ts(779000n, 200000n, 80000n) as bigint;
+    expect(withVar).not.toBe(withMoreVar);
+    expect(withVar - withMoreVar).toBe(30000n);
   });
 });
 

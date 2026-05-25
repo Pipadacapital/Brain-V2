@@ -118,6 +118,31 @@ export interface PnlWaterfallRow {
   data_epoch: Date;
 }
 
+/**
+ * PnlStatementRow — the honest P&L contribution-margin ladder over a date range.
+ * Phase-2 slice-2 (feat-pnl-cm-waterfall). All _mu are bigint (int64 paise).
+ * Every field traces to a registry definition_id (CF-C6-REGISTRY-ONLY-BFF-1).
+ * cm1_mu = net_revenue − cogs − variable_costs (the honest CM1; slice-2 correction).
+ * true_cm2_mu is the Brain-native RTO-honest CM2 (null when there are no orders).
+ */
+export interface PnlStatementRow {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+
+  net_revenue_mu: bigint;
+  cogs_mu: bigint;
+  variable_costs_mu: bigint;
+  cm1_mu: bigint;
+  total_ad_spend_mu: bigint;
+  cm2_mu: bigint;
+  misc_expenses_prorated_mu: bigint;
+  cm3_mu: bigint;
+  true_cm2_mu: bigint | null;   // Brain-native; null on zero-order range
+  order_count: bigint;
+}
+
 // ---------------------------------------------------------------------------
 // Intelligence proto types (brain.intelligence.v1)
 // ---------------------------------------------------------------------------
@@ -220,6 +245,25 @@ export interface DataPlanePort {
     workspace_id: string;
     date_range: DateRange;
   }): Promise<{ steps: PnlWaterfallRow[]; data_epoch: Date }>;
+
+  /**
+   * Phase-2 slice-2: the honest CM waterfall (signed, cumulative steps).
+   * ONE source of truth — getPnlWaterfall delegates to THIS in the stub/loopback,
+   * so metrics.pnlWaterfall and pnl.cmWaterfall never diverge (Single-Primitive Rule).
+   */
+  getCmWaterfall(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ steps: PnlWaterfallRow[]; data_epoch: Date }>;
+
+  /**
+   * Phase-2 slice-2: the honest P&L statement ladder over a date range.
+   * CF-C6-DATA-SEAM-1: additive method on the SAME port — no second code path.
+   */
+  getPnlStatement(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ statement: PnlStatementRow; data_epoch: Date }>;
 
   /**
    * Phase-2 slice-1: workspace store summary + revenue ladder.

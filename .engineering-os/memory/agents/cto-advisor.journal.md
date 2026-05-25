@@ -458,3 +458,24 @@
 **Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, india-commerce-economics, architecture-patterns, agentic-design, tech-stack-evaluation, verification-before-completion, subagent-orchestration
 **Open questions:** TS<->Python net_revenue_mu signature asymmetry (reconcile before slice 2 builds CM ladder on it); fix uv-workspace sources entry.
 **Next:** platform-devops (Jatin) Stage-8 readiness (no deploy, no commit). Per Founder directive: slice 1 at Stage-6 PASS -> STOP; do not auto-start slice 2; report to Founder.
+
+## 2026-05-25T14:06:44Z — Rohan (cto-advisor) — feat-pnl-cm-waterfall
+**Stage:** 1 (intake — Phase-2 slice 2)
+**Action:** ADVANCE to Stage 2
+**Personas spawned (Stage 1):** 0 (clear repeat of slice-1 vertical pattern; dominant risks pre-resolved by Children 0/1/2/4; the one net-new finding is a concrete code-level correctness instruction, not an open question)
+**Decision:** ADVANCE
+**Rationale:** Honest P&L + CM waterfall on slice-1 foundation. SQL. CRITICAL binding finding surfaced from code+recall: TS cm1_mu (net_revenue−cogs) diverges from Python cm1_mu (net_revenue−cogs−variable_costs); TS has no variable_costs_mu; the shadow_compare parity gate is vacuous on formula text (same root cause as the feat-metric-engine-olap-split Shreya H-1 bounce). Must be CLOSED, not passed silently.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, verification-before-completion, architecture-patterns
+**Open questions:** None blocking. Aryan to decide re-point vs deprecate of Child-6 metrics.pnlWaterfall (Single-Primitive Rule).
+**Next:** Aryan, Stage 2.
+**Prep fix applied:** intelligence-service/pyproject.toml — added [tool.uv.sources] brain-cost-router={workspace=true}; `uv run` now builds the whole workspace (unblocks Python parity tests; slice 1 had worked around with an ephemeral venv).
+
+## 2026-05-25T14:30:00Z — Rohan (cto-advisor) — feat-pnl-cm-waterfall
+**Stage:** 6 (final review) + 7 (Founder gate, delegated)
+**Action:** PASS → APPROVE (signed under standing delegation; nothing committed)
+**Personas spawned (Stage 1):** 0
+**Decision:** PASS / APPROVE
+**Rationale:** Honest P&L + CM waterfall shipped on /pnl + /waterfall. Closed a SHIPPED correctness bug (TS cm1_mu COGS-only vs Python honest) + hardened the parity gate (non-vacuous cross-language formula anchor) = 8th occurrence of the verify-the-verifier root cause, evidence #8 appended to the human-gated proposal (NOT self-adopted). Over-engineering audit clean; 4-layer tenancy fail-closed (wire-proven); SQL paradigm; FX poison excluded; per-SKU GST preserved. Independently re-ran 5 of Tanvi's gates + hand-re-derived True-CM2 against the live wire — replicated PASS.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion
+**Open questions:** None. Candidate rule surfaced to Founder (/adopt-rule verify-the-verifier-mutation-on-gate).
+**Next:** Founder commit gate (free-text "commit it"); then slice 3 (feat-rto-cod-economics) — NOT auto-started.

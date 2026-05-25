@@ -164,6 +164,58 @@ _ROW_CM2 = DDRRow(
     formula_snapshot="cm2_mu = cm1_mu - total_ad_spend_mu (integer subtraction, paise)",
 )
 
+_ROW_CM1 = DDRRow(
+    # Legacy CANONICAL: compute-daily.ts:187 (cm1 = netSales - cogs - shipping - packaging - website)
+    # Legacy DIVERGENT: waterfall.ts:987 (cm1 = revenueAfterTaxShipping - cogs - varCosts - rto)
+    # Phase-2 slice-2 (feat-pnl-cm-waterfall). Closes the TS<->Python cm1_mu divergence.
+    legacy_formula=(
+        "compute-daily.ts:187 (cm1 = netSales - cogs - shipping - packaging - website); "
+        "divergent path waterfall.ts:987 (cm1 = revenueAfterTaxShipping - cogs - varCosts - rto)"
+    ),
+    brain_formula="cm1_mu",
+    reason=(
+        "Brain canonicalizes CM1 on the compute-daily daily path: "
+        "cm1_mu = net_revenue_mu - cogs_mu - variable_costs_mu (variable_costs = shipping + "
+        "packaging + website charges). TWO things this row pins: "
+        "(1) The legacy /waterfall page folds RTO charges AND tax/shipping into the CM1 base; "
+        "Brain does NOT fold RTO into CM1 (that would double-count against the CM2-level RTO "
+        "provision). The honest RTO adjustment lives at CM2 via the Brain-native true_cm2_mu "
+        "(parity_gap:true, _ROW_TRUE_CM2) — the correct place. "
+        "(2) HISTORICAL CORRECTNESS NOTE: before slice-2 the TypeScript registry cm1_mu was "
+        "net_revenue - cogs (COGS-only), silently diverging from the Python cm1_mu and from "
+        "legacy compute-daily.ts:187. The shadow_compare gate compares structural fields and "
+        "golden decimal-conversion vectors, NOT formula text, so the divergence shipped "
+        "unnoticed (same root cause as the feat-metric-engine-olap-split Shreya H-1 bounce). "
+        "Slice-2 added variable_costs_mu to the TS registry, corrected cm1_mu to the 3-arg "
+        "honest form (byte-identical to Python), and added a cross-language formula anchor "
+        "fixture so the gate now bites. This row is the governance record of that correction."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "vs compute-daily canonical: delta = 0 (Brain matches the daily path exactly). "
+        "vs the /waterfall page path: Brain_cm1 >= waterfall_cm1 because waterfall subtracts "
+        "RTO charges (and tax/shipping) inside CM1; Brain defers RTO to true_cm2_mu. "
+        "Magnitude = the RTO charge total + the tax/shipping the waterfall page nets into CM1. "
+        "Worked anchor: net_revenue=779000p, cogs=200000p, variable_costs=50000p -> "
+        "cm1 = 779000 - 200000 - 50000 = 529000p (integer paise)."
+    ),
+    business_impact=(
+        "CM1 (gross contribution after COGS + variable fulfilment costs) is the head of the "
+        "CM ladder feeding CM2 -> CM3 -> True-CM2. The pre-slice-2 COGS-only TS cm1_mu "
+        "OVERSTATED CM1 by the full variable-cost line on every workspace that displayed the "
+        "TS-derived ladder — materially inflating perceived contribution. The correction makes "
+        "the /pnl and /waterfall pages honest and consistent with the analytics rollup."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "cm1_mu = net_revenue_mu - cogs_mu - variable_costs_mu (integer subtraction, paise); "
+        "variable_costs_mu = shipping_mu + packaging_mu + website_charges_mu; "
+        "ClickHouse: toInt64(net_revenue_mu - cogs_mu - variable_costs_mu). "
+        "RTO is NOT in CM1 — RTO provision applied at CM2 via true_cm2_mu."
+    ),
+)
+
 _ROW_MISC_PRORATED = DDRRow(
     # Legacy: compute-daily.ts:236-243 (monthlyAmt / getDaysInMonth(dateAtNoonUtc))
     # CF-C4-DDR-MISC-PRORATE-1: Feb-boundary example; adjudication discipline.
@@ -546,6 +598,7 @@ _ROW_ACOS = DDRRow(
 # ---------------------------------------------------------------------------
 
 DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
+    "cm1_mu":                    _ROW_CM1,
     "cm2_mu":                    _ROW_CM2,
     "misc_expenses_prorated_mu": _ROW_MISC_PRORATED,
     "cogs_mu":                   _ROW_COGS,
