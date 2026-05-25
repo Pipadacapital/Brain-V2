@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-25T16:30:00Z",
+  "updated_at": "2026-05-25T16:25:57Z",
   "updated_by": "cto-advisor (Rohan) \u2014 slice-7 Stage-6 PASS",
   "active_requirements": [
     {
@@ -3146,34 +3146,6 @@
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "run_folder": ".engineering-os/runs/2026-05-25T15-46-22Z__slice6__feat-catalog-inventory__rishabhporwal",
       "updated_at": "2026-05-25T16:02:00Z",
-      "updated_by": "cto-advisor"
-    },
-    {
-      "req_id": "feat-finance-settings-goals",
-      "parent_epic": "epic-phase2-feature-parity",
-      "slice": 7,
-      "title": "COGS/costs + goals + festivals + calendar (/costs, /settings/goals, /settings/festivals, /calendar)",
-      "status": "approved",
-      "stage": 8,
-      "blocks": [
-        "feat-store-order-fact-layer",
-        "feat-pnl-cm-waterfall"
-      ],
-      "feature_class": "high-stakes",
-      "feature_class_rationale": "money (goal/cost/CM bigint) + multi-tenancy (workspace-scoped reads + RLS-on-write) + schema/registry change (1 new def goal_attainment_bp + settings/calendar tRPC + DataPlanePort methods) + an idempotent MANAGER-gated write surface (defense-in-depth)",
-      "trigger_surfaces_touched": [
-        "money",
-        "multi-tenancy",
-        "schema-registry",
-        "write-surface"
-      ],
-      "needs_personas": [],
-      "paradigm": "sql",
-      "final_review": "PASS",
-      "founder_decision": "delegated-auto-approve (standing delegation; no hard-rule deviation); Stage-8 readiness only \u2014 awaits Founder 'commit it'",
-      "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
-      "run_folder": ".engineering-os/runs/2026-05-25T16-20-00Z__slice7__feat-finance-settings-goals",
-      "updated_at": "2026-05-25T16:30:00Z",
       "updated_by": "cto-advisor"
     }
   ]

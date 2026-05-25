@@ -315,6 +315,39 @@ export function assertCatalogDefinitionId(definitionId: string): void {
   }
 }
 
+// SETTINGS_DEFINITION_IDS: registry ids on the slice-7 goals/costs/calendar surfaces.
+// Phase-2 slice-7 (feat-finance-settings-goals). Goal attainment = goal_attainment_bp; the
+// cost stack lands in the EXISTING cm1_mu (one source of truth, NOT a new COGS def); the
+// calendar grid reuses net_revenue_mu/cm3_mu/mer_bp/amer_bp/cac_mu/aov_mu. festival learned-
+// lift is a PHANTOM and must NOT appear here (Rohan Finding 2).
+export const SETTINGS_DEFINITION_IDS = [
+  'goal_attainment_bp',
+  'cm1_mu',
+  'net_revenue_mu',
+  'cm3_mu',
+  'mer_bp',
+  'amer_bp',
+  'cac_mu',
+  'aov_mu',
+] as const;
+
+/**
+ * Validate that a settings/goals/calendar definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived settings field in the BFF.
+ * Mutant probe: id "festival_lift" (phantom) → this throws.
+ */
+export function assertSettingsDefinitionId(definitionId: string): void {
+  const isKnown =
+    SETTINGS_DEFINITION_IDS.includes(definitionId as (typeof SETTINGS_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: settings definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
 /**
  * Look up a MetricDefinition by id. Returns undefined for count metrics (no registry entry).
  */

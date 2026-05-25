@@ -4,6 +4,8 @@
 // DO NOT re-export from an alternate path — Single-Primitive Rule.
 
 export type { MetricDefinition, MetricKind, MetricUnit, ParityClass } from './types.js';
+// Phase-2 slice-7: directional Goal RAG types (classification, not registry metric).
+export type { GoalRag, GoalValueType } from './definitions.js';
 
 export {
   // Revenue ladder
@@ -55,6 +57,14 @@ export {
   _CF_S6_INV_DAYS_LEFT_ANCHOR,
   _CF_S6_INV_DAYS_LEFT_INFINITE_ANCHOR,
   _CF_S6_FP_SECOND_ORDER_ANCHOR,
+  // Phase-2 slice-7: goal attainment + directional RAG (festival_lift decommissioned)
+  GOAL_ATTAINMENT_BP,
+  computeGoalRag,
+  goalHigherBetter,
+  _CF_S7_GOAL_ATTAINMENT_ANCHOR,
+  _CF_S7_RAG_HIGHER_BETTER_ANCHOR,
+  _CF_S7_RAG_LOWER_BETTER_ANCHOR,
+  _CF_S7_RAG_LOWER_BETTER_RED_ANCHOR,
   // Registry index + derived sets
   METRIC_REGISTRY,
   DISPLAY_ONLY_METRIC_IDS,

@@ -307,6 +307,33 @@ Rohan sign-off (Stage-6): ☐ UNSIGNED-PENDING until `child-3-shopify-connector`
 
 ---
 
+## Phase-2 slice-5/6 rows (code-registered)
+
+Slices 5 (`cohort_ltv_mu`, `repeat_rate_bp`, `cohort_cac_payback`) and 6 (`inventory_sell_through_bp`,
+`inventory_days_left`, `first_product_second_order_rate_bp`) carry full `DDRRow`s in
+`definitional_delta_register.py` (parity-gate-verified `formula_snapshot` + killed-mutant anchors).
+All are `parity_gap` Brain-native or scale-delta rows with `child_dependency=None` → SIGNABLE.
+
+## Phase-2 slice-7 rows (feat-finance-settings-goals)
+
+### 17. `goal_attainment_bp` — goal attainment + DIRECTIONAL RAG
+
+| Field | Value |
+|---|---|
+| **legacy_formula** | `lib/metrics/goals.ts evaluateGoalRow` — variancePct float; `computeGoalRag(actual, goal, higherBetter)` DIRECTIONAL (higher-better 0.95/0.80; lower-better 1.05/1.20); `higherBetterForGoal`: MIN→hb, MAX→lb, TARGET→metric default. |
+| **brain_formula** | `goal_attainment_bp` (+ `compute_goal_rag` use-case classification) |
+| **reason** | Attainment = actual/goal in bp (FLOOR); the directional RAG band is reproduced byte-for-byte by `compute_goal_rag` (a use-case classification, NOT a registry metric — same shape as inventory status / pareto grade). Rohan Stage-1 Finding 1: the flat "≥95% green" is ONLY the higher-better case — CAC/ACOS invert. festival learned-lift (Finding 2) is a PHANTOM and is NOT registered. |
+| **shadow_compare_classification** | `EXPECTED_DEFINITIONAL_DELTA` |
+| **delta_direction_and_magnitude** | Representation delta: legacy signed variancePct float vs Brain attainment bp (FLOOR). Anchor CF-S7-GOAL-ATTAIN-1: 9200/10000 → 9200bp (legacy −8.0%); "÷ actual" mutant → 10000bp KILLED. Directional anchor: CAC@120% → amber; "all-higher-better" mutant → green KILLED. |
+| **business_impact** | Goal RAG is the operator's on-track signal across /settings/goals + every /calendar cell. The flat rule on a lower-better metric would paint an over-budget CAC GREEN — directly misleading the spend decision. |
+| **parity_gap** | `False` |
+| **child_dependency** | `None` |
+| **formula_snapshot** | `goal_attainment_bp = intDiv(actual × 10000, goal_value); NULL if goal_value == 0`. RAG: higher-better a*100>=goal*95→green,>=goal*80→amber,else red; lower-better a*100<=goal*105→green,<=goal*120→amber,else red |
+
+Rohan sign-off (Stage-6): ☑ SIGNED (shadow_compare; child_dependency None; both mutants killed; directional band re-derived at the wire — CAC@120% amber not green)
+
+---
+
 ## Structural enforcement (code-level)
 
 The two rules are enforced in `definitional_delta_register.py::DDRRow.assert_signable()`:
@@ -341,7 +368,9 @@ Rohan cannot sign any row without `assert_signable()` passing first.
 - [ ] `fx_restatement` — **UNSIGNED-PENDING until `child-3-workspace-cost-currency-migration` gate GREEN** (Rule 2)
 - [ ] `new_customer_revenue_mu` (+nc_cm2/cm2_per_nc/acquisition_ad_spend) — **UNSIGNED-PENDING until `child-3-shopify-connector` gate GREEN** (Rule 2)
 - [x] `blended_roas_x100` / `acos_bp` — display-only confirmed; non-blocking — **SIGNED**
+- [x] `goal_attainment_bp` — slice-7; directional RAG re-derived at the wire (CAC@120% amber NOT green; "÷ actual" + "all-higher-better" mutants killed); child_dependency None — **SIGNED**
+- [x] `festival_lift` — **DECOMMISSIONED before birth (slice-7, no legacy comparand — Finding 2); never registered** — **N/A**
 
-**DDR sign-off: 10 SIGNED · 3 UNSIGNED-PENDING-child-dependency · 1 DECOMMISSIONED.**
+**DDR sign-off: 11 SIGNED · 3 UNSIGNED-PENDING-child-dependency · 2 DECOMMISSIONED (pamer_bp, festival_lift). Plus slice-5/6 code-registered SIGNABLE rows.**
 
 _Signed:_ **Rohan (cto-advisor) — partial sign-off per above** _Date:_ **2026-05-25** _Authority:_ CF-C4-DDR-1 / M-A1-Q2 (Stage-6 VETO + governance gate). Live read-source flip remains HELD (`HOLD-AT-READ-FLIP`) until the 2 pending rows unlock and I re-sign at the Stage-8 live-flip re-review.

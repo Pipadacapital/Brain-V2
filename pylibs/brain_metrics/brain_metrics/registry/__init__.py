@@ -24,10 +24,17 @@ from brain_metrics.registry.definitions import (
     MetricDefinition,
     METRIC_REGISTRY,
     get_metric,
+    # Phase-2 slice-7: goal attainment + directional RAG (classification, not registry metric).
+    goal_attainment_bp,
+    compute_goal_rag,
+    goal_higher_better,
 )
 
 __all__ = [
     "MetricDefinition",
     "METRIC_REGISTRY",
     "get_metric",
+    "goal_attainment_bp",
+    "compute_goal_rag",
+    "goal_higher_better",
 ]

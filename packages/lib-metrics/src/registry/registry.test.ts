@@ -43,6 +43,14 @@ import {
   _CF_S6_INV_DAYS_LEFT_ANCHOR,
   _CF_S6_INV_DAYS_LEFT_INFINITE_ANCHOR,
   _CF_S6_FP_SECOND_ORDER_ANCHOR,
+  // Phase-2 slice-7: goal attainment + directional RAG
+  GOAL_ATTAINMENT_BP,
+  computeGoalRag,
+  goalHigherBetter,
+  _CF_S7_GOAL_ATTAINMENT_ANCHOR,
+  _CF_S7_RAG_HIGHER_BETTER_ANCHOR,
+  _CF_S7_RAG_LOWER_BETTER_ANCHOR,
+  _CF_S7_RAG_LOWER_BETTER_RED_ANCHOR,
 } from './index.js';
 
 // ---------------------------------------------------------------------------
@@ -216,6 +224,54 @@ describe('METRIC_REGISTRY completeness', () => {
       FIRST_PRODUCT_SECOND_ORDER_RATE_BP.formula_ts(a.customers_with_2plus, a.mutant_orders),
     ).toBe(a.mutant_bp);
     expect(a.expected_bp).not.toBe(a.mutant_bp);
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase-2 slice-7 (feat-finance-settings-goals) — goal attainment + directional RAG
+  // -------------------------------------------------------------------------
+  it('slice-7: goal_attainment_bp parity class = shadow_compare', () => {
+    expect(METRIC_REGISTRY['goal_attainment_bp'].parity_class).toBe('shadow_compare');
+  });
+
+  it('slice-7: phantom festival learned-lift is NOT in the registry (Finding 2)', () => {
+    expect(METRIC_REGISTRY).not.toHaveProperty('festival_lift');
+    expect(METRIC_REGISTRY).not.toHaveProperty('festival_lift_factor');
+  });
+
+  it('slice-7 CF-S7-GOAL-ATTAIN-1: attainment divides by goal, not actual', () => {
+    const a = _CF_S7_GOAL_ATTAINMENT_ANCHOR;
+    // Canon: 9200 / 10000 = 9200bp (92.00%).
+    expect(GOAL_ATTAINMENT_BP.formula_ts(a.actual, a.goal_value)).toBe(a.expected_bp);
+    // Mutant: ÷ actual (9200) → 10000bp — KILLED.
+    const wrongDenom = Math.trunc((Number(a.actual) * 10000) / Number(a.actual));
+    expect(wrongDenom).toBe(a.mutant_bp);
+    expect(a.expected_bp).not.toBe(a.mutant_bp);
+  });
+
+  it('slice-7 directional RAG: higher-better @92% → amber (the flat slice-table case)', () => {
+    const a = _CF_S7_RAG_HIGHER_BETTER_ANCHOR;
+    expect(computeGoalRag(a.actual, a.goal, a.higher_better)).toBe(a.expected);
+  });
+
+  it('slice-7 directional RAG: lower-better CAC@120% → amber, NOT green (kill all-higher-better)', () => {
+    const a = _CF_S7_RAG_LOWER_BETTER_ANCHOR;
+    // Directional (correct): lower-better @120% → amber (<=1.20*goal).
+    expect(computeGoalRag(a.actual, a.goal, a.higher_better)).toBe(a.expected);
+    // Mutant: treat-all-as-higher-better → 120% >= 95% → green — KILLED.
+    expect(computeGoalRag(a.actual, a.goal, true)).toBe(a.mutant_higher_better_expected);
+    expect(a.expected).not.toBe(a.mutant_higher_better_expected);
+  });
+
+  it('slice-7 directional RAG: lower-better just past amber boundary → red', () => {
+    const a = _CF_S7_RAG_LOWER_BETTER_RED_ANCHOR;
+    expect(computeGoalRag(a.actual, a.goal, a.higher_better)).toBe(a.expected);
+  });
+
+  it('slice-7 goalHigherBetter: MINIMUM→true, MAXIMUM→false, TARGET→metric default', () => {
+    expect(goalHigherBetter('MINIMUM', false)).toBe(true);
+    expect(goalHigherBetter('MAXIMUM', true)).toBe(false);
+    expect(goalHigherBetter('TARGET', true)).toBe(true);
+    expect(goalHigherBetter('TARGET', false)).toBe(false);
   });
 });
 

@@ -95,3 +95,25 @@
 **Deferred (non-goals):** WooCommerce products/cascade path; products CRUD/settings (slice 7); collections/vendor/tags real grouping compute (scaffolded enums, product-grain seeded); AI narration (slice 9); inventory reorder-recommendation ML (none proven).
 
 **Progress: slices 1-6 done (6/9).** Next: slice 7 `feat-finance-settings-goals`. Do NOT auto-start — orchestrator drives the loop + commits.
+
+## 2026-05-25T16:30:00Z — Slice 7 SHIPPED (Stage 6 PASS) — feat-finance-settings-goals — Rohan
+
+**COGS/costs + goals + festivals + calendar** on 4 real pages (`/costs`, `/settings/goals`, `/settings/festivals`, `/calendar`). Full high-stakes pipeline (Rohan S1 → Aryan S2 → Maya/Vikram/Ananya S3 → Shreya S4 extra write-path scrutiny → Tanvi S5 → Rohan S6), signed under standing delegation. Stage-8 readiness; nothing committed (pending-founder-commit.md).
+
+**The standing lesson bit a 7th time — read the actual legacy formulas; the slice-table was wrong on the two headline features:**
+- **Goal RAG is DIRECTIONAL, not flat** (Finding 1). Legacy `computeGoalRag`: higher-better `≥0.95→green/≥0.80→amber`; **lower-better `≤1.05→green/≤1.20→amber` (INVERTED)**. Direction via `higherBetterForGoal` (MIN→hb, MAX→lb, TARGET→metric default; cac/acos lower-better). The slice-table's AND the pre-existing `rag-badge.tsx`'s flat "≥95% green" is ONLY the higher-better case — it would paint an over-budget CAC GREEN. Implemented `computeGoalRag`/`compute_goal_rag` in BOTH registries; proven at the wire (CAC@120% = amber, not green).
+- **Festival "learned lift" is a PHANTOM** (Finding 2). Legacy festivals carry only a stored `expected_multiplier` template default (1.3 Makar Sankranti … 4.0 Diwali) — NO learned-lift compute anywhere. DECOMMISSIONED before birth (4th decommission: pamer_bp/cac_payback_months/product_cm1_mu lineage). NOT added to either registry.
+- **Calendar report = period grid + marketing-action overlays** (Finding 3), NOT a festival surface. Reuses slice-1/2/4 primitives (net_revenue/cm3/mer/amer/cac/aov) with per-cell directional RAG + manual/Klaviyo overlays — no new metric. De-conflated "festivals" (settings template) from "calendar" (overlay grid).
+- **COGS resolve feeds the EXISTING cm1_mu** (Finding 4): override% → product coq → fallback% → 0, then markup. One source of truth — /costs reads the resolved stack + CM landing; does NOT recompute COGS.
+
+**Scope decision:** goal upsert (the one write surface) SHIPPED — idempotent (Redis dedup, proven replay at the wire), MANAGER-gated, RLS-scoped-on-write (foreign-ws → UnscopedQueryError at the wire), Zod-validated. Costs/festivals/marketing-action CRUD DEFERRED (pages stay real READ views, not stubs).
+
+**Bar met:** 1 new def (`goal_attainment_bp`) TS↔Python byte-identical + NON-VACUOUS (CF-S7-GOAL-ATTAIN-1: 9200/10000→9200bp; "÷ actual" mutant→10000 KILLED; directional band: "all-higher-better" mutant flips CAC red→green KILLED at gate+unit+router+wire); 4 fail-closed use-cases; `settings.*` + `calendar.report` tRPC (workspaceProc/ANALYST/bigint) + `settings.upsertGoal` (MANAGER/idempotent/Zod); RLS fail-closed at the wire; per-SKU GST untouched (sits on slice-1/2 honest base); @paradigm sql; ZERO LLM/ML; ZERO new deps; typecheck 0 (lib-metrics/api-gateway/web). DDR: `goal_attainment_bp` SIGNED (shadow_compare, child_dependency None); `festival_lift` DECOMMISSIONED.
+
+**Tests:** 159 TS lib-metrics (+7) + 120 api-gateway (+16) + 326 brain_metrics (+9) + 244 analytics (+36), all green. Parity gate PASS (37 shared metrics, DDR coverage, killed-mutant non-vacuous). Live smoke (real network :3001): goals CAC amber/revenue amber/cm3 green/mer green; costs CM1 17.8M (=30M−9M−3.2M); festivals Diwali 40000bp/peak; calendar day-2 CAC red (164%); upsert replay idempotent; foreign-ws rejected. 4 pages HTTP 200 (real client components).
+
+**Candidate rule:** evidence #7 appended to `verify-legacy-formula-at-stage1-not-slice-table` (human-gated; now bitten EVERY analytics slice 2-7 — recommend `/adopt-rule`).
+
+**Deferred (non-goals):** festival CRUD; cost-row CRUD + cogsSettings.patch; marketing-action CRUD; inline goal editor (the mutation IS shipped + wired).
+
+**Progress: slices 1-7 done (7/9).** Next: slice 8 `feat-lifecycle-timings-email`. Do NOT auto-start — orchestrator drives the loop + commits.

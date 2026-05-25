@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ScaffoldPage } from "@/interfaces/components/shell/scaffold-page.js";
+import { GoalsContent } from "@/interfaces/components/settings/goals-content.js";
 
 export const metadata: Metadata = { title: "Goals — Brain" };
 
 export default function Page() {
-  return <ScaffoldPage title="Goals" description="Set revenue, CM, and ROAS targets for RAG scoring." />;
+  return <GoalsContent />;
 }

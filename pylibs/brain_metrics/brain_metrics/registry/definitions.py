@@ -1068,6 +1068,74 @@ first_product_second_order_rate_bp = MetricDefinition(
 )
 
 
+# ── Goal attainment (basis points) + directional RAG band — Phase-2 slice-7 ──
+# Goal attainment = how close the actual is to the goal, in bp.
+#   goal_attainment_bp = FLOOR(actual * 10000 / goal_value)   (NULL-guard goal_value == 0)
+# The DIRECTION-AWARE band (compute_goal_rag) is a CLASSIFICATION computed in the use-case,
+# NOT a numeric metric def — exactly as inventory `status` / pareto `grade` (slice 6).
+#
+# LEGACY GROUND TRUTH (lib/metrics/goals.ts — Rohan Stage-1 Finding 1; the slice-table's flat
+# "≥95% green" is ONLY the higher-better case):
+#   higher-better:  actual >= goal*0.95 → green ; >= goal*0.80 → amber ; else red
+#   lower-better:   actual <= goal*1.05 → green ; <= goal*1.20 → amber ; else red
+# Direction by goal_higher_better(goal_type, metric_higher_better):
+#   MINIMUM → higher-better ; MAXIMUM → lower-better ; TARGET → metric's registry default.
+#
+# WORKED ANCHOR (CF-S7-GOAL-ATTAIN-1): actual=9200, goal=10000 → FLOOR(9200*10000/10000)=9200bp
+#   (92.00%). A "÷ actual" (wrong-denominator) mutant → FLOOR(9200*10000/9200)=10000bp — KILLED.
+def _goal_attainment_bp(actual: int, goal_value: int) -> int | None:
+    """Goal attainment = actual / goal in bp. @paradigm: sql — integer FLOOR. NULL on goal==0."""
+    return _ratio_bp(actual, goal_value)
+
+
+goal_attainment_bp = MetricDefinition(
+    id="goal_attainment_bp",
+    kind="ratio",
+    unit="bp",
+    formula_py=_goal_attainment_bp,
+    clickhouse_sql="if(goal_value != 0, intDiv(actual * 10000, goal_value), NULL)",
+    parity_class="shadow_compare",
+    scale=10000,
+)
+
+
+def compute_goal_rag(actual: int, goal: int, higher_better: bool) -> str:
+    """Direction-aware Goal RAG band (legacy computeGoalRag). Integer-exact via ×100 thresholds.
+
+    higher-better: actual*100 >= goal*95 → 'green' ; >= goal*80 → 'amber' ; else 'red'
+    lower-better:  actual*100 <= goal*105 → 'green' ; <= goal*120 → 'amber' ; else 'red'
+
+    This MUST byte-match the TS computeGoalRag. A "treat-all-as-higher-better" mutant flips a
+    lower-better goal (CAC at 120% of goal) red→green and is KILLED by the lower-better anchor.
+    """
+    if goal <= 0:
+        return ("green" if actual >= 0 else "red") if higher_better else "green"
+    a = actual * 100
+    if higher_better:
+        if a >= goal * 95:
+            return "green"
+        if a >= goal * 80:
+            return "amber"
+        return "red"
+    if a <= goal * 105:
+        return "green"
+    if a <= goal * 120:
+        return "amber"
+    return "red"
+
+
+def goal_higher_better(goal_type: str, metric_higher_better: bool) -> bool:
+    """Resolve goal direction (legacy higherBetterForGoal).
+
+    MINIMUM → higher-better ; MAXIMUM → lower-better ; TARGET → the metric's intrinsic direction.
+    """
+    if goal_type == "MINIMUM":
+        return True
+    if goal_type == "MAXIMUM":
+        return False
+    return metric_higher_better
+
+
 # ---------------------------------------------------------------------------
 # Goal RAG (Red/Amber/Green) — count of metrics at each band
 # Not a money/ratio metric; count type.
@@ -1317,6 +1385,10 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "inventory_sell_through_bp":          inventory_sell_through_bp,
     "inventory_days_left":                inventory_days_left,
     "first_product_second_order_rate_bp": first_product_second_order_rate_bp,
+    # Phase-2 slice-7 (feat-finance-settings-goals): goal attainment (directional RAG band is a
+    # use-case classification, NOT a registry metric). festival_lift DECOMMISSIONED before birth
+    # (no legacy comparand — Rohan Stage-1 Finding 2).
+    "goal_attainment_bp":                 goal_attainment_bp,
 }
 
 

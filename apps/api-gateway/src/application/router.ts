@@ -36,6 +36,7 @@ import {
   assertMarketingDefinitionId,
   assertCohortLtvDefinitionId,
   assertCatalogDefinitionId,
+  assertSettingsDefinitionId,
   getMetricScale,
 } from '../domain/registry-mapper.js';
 import {
@@ -792,6 +793,207 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // settings router — workspace tier (Phase-2 slice-7, feat-finance-settings-goals)
+  // goals (directional RAG + idempotent upsert), costs (resolved stack feeding CM),
+  // festivals (India template calendar; CRUD deferred). festival learned-lift is a
+  // PHANTOM (Rohan Finding 2) — never computed.
+  // -------------------------------------------------------------------
+  const settingsRouter = router({
+    /** Directional goal attainment + RAG. requireRole(ANALYST). READ. */
+    goals: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.goals requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getGoalAttainment({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: input.date_start, end: input.date_end },
+      });
+      // Goal attainment is goal_attainment_bp; the RAG band is its classification.
+      assertSettingsDefinitionId('goal_attainment_bp');
+      return {
+        result: result.result,
+        rows: result.result.rows,
+        total_rows: result.result.total_rows,
+        data_epoch: result.data_epoch,
+        request_id: ctx.requestId,
+      };
+    }),
+
+    /**
+     * Upsert a metric goal. IDEMPOTENT (Redis dedup), RLS-scoped on write, MANAGER-gated, Zod-validated.
+     * CF-C6-MB-IDEMPOTENCY-1 pattern: idempotency_key dedup BEFORE the write.
+     */
+    upsertGoal: workspaceProc
+      .input(
+        z.object({
+          metric_name: z.enum([
+            'revenue', 'cm3', 'cm3_pct', 'mer', 'amer', 'cac', 'aov',
+            'new_customers', 'acos', 'meta_roas', 'google_roas',
+          ]),
+          period_type: z.enum(['DAILY', 'WEEKLY', 'MONTHLY']),
+          period_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          goal_value: z.bigint().nonnegative('goal_value must be >= 0'),
+          goal_type: z.enum(['MINIMUM', 'MAXIMUM', 'TARGET']),
+          idempotency_key: z.string().uuid('idempotency_key must be a UUID'),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        // requireRole(MANAGER): editing a goal is a managerial config change.
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `settings.upsertGoal requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        // CF-C6-MB-IDEMPOTENCY-1: dedup BEFORE the write. Removing this = double-write = RED.
+        const cached = await checkIdempotency(
+          idempotencyStore as Parameters<typeof checkIdempotency>[0],
+          ctx.workspaceId,
+          input.idempotency_key,
+        );
+        if (cached !== null) {
+          const parsed = JSON.parse(cached) as {
+            goal_id: string;
+            metric_name: string;
+            period_type: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+            period_start: string;
+            goal_value: string;          // bigint serialized as string in the dedup cache
+            goal_type: 'MINIMUM' | 'MAXIMUM' | 'TARGET';
+            request_id: string;
+            idempotent_replay: boolean;
+          };
+          return {
+            goal_id: parsed.goal_id,
+            metric_name: parsed.metric_name,
+            period_type: parsed.period_type,
+            period_start: parsed.period_start,
+            goal_value: BigInt(parsed.goal_value),
+            goal_type: parsed.goal_type,
+            request_id: ctx.requestId,
+            idempotent_replay: true,
+          };
+        }
+
+        // Not cached: scoped write (workspace_id from the authenticated claim — fail-closed).
+        const result = await dataPlane.upsertGoal({
+          workspace_id: ctx.workspaceId,
+          metric_name: input.metric_name,
+          period_type: input.period_type,
+          period_start: input.period_start,
+          goal_value: input.goal_value,
+          goal_type: input.goal_type,
+          idempotency_key: input.idempotency_key,
+        });
+
+        const response = {
+          goal_id: result.goal_id,
+          metric_name: result.metric_name,
+          period_type: result.period_type,
+          period_start: result.period_start,
+          goal_value: result.goal_value,
+          goal_type: result.goal_type,
+          request_id: ctx.requestId,
+          idempotent_replay: false,
+        };
+
+        // Store for dedup (bigint → string; cache is plain JSON).
+        await storeIdempotencyResult(
+          idempotencyStore as Parameters<typeof storeIdempotencyResult>[0],
+          ctx.workspaceId,
+          input.idempotency_key,
+          JSON.stringify({ ...response, goal_value: response.goal_value.toString() }),
+        );
+
+        return response;
+      }),
+
+    /** Resolved cost stack (COGS settings + cost rows + CM landing). requireRole(ANALYST). READ. */
+    costs: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.costs requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.getCostStack({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: input.date_start, end: input.date_end },
+      });
+      // The cost stack lands in the EXISTING cm1_mu (one source of truth — NOT a new COGS def).
+      assertSettingsDefinitionId('cm1_mu');
+      return {
+        result: result.result,
+        rows: result.result.cost_rows,
+        data_epoch: result.data_epoch,
+        request_id: ctx.requestId,
+      };
+    }),
+
+    /** India festival template calendar (display; CRUD deferred). requireRole(ANALYST). READ. */
+    festivals: workspaceProc
+      .input(dateInput.extend({ year: z.number().int().min(2020).max(2100).optional() }))
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `settings.festivals requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getFestivalCalendar({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: { year: input.year },
+        });
+        return {
+          result: result.result,
+          rows: result.result.rows,
+          total_rows: result.result.total_rows,
+          peak_multiplier_bp: result.result.peak_multiplier_bp,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
+  // calendar router — workspace tier (Phase-2 slice-7)
+  // The period grid (day/week/month) with marketing-action overlays + per-cell directional RAG.
+  // Reuses slice-1/2/4 primitives (net_revenue/cm3/mer/amer/cac/aov) — no new metric.
+  // -------------------------------------------------------------------
+  const calendarRouter = router({
+    report: workspaceProc
+      .input(dateInput.extend({ grain: z.enum(['day', 'week', 'month']).optional() }))
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `calendar.report requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getCalendarReport({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: { grain: input.grain },
+        });
+        // Calendar reuses the canonical revenue/cm3 primitives — no learned festival lift.
+        assertSettingsDefinitionId('net_revenue_mu');
+        return {
+          result: result.result,
+          rows: result.result.rows,
+          total_rows: result.result.total_rows,
+          grain: result.result.grain,
+          currency_code: result.result.currency_code,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // morningBrief router — workspace tier
   // CF-C6-MB-IDEMPOTENCY-1: submitResponse uses Redis dedup.
   // CF-C6-MB-GRADUATED-LABEL-1: status is server-driven.
@@ -949,6 +1151,8 @@ export function createBrainRouter(
     cohorts: cohortsRouter,
     ltv: ltvRouter,
     catalog: catalogRouter,
+    settings: settingsRouter,
+    calendar: calendarRouter,
     morningBrief: morningBriefRouter,
     device: deviceRouter,
   });

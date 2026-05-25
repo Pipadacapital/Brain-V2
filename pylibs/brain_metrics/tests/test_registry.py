@@ -20,6 +20,8 @@ from brain_metrics.registry.definitions import (
     _int_floor_div_or_null,
     _ratio_bp,
     FX_SHADOW_RATE_INR_PER_USD,
+    compute_goal_rag,
+    goal_higher_better,
 )
 
 
@@ -775,6 +777,76 @@ class TestSliceSixFirstProductSecondOrderRate:
             METRIC_REGISTRY["first_product_second_order_rate_bp"].id
             != METRIC_REGISTRY["repeat_rate_bp"].id
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-7 (feat-finance-settings-goals): goal attainment + directional RAG.
+# NON-VACUOUS anchors — every positive case is paired with a killed mutant.
+# Byte-identity twin: packages/lib-metrics/src/registry/registry.test.ts (slice-7 block).
+# ---------------------------------------------------------------------------
+
+class TestSliceSevenGoalAttainment:
+    """goal_attainment_bp = actual / goal in bp. shadow_compare."""
+
+    def test_worked_example_cf_s7_goal_attain_1(self):
+        """actual=9200, goal=10000 → intDiv(9200×10000,10000) = 9200bp (92.00%)."""
+        f = METRIC_REGISTRY["goal_attainment_bp"].formula_py
+        assert f(actual=9200, goal_value=10000) == 9200
+
+    def test_kill_divide_by_actual_mutant(self):
+        """A '÷ actual' (wrong-denominator) mutant → intDiv(9200×10000,9200)=10000bp — KILLED."""
+        f = METRIC_REGISTRY["goal_attainment_bp"].formula_py
+        canon = f(actual=9200, goal_value=10000)
+        mutant = _ratio_bp(9200, 9200)  # the wrong denominator
+        assert canon == 9200
+        assert mutant == 10000
+        assert canon != mutant
+
+    def test_zero_goal_returns_null(self):
+        f = METRIC_REGISTRY["goal_attainment_bp"].formula_py
+        assert f(actual=5000, goal_value=0) is None
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["goal_attainment_bp"].parity_class == "shadow_compare"
+
+
+class TestSliceSevenDirectionalRag:
+    """compute_goal_rag — directional band (the slice-table's flat rule is only higher-better)."""
+
+    def test_higher_better_bands(self):
+        # >=95% green, >=80% amber, else red.
+        assert compute_goal_rag(9800, 10000, True) == "green"
+        assert compute_goal_rag(9500, 10000, True) == "green"   # boundary
+        assert compute_goal_rag(9200, 10000, True) == "amber"
+        assert compute_goal_rag(8000, 10000, True) == "amber"   # boundary
+        assert compute_goal_rag(7000, 10000, True) == "red"
+
+    def test_lower_better_bands(self):
+        # <=105% green, <=120% amber, else red (INVERTED).
+        assert compute_goal_rag(10000, 10000, False) == "green"
+        assert compute_goal_rag(10500, 10000, False) == "green"  # boundary
+        assert compute_goal_rag(12000, 10000, False) == "amber"  # boundary
+        assert compute_goal_rag(12100, 10000, False) == "red"
+
+    def test_kill_all_higher_better_mutant_on_cac(self):
+        """CAC@120% of goal: directional → amber. The 'all-higher-better' mutant → green. KILLED."""
+        directional = compute_goal_rag(12000, 10000, False)   # lower-better
+        mutant = compute_goal_rag(12000, 10000, True)         # treat-all-higher-better
+        assert directional == "amber"
+        assert mutant == "green"
+        assert directional != mutant
+
+    def test_goal_higher_better_resolution(self):
+        # MINIMUM → higher-better, MAXIMUM → lower-better, TARGET → metric default.
+        assert goal_higher_better("MINIMUM", False) is True
+        assert goal_higher_better("MAXIMUM", True) is False
+        assert goal_higher_better("TARGET", True) is True
+        assert goal_higher_better("TARGET", False) is False
+
+    def test_festival_lift_is_not_in_registry(self):
+        """Finding 2: festival learned-lift is a phantom — NEVER registered."""
+        assert "festival_lift" not in METRIC_REGISTRY
+        assert "festival_lift_factor" not in METRIC_REGISTRY
 
     def test_parity_class_shadow(self):
         assert METRIC_REGISTRY["first_product_second_order_rate_bp"].parity_class == "shadow_compare"

@@ -1003,6 +1003,46 @@ _ROW_FP_SECOND_ORDER_RATE = DDRRow(
     ),
 )
 
+# ── Phase-2 slice-7 (feat-finance-settings-goals) ──────────────────────────
+_ROW_GOAL_ATTAINMENT = DDRRow(
+    legacy_formula=(
+        "lib/metrics/goals.ts evaluateGoalRow — variancePct = (actual - goal) / |goal| × 100 "
+        "(float PERCENT, signed); the RAG band is computeGoalRag(actual, goal, higherBetter) "
+        "with DIRECTIONAL thresholds (higher-better 0.95/0.80; lower-better 1.05/1.20)"
+    ),
+    brain_formula="goal_attainment_bp",
+    reason=(
+        "Goal attainment = actual / goal in basis points (the magnitude the RAG band reads). "
+        "Legacy carries the equivalent signal as a signed variancePct float; Brain canonicalizes "
+        "on attainment bp (ratio, FLOOR). The DIRECTIONAL RAG band is reproduced byte-for-byte "
+        "by compute_goal_rag (a use-case classification, NOT a registry metric — same shape as "
+        "inventory status / pareto grade). Rohan Stage-1 Finding 1: the slice-table's flat "
+        "'≥95% green / 80-95% amber / <80% red' is ONLY the higher-better case — lower-better "
+        "metrics (CAC/ACOS) invert (1.05/1.20). festival learned-lift (Finding 2) is a phantom "
+        "and is NOT registered."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Representation delta: legacy signed variancePct float vs Brain attainment bp (FLOOR). "
+        "Anchor CF-S7-GOAL-ATTAIN-1: actual=9200, goal=10000 → intDiv(9200×10000,10000)=9200bp "
+        "(92.00%; legacy variancePct=-8.0%). A '÷ actual' (wrong-denominator) mutant → 10000bp — "
+        "killed. Directional band anchor: CAC@120% of goal → amber (NOT green); the "
+        "'treat-all-as-higher-better' mutant flips it to green — killed."
+    ),
+    business_impact=(
+        "Goal RAG is the operator's at-a-glance 'am I on track' signal across /settings/goals and "
+        "every /calendar cell. Using the flat higher-better rule for a lower-is-better metric "
+        "(CAC, ACOS) would paint an over-budget CAC GREEN — directly misleading the spend decision."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "goal_attainment_bp = intDiv(actual × 10000, goal_value); NULL if goal_value == 0. "
+        "RAG (use-case): higher-better a*100>=goal*95→green,>=goal*80→amber,else red; "
+        "lower-better a*100<=goal*105→green,<=goal*120→amber,else red"
+    ),
+)
+
 
 # ---------------------------------------------------------------------------
 # The canonical register (ordered by waterfall / priority)
@@ -1037,6 +1077,9 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     "inventory_sell_through_bp":          _ROW_INV_SELL_THROUGH,
     "inventory_days_left":                _ROW_INV_DAYS_LEFT,
     "first_product_second_order_rate_bp": _ROW_FP_SECOND_ORDER_RATE,
+    # Phase-2 slice-7 (feat-finance-settings-goals): goal attainment + directional RAG
+    # (festival learned-lift DECOMMISSIONED before birth — no DDRRow; audit in the .md register)
+    "goal_attainment_bp":                 _ROW_GOAL_ATTAINMENT,
 }
 
 

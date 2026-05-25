@@ -851,6 +851,113 @@ export const _CF_S6_FP_SECOND_ORDER_ANCHOR = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Phase-2 slice-7 (feat-finance-settings-goals): GOAL ATTAINMENT + directional RAG.
+//
+// Goal attainment = how close the actual is to the goal, in basis points.
+//   goal_attainment_bp = FLOOR(actual * 10000 / goal)   (NULL-guard goal == 0)
+// This is the magnitude the RAG band reads. The DIRECTION-AWARE band is a CLASSIFICATION
+// computed in the use-case (computeGoalRag below), NOT a numeric metric def — exactly as
+// inventory `status` / pareto `grade` (slice 6) are classifications, not registry rows.
+//
+// LEGACY GROUND TRUTH (lib/metrics/goals.ts — Rohan Stage-1 Finding 1; the slice-table's
+// flat "≥95% green" is ONLY the higher-better case):
+//   higher-better:  actual >= goal*0.95 → green ; >= goal*0.80 → amber ; else red
+//   lower-better:   actual <= goal*1.05 → green ; <= goal*1.20 → amber ; else red
+// Direction by higherBetterForGoal(goalType, metricHigherBetter):
+//   MINIMUM → higher-better ; MAXIMUM → lower-better ; TARGET → metric's registry default.
+//
+// WORKED ANCHOR (CF-S7-GOAL-ATTAIN-1): actual=9200, goal=10000 → FLOOR(9200*10000/10000)=9200bp
+//   (92.00%). A "÷ actual" (wrong-denominator) mutant → FLOOR(9200*10000/9200)=10000bp — KILLED.
+export const GOAL_ATTAINMENT_BP: MetricDefinition = {
+  id: 'goal_attainment_bp',
+  kind: 'ratio',
+  unit: 'bp',
+  scale: 10000,
+  // Caller guards: NULL if goal_value == 0.
+  formula_ts: (actual: bigint, goal_value: bigint): number =>
+    ratioToBasisPoints(actual, goal_value),
+  clickhouse_sql:
+    'if(goal_value != 0, intDiv(actual * 10000, goal_value), NULL)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+/** Goal RAG band — green = on track, amber = watch, red = off track. */
+export type GoalRag = 'green' | 'amber' | 'red';
+
+/**
+ * Direction-aware Goal RAG band (legacy lib/metrics/goals.ts computeGoalRag).
+ * Integer-exact: avoid float by cross-multiplying with the 100-scaled thresholds.
+ *   higher-better: actual*100 >= goal*95 → green ; >= goal*80 → amber ; else red
+ *   lower-better:  actual*100 <= goal*105 → green ; <= goal*120 → amber ; else red
+ * This is a CLASSIFICATION (not a registry metric). Both directions are exercised by
+ * the NON-VACUOUS band anchors below; a "treat-all-as-higher-better" mutant flips a
+ * lower-better goal (e.g. CAC at 120% of goal) from red→green and is KILLED.
+ *
+ * @param actual_x100  actual value (any integer scale — bp, mu, count — consistent with goal)
+ * @param goal_x100    goal value (same scale as actual)
+ * @param higherBetter whether higher is better for this goal (see goalHigherBetter)
+ */
+export function computeGoalRag(actual: bigint, goal: bigint, higherBetter: boolean): GoalRag {
+  // Negative/zero goal is meaningless for a band; treat as red (caller guards goal==0 upstream
+  // for attainment_bp; here we classify defensively).
+  if (goal <= 0n) return higherBetter ? (actual >= 0n ? 'green' : 'red') : 'green';
+  const a = actual * 100n;
+  if (higherBetter) {
+    if (a >= goal * 95n) return 'green';
+    if (a >= goal * 80n) return 'amber';
+    return 'red';
+  }
+  if (a <= goal * 105n) return 'green';
+  if (a <= goal * 120n) return 'amber';
+  return 'red';
+}
+
+/** Goal value types (mirrors legacy WorkspaceGoalValueType). */
+export type GoalValueType = 'MINIMUM' | 'MAXIMUM' | 'TARGET';
+
+/**
+ * Resolve goal direction (legacy higherBetterForGoal): MINIMUM → higher-better,
+ * MAXIMUM → lower-better, TARGET → the metric's intrinsic direction.
+ */
+export function goalHigherBetter(goalType: GoalValueType, metricHigherBetter: boolean): boolean {
+  if (goalType === 'MINIMUM') return true;
+  if (goalType === 'MAXIMUM') return false;
+  return metricHigherBetter;
+}
+
+// CF-S7 NON-VACUOUS FORMULA ANCHORS (slice-7; exported for the cross-language anchor test).
+export const _CF_S7_GOAL_ATTAINMENT_ANCHOR = {
+  actual: 9200n,
+  goal_value: 10000n,
+  expected_bp: 9200, // 92.00%; "÷ actual" mutant → 10000bp (killed)
+  mutant_bp: 10000,
+} as const;
+// Higher-better @ 92% of goal → amber (>=80 <95). Treat-as-higher-better is correct here.
+export const _CF_S7_RAG_HIGHER_BETTER_ANCHOR = {
+  actual: 9200n,
+  goal: 10000n,
+  higher_better: true,
+  expected: 'amber' as GoalRag,
+} as const;
+// Lower-better (CAC) actual=12000 goal=10000 → 120% of goal → amber boundary (<=1.20*goal).
+// A "treat-all-as-higher-better" mutant would compute 120% >= 95% → GREEN — KILLED.
+export const _CF_S7_RAG_LOWER_BETTER_ANCHOR = {
+  actual: 12000n,
+  goal: 10000n,
+  higher_better: false,
+  expected: 'amber' as GoalRag,
+  mutant_higher_better_expected: 'green' as GoalRag,
+} as const;
+// Lower-better just past the amber boundary (121% of goal) → red.
+export const _CF_S7_RAG_LOWER_BETTER_RED_ANCHOR = {
+  actual: 12100n,
+  goal: 10000n,
+  higher_better: false,
+  expected: 'red' as GoalRag,
+} as const;
+
+// ---------------------------------------------------------------------------
 // Registry export (all definitions indexed by id)
 // ---------------------------------------------------------------------------
 
@@ -898,6 +1005,10 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   inventory_sell_through_bp: INVENTORY_SELL_THROUGH_BP,
   inventory_days_left: INVENTORY_DAYS_LEFT,
   first_product_second_order_rate_bp: FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
+  // Phase-2 slice-7 (feat-finance-settings-goals): goal attainment (directional RAG band
+  // is a use-case classification, NOT a registry metric). festival_lift DECOMMISSIONED
+  // before birth (no legacy comparand — Rohan Stage-1 Finding 2).
+  goal_attainment_bp: GOAL_ATTAINMENT_BP,
 } as const;
 
 /** All metric ids that are display_only (must never appear in decision thresholds). */

@@ -59,6 +59,19 @@ import type {
   FirstProductCascadeResult,
   FirstProductCascadeRow,
   FirstProductCascadeFilterInput,
+  GoalAttainmentResult,
+  GoalEvaluationRow,
+  GoalUpsertInput,
+  GoalUpsertResult,
+  CostStackResult,
+  CostStackRow,
+  FestivalCalendarResult,
+  FestivalRow,
+  FestivalCalendarFilterInput,
+  CalendarReportResult,
+  CalendarReportRow,
+  CalendarCell,
+  CalendarReportFilterInput,
 } from '../domain/proto-types.js';
 import {
   INVENTORY_DAYS_LEFT,
@@ -66,6 +79,10 @@ import {
   FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
   CM1_MU,
   AOV_MU,
+  GOAL_ATTAINMENT_BP,
+  computeGoalRag,
+  goalHigherBetter,
+  type GoalRag,
 } from '@brain/lib-metrics';
 
 // ---------------------------------------------------------------------------
@@ -1235,11 +1252,202 @@ function newRowId(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Phase-2 slice-7 (feat-finance-settings-goals): goals / costs / festivals / calendar seeds.
+// Goal RAG is DIRECTIONAL (Rohan Finding 1); the band uses the registry computeGoalRag.
+// festival learned-lift is a PHANTOM (Finding 2) — only the stored expected_multiplier_bp.
+// ---------------------------------------------------------------------------
+
+// Goal-metric directions (mirror legacy GOAL_METRIC_REGISTRY.higherBetter; cac/acos lower-better).
+const _GOAL_METRIC_HIGHER_BETTER: Record<string, boolean> = {
+  revenue: true, cm3: true, cm3_pct: true, mer: true, amer: true,
+  cac: false, aov: true, new_customers: true, acos: false,
+  meta_roas: true, google_roas: true,
+};
+
+// Seeded goals for the Sugandh-Lok anchor (actual measured vs target). Mixed direction.
+const _GOAL_SEED = [
+  // higher-better @ 92% → amber
+  { metric: 'revenue', period: 'MONTHLY' as const, goal: 30_000_000n, type: 'MINIMUM' as const, actual: 27_600_000n },
+  // higher-better @ 98% → green
+  { metric: 'cm3', period: 'MONTHLY' as const, goal: 9_000_000n, type: 'MINIMUM' as const, actual: 8_820_000n },
+  // lower-better CAC @ 120% → amber (the inverted band — NON-VACUOUS)
+  { metric: 'cac', period: 'MONTHLY' as const, goal: 15_000n, type: 'MAXIMUM' as const, actual: 18_000n },
+  // higher-better MER @ 104% → green
+  { metric: 'mer', period: 'MONTHLY' as const, goal: 48_000n, type: 'MINIMUM' as const, actual: 50_000n },
+] as const;
+
+function buildSugandhlokGoalAttainment(): GoalAttainmentResult {
+  const rows: GoalEvaluationRow[] = _GOAL_SEED.map((g) => {
+    const metricHb = _GOAL_METRIC_HIGHER_BETTER[g.metric] ?? true;
+    const higherBetter = goalHigherBetter(g.type, metricHb);
+    const goalVal: bigint = g.goal;
+    const attainment = goalVal !== 0n
+      ? (GOAL_ATTAINMENT_BP.formula_ts(g.actual, goalVal) as number)
+      : null;
+    const rag = computeGoalRag(g.actual, g.goal, higherBetter) as GoalRag;
+    return {
+      metric_name: g.metric,
+      period_type: g.period,
+      period_start: '2026-05-01',
+      goal_type: g.type,
+      goal_value: g.goal,
+      actual: g.actual,
+      attainment_bp: attainment,
+      variance_abs: g.actual - g.goal,
+      higher_better: higherBetter,
+      rag,
+    };
+  });
+  const periodRank: Record<string, number> = { DAILY: 0, WEEKLY: 1, MONTHLY: 2 };
+  rows.sort((a, b) =>
+    a.metric_name === b.metric_name
+      ? (periodRank[a.period_type] ?? 9) - (periodRank[b.period_type] ?? 9)
+      : a.metric_name.localeCompare(b.metric_name),
+  );
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    rows,
+    total_rows: BigInt(rows.length),
+  };
+}
+
+// Cost stack seed — the COGS settings echo + active cost rows + CM landing (one source of truth).
+function buildSugandhlokCostStack(): CostStackResult {
+  const costRows: CostStackRow[] = ([
+    { cost_type: 'PACKAGING', name: 'Box + filler', kind: 'per_order', amount_mu: 2000n, amount_bp: 0, effective_from: '2026-01-01', currency_code: 'INR' },
+    { cost_type: 'SHIPPING', name: 'Courier', kind: 'per_order', amount_mu: 6000n, amount_bp: 0, effective_from: '2026-01-01', currency_code: 'INR' },
+    { cost_type: 'SOFTWARE', name: 'SaaS stack', kind: 'fixed_monthly', amount_mu: 5_000_000n, amount_bp: 0, effective_from: '2026-01-01', currency_code: 'INR' },
+    { cost_type: 'CUSTOM', name: 'Payment gateway', kind: 'percent', amount_mu: 0n, amount_bp: 200, effective_from: '2026-01-01', currency_code: 'INR' },
+  ] as CostStackRow[]).sort((a, b) => (a.cost_type === b.cost_type ? a.name.localeCompare(b.name) : a.cost_type.localeCompare(b.cost_type)));
+
+  const totalFixed = costRows.filter((c) => c.kind === 'fixed_monthly').reduce((s, c) => s + c.amount_mu, 0n);
+  const totalPerOrder = costRows.filter((c) => c.kind === 'per_order').reduce((s, c) => s + c.amount_mu, 0n);
+
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    override_all_bp: 0,        // override OFF → product+fallback mode
+    fallback_bp: 2500,        // 25.00%
+    markup_bp: 500,           // 5.00%
+    cogs_mode: 'product+fallback',
+    cost_rows: costRows,
+    total_fixed_monthly_mu: totalFixed,
+    total_per_order_mu: totalPerOrder,
+    // CM landing from the EXISTING slice-2 CM path (read, NOT recomputed).
+    net_sales_mu: 30_000_000n,
+    resolved_cogs_mu: 9_000_000n,
+    variable_costs_mu: 3_200_000n,
+    cm1_mu: 17_800_000n,      // = net_sales - cogs - variable
+    currency_code: 'INR',
+  };
+}
+
+// Festival template seed (India calendar subset; multiplier in bp = ×10000). NO learned lift.
+function buildSugandhlokFestivalCalendar(filters?: FestivalCalendarFilterInput): FestivalCalendarResult {
+  const all: FestivalRow[] = [
+    { name: 'Makar Sankranti', start_date: '2026-01-14', end_date: '2026-01-14', expected_multiplier_bp: 13000, regions: [], categories: ['all'], color: '#F59E0B', is_template: true, is_active: true },
+    { name: "Valentine's Week", start_date: '2026-02-07', end_date: '2026-02-14', expected_multiplier_bp: 15000, regions: [], categories: ['beauty', 'fashion', 'gifting'], color: '#EC4899', is_template: true, is_active: true },
+    { name: 'Holi', start_date: '2026-03-03', end_date: '2026-03-04', expected_multiplier_bp: 18000, regions: [], categories: ['beauty', 'fashion', 'skincare'], color: '#EC4899', is_template: true, is_active: true },
+    { name: 'Onam', start_date: '2026-09-13', end_date: '2026-09-23', expected_multiplier_bp: 22000, regions: ['Kerala'], categories: ['all'], color: '#8B5CF6', is_template: true, is_active: true },
+    { name: 'Dhanteras', start_date: '2026-11-07', end_date: '2026-11-08', expected_multiplier_bp: 30000, regions: [], categories: ['jewelry', 'electronics', 'home'], color: '#F59E0B', is_template: true, is_active: true },
+    { name: 'Diwali', start_date: '2026-11-08', end_date: '2026-11-12', expected_multiplier_bp: 40000, regions: [], categories: ['all'], color: '#F59E0B', is_template: true, is_active: true },
+  ];
+  const year = filters?.year;
+  const rows = (year != null ? all.filter((f) => f.start_date.startsWith(String(year))) : all)
+    .slice()
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const peak = rows.reduce((m, f) => Math.max(m, f.expected_multiplier_bp), 0);
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    year: year ?? null,
+    rows,
+    total_rows: BigInt(rows.length),
+    peak_multiplier_bp: peak,
+  };
+}
+
+// Calendar report seed — period grid (day grain) with overlays + per-cell directional RAG.
+function _calCell(metric: string, actual: bigint | null, goal: bigint | null, type: 'MINIMUM' | 'MAXIMUM' | 'TARGET'): CalendarCell {
+  if (goal === null || actual === null) return { actual, goal: null, rag: null };
+  const metricHb = _GOAL_METRIC_HIGHER_BETTER[metric] ?? true;
+  const higherBetter = goalHigherBetter(type, metricHb);
+  const rag = computeGoalRag(actual, goal, higherBetter) as GoalRag;
+  return { actual, goal, rag };
+}
+
+function buildSugandhlokCalendarReport(filters?: CalendarReportFilterInput): CalendarReportResult {
+  const grain = filters?.grain ?? 'day';
+  // Two seeded days; day 1 carries a Klaviyo overlay. Daily goals (revenue/cm3 prorated to 1 day).
+  const days = [
+    { key: '2026-05-01', label: 'May 1, 2026', rev: 1_000_000n, cm3: 300_000n, spend: 200_000n, nc: 10n, mer: 50000n, amer: 30000n, cac: 20000n, aov: 100_000n,
+      actions: [{ id: 'a1', action_date: '2026-05-01', action_type: 'email_campaign', action_name: 'May Day blast', notes: 'Klaviyo · 5000 delivered', source: 'klaviyo' as const }] },
+    { key: '2026-05-02', label: 'May 2, 2026', rev: 800_000n, cm3: 200_000n, spend: 250_000n, nc: 6n, mer: 32000n, amer: 24000n, cac: 41000n, aov: 90_000n,
+      actions: [] as CalendarReportRow['actions'] },
+  ];
+  // Daily goals (revenue MINIMUM 900k/day, cm3 MINIMUM 250k/day, cac MAXIMUM 25k, mer MINIMUM 45000).
+  const rows: CalendarReportRow[] = days.map((d) => ({
+    period_key: d.key,
+    label: d.label,
+    actions: d.actions,
+    revenue: _calCell('revenue', d.rev, 900_000n, 'MINIMUM'),
+    cm3: _calCell('cm3', d.cm3, 250_000n, 'MINIMUM'),
+    total_spend_mu: d.spend,
+    mer: _calCell('mer', d.mer, 45000n, 'MINIMUM'),
+    amer: _calCell('amer', d.amer, 25000n, 'MINIMUM'),
+    new_customers: _calCell('new_customers', d.nc, 8n, 'MINIMUM'),
+    cac: _calCell('cac', d.cac, 25000n, 'MAXIMUM'),
+    aov: _calCell('aov', d.aov, 95_000n, 'MINIMUM'),
+  }));
+  return {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: SUGANDH_LOK_CANONICAL.period,
+    data_epoch: DATA_EPOCH,
+    grain,
+    currency_code: 'INR',
+    rows,
+    total_rows: BigInt(rows.length),
+  };
+}
+
+// In-memory goals write store (the idempotent upsert lands here; the Redis dedup at the
+// router ensures one write per idempotency_key). Keyed by (workspace, metric, period, start).
+class InMemoryGoalStore {
+  private readonly rows = new Map<string, GoalUpsertResult>();
+
+  upsert(p: GoalUpsertInput): GoalUpsertResult {
+    const key = `${p.workspace_id}:${p.metric_name}:${p.period_type}:${p.period_start}`;
+    const existing = this.rows.get(key);
+    const goal_id = existing?.goal_id ?? `goal_${this.rows.size + 1}`;
+    const result: GoalUpsertResult = {
+      goal_id,
+      metric_name: p.metric_name,
+      period_type: p.period_type,
+      period_start: p.period_start,
+      goal_value: p.goal_value,
+      goal_type: p.goal_type,
+    };
+    this.rows.set(key, result);
+    return result;
+  }
+
+  size(): number {
+    return this.rows.size;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // StubDataPlane — the LOCAL harness + test implementation of DataPlanePort.
 // Accepts an optional InMemoryDecisionLog for G-IDEMPOTENT gate testing.
 // ---------------------------------------------------------------------------
 
 export class StubDataPlane implements DataPlanePort {
+  private readonly goalStore = new InMemoryGoalStore();
+
   constructor(
     private readonly decisionLog = new InMemoryDecisionLog(),
     private readonly workspaceId = SUGANDH_LOK_WORKSPACE_ID,
@@ -1440,6 +1648,57 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { result: buildSugandhlokFirstProductCascade(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  // Phase-2 slice-7 (feat-finance-settings-goals): goals / costs / festivals / calendar.
+  async getGoalAttainment(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: GoalAttainmentResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokGoalAttainment(), data_epoch: DATA_EPOCH };
+  }
+
+  async upsertGoal(params: GoalUpsertInput): Promise<GoalUpsertResult> {
+    // Fail-closed tenancy on WRITE (defense in depth; the router also gates role + idempotency).
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return this.goalStore.upsert(params);
+  }
+
+  async getCostStack(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: CostStackResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokCostStack(), data_epoch: DATA_EPOCH };
+  }
+
+  async getFestivalCalendar(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: FestivalCalendarFilterInput;
+  }): Promise<{ result: FestivalCalendarResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokFestivalCalendar(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  async getCalendarReport(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: CalendarReportFilterInput;
+  }): Promise<{ result: CalendarReportResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { result: buildSugandhlokCalendarReport(params.filters), data_epoch: DATA_EPOCH };
   }
 
   async getMorningBrief(params: {

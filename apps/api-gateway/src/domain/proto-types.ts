@@ -567,6 +567,160 @@ export interface FirstProductCascadeFilterInput {
 }
 
 // ---------------------------------------------------------------------------
+// Phase-2 slice-7 (feat-finance-settings-goals): goals / costs / festivals / calendar.
+// Goal RAG is DIRECTIONAL (Rohan Finding 1). festival learned-lift is a PHANTOM (Finding 2).
+// ---------------------------------------------------------------------------
+
+export type GoalRag = 'green' | 'amber' | 'red';
+export type GoalValueType = 'MINIMUM' | 'MAXIMUM' | 'TARGET';
+export type GoalPeriodType = 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
+export interface GoalEvaluationRow {
+  metric_name: string;
+  period_type: GoalPeriodType;
+  period_start: string;
+  goal_type: GoalValueType;
+  goal_value: bigint;             // mu / bp / count (BIGINT minor units where money)
+  actual: bigint;
+  attainment_bp: number | null;   // NULL when goal_value == 0
+  variance_abs: bigint;
+  higher_better: boolean;
+  rag: GoalRag;
+}
+
+export interface GoalAttainmentResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  rows: GoalEvaluationRow[];
+  total_rows: bigint;
+}
+
+/** goals.upsert (idempotent write) — input + result. */
+export interface GoalUpsertInput {
+  workspace_id: string;
+  metric_name: string;
+  period_type: GoalPeriodType;
+  period_start: string;           // ISO yyyy-mm-dd
+  goal_value: bigint;
+  goal_type: GoalValueType;
+  idempotency_key: string;
+}
+
+export interface GoalUpsertResult {
+  goal_id: string;
+  metric_name: string;
+  period_type: GoalPeriodType;
+  period_start: string;
+  goal_value: bigint;
+  goal_type: GoalValueType;
+}
+
+// /costs — the resolved cost stack feeding CM.
+export type CostKind = 'fixed_monthly' | 'per_order' | 'percent';
+
+export interface CostStackRow {
+  cost_type: string;
+  name: string;
+  kind: CostKind;
+  amount_mu: bigint;
+  amount_bp: number;
+  effective_from: string;
+  currency_code: string;
+}
+
+export interface CostStackResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  override_all_bp: number;
+  fallback_bp: number;
+  markup_bp: number;
+  cogs_mode: 'override' | 'product+fallback';
+  cost_rows: CostStackRow[];
+  total_fixed_monthly_mu: bigint;
+  total_per_order_mu: bigint;
+  net_sales_mu: bigint;
+  resolved_cogs_mu: bigint;
+  variable_costs_mu: bigint;
+  cm1_mu: bigint;
+  currency_code: string;
+}
+
+// /settings/festivals — India template calendar (display; CRUD deferred). NO learned lift.
+export interface FestivalRow {
+  name: string;
+  start_date: string;
+  end_date: string;
+  expected_multiplier_bp: number;   // 40000 = 4.0× (stored template default, NOT learned)
+  regions: string[];
+  categories: string[];
+  color: string;
+  is_template: boolean;
+  is_active: boolean;
+}
+
+export interface FestivalCalendarResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  year: number | null;
+  rows: FestivalRow[];
+  total_rows: bigint;
+  peak_multiplier_bp: number;
+}
+
+export interface FestivalCalendarFilterInput {
+  year?: number;
+}
+
+// /calendar — period grid with marketing-action overlays + per-cell directional RAG.
+export type CalendarGrain = 'day' | 'week' | 'month';
+
+export interface CalendarCell {
+  actual: bigint | null;
+  goal: bigint | null;
+  rag: GoalRag | null;
+}
+
+export interface CalendarActionRow {
+  id: string;
+  action_date: string;
+  action_type: string;
+  action_name: string;
+  notes: string | null;
+  source: 'manual' | 'klaviyo';
+}
+
+export interface CalendarReportRow {
+  period_key: string;
+  label: string;
+  actions: CalendarActionRow[];
+  revenue: CalendarCell;
+  cm3: CalendarCell;
+  total_spend_mu: bigint;
+  mer: CalendarCell;
+  amer: CalendarCell;
+  new_customers: CalendarCell;
+  cac: CalendarCell;
+  aov: CalendarCell;
+}
+
+export interface CalendarReportResult {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  grain: CalendarGrain;
+  currency_code: string;
+  rows: CalendarReportRow[];
+  total_rows: bigint;
+}
+
+export interface CalendarReportFilterInput {
+  grain?: CalendarGrain;
+}
+
+// ---------------------------------------------------------------------------
 // Intelligence proto types (brain.intelligence.v1)
 // ---------------------------------------------------------------------------
 
@@ -781,6 +935,32 @@ export interface DataPlanePort {
     date_range: DateRange;
     filters?: FirstProductCascadeFilterInput;
   }): Promise<{ result: FirstProductCascadeResult; data_epoch: Date }>;
+
+  // Phase-2 slice-7 (feat-finance-settings-goals): goals / costs / festivals / calendar.
+  getGoalAttainment(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: GoalAttainmentResult; data_epoch: Date }>;
+
+  /** Idempotent goal upsert. CF-C6-MB-IDEMPOTENCY-1 pattern (Redis dedup at the router). */
+  upsertGoal(params: GoalUpsertInput): Promise<GoalUpsertResult>;
+
+  getCostStack(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: CostStackResult; data_epoch: Date }>;
+
+  getFestivalCalendar(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: FestivalCalendarFilterInput;
+  }): Promise<{ result: FestivalCalendarResult; data_epoch: Date }>;
+
+  getCalendarReport(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters?: CalendarReportFilterInput;
+  }): Promise<{ result: CalendarReportResult; data_epoch: Date }>;
 
   getMorningBrief(params: {
     workspace_id: string;

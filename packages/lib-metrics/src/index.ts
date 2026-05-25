@@ -20,6 +20,8 @@ export type { GoalType, GoalValue } from './goal-type.js';
 
 // Child 4: metric registry (TS↔Python byte-identity pair; extends Child-2 home)
 export type { MetricDefinition, MetricKind, MetricUnit, ParityClass } from './registry/index.js';
+// Phase-2 slice-7: directional Goal RAG band + types (classification, not registry metric).
+export type { GoalRag, GoalValueType } from './registry/index.js';
 export {
   METRIC_REGISTRY,
   DISPLAY_ONLY_METRIC_IDS,
@@ -52,4 +54,8 @@ export {
   INVENTORY_DAYS_LEFT,
   INVENTORY_INFINITE_DAYS,
   FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
+  // Phase-2 slice-7 (feat-finance-settings-goals): goal attainment + directional RAG
+  GOAL_ATTAINMENT_BP,
+  computeGoalRag,
+  goalHigherBetter,
 } from './registry/index.js';

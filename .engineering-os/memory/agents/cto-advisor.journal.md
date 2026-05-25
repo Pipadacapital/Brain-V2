@@ -545,3 +545,13 @@
 **Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, architecture-patterns, verification-before-completion
 **Open questions:** none
 **Next:** Founder Stage-7 commit gate (pending-founder-commit.md). Do NOT auto-start slice 7.
+
+## 2026-05-25T16:30:00Z — Rohan (cto-advisor) — feat-finance-settings-goals (Phase-2 slice 7)
+**Stage:** 1 (intake) + 6 (final review) — full high-stakes pipeline, signed under standing delegation
+**Action:** Slice 7 of epic-phase2-feature-parity. ADVANCE (S1) → PASS (S6).
+**Personas spawned (Stage 1):** 0 (clear repeat of slices 1-6 pattern on a settled foundation; the one new dimension — idempotent write — is a solved in-repo pattern).
+**Decision:** PASS → Founder gate (delegated auto-approve; no hard-rule deviation).
+**Rationale:** Standing lesson bit a 7th time at Stage 1 — Goal RAG is DIRECTIONAL not flat (higher-better 0.95/0.80; lower-better CAC/ACOS 1.05/1.20); festival learned-lift is a PHANTOM (decommissioned); calendar = period grid w/ overlays reusing slice-1/2/4 primitives; COGS feeds the EXISTING cm1_mu. Shipped 1 def (goal_attainment_bp, NON-VACUOUS) + directional RAG classification + 4 fail-closed use-cases + settings/calendar tRPC + idempotent MANAGER-gated goals.upsert; RLS fail-closed + idempotent replay proven at the wire; 4 pages HTTP 200; typecheck 0; parity green; ZERO new deps.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, idempotency-handling, defense-in-depth-validation, accessibility
+**Open questions:** None blocking. festival/cost/marketing-action CRUD deferred (pages real READ views); inline goal editor deferred (mutation shipped).
+**Next:** Founder 'commit it' (pending-founder-commit.md) → then slice 8 feat-lifecycle-timings-email (orchestrator-driven; do NOT auto-start).
