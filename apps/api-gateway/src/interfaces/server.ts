@@ -37,6 +37,7 @@ import { TRPCError } from '@trpc/server';
 import { randomUUID } from 'node:crypto';
 
 import { assembleClaim } from '@brain/core-auth';
+import { resolveMembership } from '@brain/core-onboarding';
 import { createBrainRouter } from '../application/router.js';
 import {
   StubDataPlane,
@@ -44,14 +45,14 @@ import {
   SUGANDH_LOK_WORKSPACE_ID,
 } from '../infrastructure/loopback-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
-import type { WorkspaceContext } from '../application/trpc.js';
+import type { WorkspaceContext, IdentityContext } from '../application/trpc.js';
 import {
   createSupabaseJwtVerifier,
-  extractBearer,
   AuthVerifyError,
 } from '../infrastructure/supabase-jwt-verifier.js';
 import {
   LocalSeedMembershipResolver,
+  DbMembershipResolver,
   type MembershipResolver,
 } from '../domain/membership-resolver.js';
 
@@ -170,6 +171,9 @@ export function buildLocalStubContext(
   });
 
   return {
+    // Slice C: the harness context also carries a (stub) verified identity so the
+    // identity-tier procedures resolve under the offline harness.
+    identity: { sub: userId, email: LOCAL_DEV_EMAIL },
     claim,
     workspaceId,   // MUST equal claim.workspaceId (workspaceMiddleware asserts this)
     requestId,
@@ -191,20 +195,41 @@ export function buildLocalStubContext(
 // S5: an unresolved sub fails closed (UNAUTHORIZED), never a default grant.
 // ---------------------------------------------------------------------------
 export interface RealAuthDeps {
-  verifier: { verify(bearer: string): Promise<{ sub: string }> };
+  verifier: { verify(bearer: string): Promise<{ sub: string; email: string }> };
   resolver: MembershipResolver;
   log: Pick<FastifyRequest['server']['log'], 'warn'>;
 }
 
+/**
+ * Build the per-request context on the real-auth path (Slice A invariants + the
+ * Slice-C no-membership case).
+ *
+ * Returns an IdentityContext that ALWAYS carries the verified identity (sub+email)
+ * and carries `claim`+`workspaceId` ONLY when the resolver finds a membership:
+ *   - membership found → full WorkspaceContext (data procedures work).
+ *   - NO membership   → identity-only context. The user is verified but has no
+ *     workspace yet — onboarding.complete + user.me (identity tier) work; every
+ *     workspace/authed-tier data procedure fails closed at the middleware. This
+ *     is how a freshly signed-up user is routed to /onboarding WITHOUT an
+ *     auto-OWNER grant (the slice-A persona's hard rule).
+ *   - verify failure  → UNAUTHORIZED (generic; jose internals never surfaced).
+ *   - DB/resolver THROW → propagates → caller maps to UNAUTHORIZED (fail-closed;
+ *     a DB error must NEVER become a default privileged claim).
+ *
+ * B3 preserved: workspace_id comes ONLY from the resolver keyed on the verified
+ * sub — `x-workspace-id` is never read here. S2 preserved: email is carried in the
+ * identity (for onboarding) but NEVER logged and NEVER placed in the claim.
+ */
 export async function buildRealAuthContext(
   authorization: string | undefined,
   requestId: string,
   traceId: string,
   deps: RealAuthDeps,
-): Promise<WorkspaceContext> {
+): Promise<IdentityContext> {
   let sub: string;
+  let email: string;
   try {
-    ({ sub } = await deps.verifier.verify(authorization ?? ''));
+    ({ sub, email } = await deps.verifier.verify(authorization ?? ''));
   } catch (err) {
     // S1/S2: log error CLASS + requestId only (never token/email), at warn.
     deps.log.warn(
@@ -217,11 +242,19 @@ export async function buildRealAuthContext(
     throw new TRPCError({ code: 'UNAUTHORIZED', message: `Authentication required. request_id=${requestId}` });
   }
 
+  // The verified identity is ALWAYS present once the JWT verifies — even with no
+  // membership. (Identity-tier procedures use this; never logged — S2.)
+  const identity = { sub, email };
+
+  // Resolver THROW (DB error) is NOT caught here — it propagates so the caller
+  // fails closed (UNAUTHORIZED), never a default grant (S5).
   const membership = await deps.resolver.resolve(sub);
+
   if (!membership) {
-    // S5: fail closed — no membership ⇒ no grant.
-    deps.log.warn({ requestId }, 'no membership for verified user');
-    throw new TRPCError({ code: 'UNAUTHORIZED', message: `Authentication required. request_id=${requestId}` });
+    // Slice C: verified but no membership → identity-only context (route to
+    // /onboarding). NOT an error, NOT a grant. S2: log sub/requestId only.
+    deps.log.warn({ requestId, sub }, 'verified user has no membership (route to onboarding)');
+    return { identity, requestId, traceId };
   }
 
   const claim = assembleClaim({
@@ -234,6 +267,7 @@ export async function buildRealAuthContext(
   });
 
   return {
+    identity,
     claim,
     workspaceId: membership.workspaceId, // === claim.workspaceId (middleware asserts)
     requestId,
@@ -258,13 +292,14 @@ async function buildServer(cfg: GatewayAuthConfig) {
     ? null
     : createSupabaseJwtVerifier({ supabaseUrl: cfg.supabaseUrl });
 
-  // NOTE (slice A scope): there is exactly ONE seeded workspace and no real
-  // multi-tenant data, so even on the real-auth path any verified user is mapped
-  // to the seeded Sugandh-Lok workspace so the 31 routes keep rendering — the
-  // LocalSeedMembershipResolver acting as the Phase-0 bridge. Slice C swaps in the
-  // DB-backed DbMembershipResolver; an unresolved sub then returns null and the
-  // authed path fails closed (buildRealAuthContext already handles a null resolve()).
-  const membershipResolver: MembershipResolver = new LocalSeedMembershipResolver(LOCAL_DEV_WORKSPACE);
+  // Slice C: the real-auth path now resolves membership from the LOCAL dev DB via
+  // the core-service resolveMembership use-case (DbMembershipResolver). A verified
+  // user with NO membership resolves to null → routed to /onboarding (no auto-grant);
+  // a DB error propagates → UNAUTHORIZED (fail-closed). The LocalSeedMembershipResolver
+  // remains the OFFLINE harness path ONLY (BRAIN_GATEWAY_LOCAL_HARNESS === 'true').
+  const membershipResolver: MembershipResolver = cfg.localHarness
+    ? new LocalSeedMembershipResolver(LOCAL_DEV_WORKSPACE)
+    : new DbMembershipResolver(resolveMembership);
 
   // CORS: allow the web frontend (localhost:3000) to call the BFF.
   await fastify.register(cors, {
@@ -301,7 +336,7 @@ async function buildServer(cfg: GatewayAuthConfig) {
       //     UNAUTHORIZED. The `x-workspace-id` header is IGNORED here (B3).
       //   - LOCAL harness (BRAIN_GATEWAY_LOCAL_HARNESS === 'true' ONLY): the
       //     offline stub path, accepting trusted headers / Sugandh-Lok defaults.
-      async createContext({ req }: CreateFastifyContextOptions): Promise<WorkspaceContext> {
+      async createContext({ req }: CreateFastifyContextOptions): Promise<IdentityContext> {
         // CF-SEC-5: generate a fresh correlation id per request.
         const requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
         const traceId   = (req.headers['x-trace-id']   as string | undefined) ?? randomUUID();
@@ -346,7 +381,7 @@ async function buildServer(cfg: GatewayAuthConfig) {
       onError({ error, path, ctx }: {
         error: { code: string; message: string };
         path: string | undefined;
-        ctx: WorkspaceContext | undefined;
+        ctx: IdentityContext | undefined;
         input: unknown;
         req: FastifyRequest;
         type: string;

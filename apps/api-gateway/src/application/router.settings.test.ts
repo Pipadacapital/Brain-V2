@@ -41,6 +41,7 @@ function makeClaim(
 
 function makeCtx(workspaceId: string, role: Parameters<typeof makeClaim>[1] = 'ANALYST'): WorkspaceContext {
   return {
+    identity: { sub: makeClaim(workspaceId, role).userId, email: 'test@brain.test' },
     claim: makeClaim(workspaceId, role),
     workspaceId,
     requestId: 'req-settings-test',

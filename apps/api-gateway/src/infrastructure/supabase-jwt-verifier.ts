@@ -1,18 +1,22 @@
 // @paradigm: sql
 // Supabase JWT verifier (Slice A — feat-auth-supabase-identity).
 //
-// Verifies the real Supabase Auth access token (RS256, JWKS) and returns ONLY
-// the `sub` (the Supabase auth user UUID). Membership / workspace resolution is
-// a SEPARATE concern (membership-resolver.ts) — this module does identity only.
+// Verifies the real Supabase Auth access token (RS256/ES256, JWKS) and returns the
+// `sub` (Supabase auth user UUID) plus the verified `email`. Membership / workspace
+// resolution is a SEPARATE concern (membership-resolver.ts) — this module does
+// identity only.
 //
 // Persona bindings:
-//   B2 (JWKS hardening): algorithms RS256-only; exact JWKS URL; issuer/aud pinned;
-//      SUPABASE_URL asserted non-empty at construction (boot fatal upstream).
+//   B2 (JWKS hardening): asymmetric algorithms only; exact JWKS URL; issuer/aud
+//      pinned; SUPABASE_URL asserted non-empty at construction (boot fatal upstream).
 //   S1 (failure mapping): EVERY jose failure mode (fetch fail, key mismatch,
 //      expired, wrong aud/iss, malformed) is collapsed into a single AuthVerifyError.
 //      The jose error class/message is NEVER surfaced to the caller's response — the
 //      caller maps AuthVerifyError → generic UNAUTHORIZED. cacheMaxAge pinned 600s.
-//   S2 (no PII): returns `sub` only. Email is NEVER read, returned, or logged.
+//   S2 (no PII in claim/logs): the email is returned for slice-C onboarding (it is
+//      the verified source for the users.email column) but it is NEVER placed in the
+//      BrainClaim and NEVER logged. The claim is still assembled from `sub` only;
+//      every log line carries sub/requestId only — never the email.
 
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyResult } from 'jose';
 
@@ -34,8 +38,12 @@ export class AuthVerifyError extends Error {
 }
 
 export interface SupabaseJwtVerifier {
-  /** @returns the verified Supabase auth user UUID (JWT `sub`). */
-  verify(bearerToken: string): Promise<{ sub: string }>;
+  /**
+   * @returns the verified Supabase auth user UUID (JWT `sub`) and `email`.
+   * The email is for the slice-C onboarding user-row only — it MUST NOT be logged
+   * or placed in the BrainClaim (S2).
+   */
+  verify(bearerToken: string): Promise<{ sub: string; email: string }>;
 }
 
 /**
@@ -63,7 +71,7 @@ export function createSupabaseJwtVerifier(opts: {
   const jwks = createRemoteJWKSet(jwksUrl, { cacheMaxAge: 600_000 });
 
   return {
-    async verify(bearerToken: string): Promise<{ sub: string }> {
+    async verify(bearerToken: string): Promise<{ sub: string; email: string }> {
       const token = extractBearer(bearerToken);
       if (!token) {
         throw new AuthVerifyError('missing_token');
@@ -97,8 +105,16 @@ export function createSupabaseJwtVerifier(opts: {
         throw new AuthVerifyError('verify_failed');
       }
 
-      // S2: return `sub` ONLY. We never read payload.email.
-      return { sub };
+      // Slice C: read the verified email for the onboarding user-row. Supabase
+      // access tokens carry `email` as a top-level claim. It is returned but
+      // NEVER logged and NEVER placed in the BrainClaim (S2). A token with no
+      // email (rare; e.g. phone-only auth) yields '' — onboarding then errors
+      // cleanly rather than writing a null-email user.
+      const email = typeof result.payload['email'] === 'string'
+        ? (result.payload['email'] as string)
+        : '';
+
+      return { sub, email };
     },
   };
 }

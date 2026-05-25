@@ -25,8 +25,16 @@ import {
   router,
   workspaceProc,
   authedProc,
+  identityProc,
   publicProc,
 } from './trpc.js';
+import {
+  ensureUser,
+  completeOnboarding,
+  acceptInvitation,
+  listWorkspaces,
+  OnboardingError,
+} from '@brain/core-onboarding';
 import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
@@ -47,12 +55,42 @@ import {
 } from '../domain/idempotency.js';
 import { assertPageInsightGates } from '../domain/insight-gates.js';
 import type { DataPlanePort } from '../domain/proto-types.js';
+import { SUGANDH_LOK_WORKSPACE_ID } from '../infrastructure/loopback-data-plane.js';
 
 // ---------------------------------------------------------------------------
 // Router factory — accepts the DataPlanePort and IdempotencyStore as deps.
 // This enables clean test injection without module mocking.
 // CF-C6-DATA-SEAM-1: DataPlanePort is the ONLY data path. No direct DB access.
 // ---------------------------------------------------------------------------
+
+/**
+ * Map a core-service OnboardingError to a tRPC error (Slice C). Validation/slug
+ * issues → BAD_REQUEST; invitation issues → NOT_FOUND/CONFLICT/GONE. A non-
+ * OnboardingError (e.g. a DB fault) is re-wrapped as INTERNAL_SERVER_ERROR with a
+ * GENERIC message — the underlying error detail is NEVER surfaced (no PII / no DB
+ * internals leak), only the requestId for correlation.
+ */
+function mapOnboardingError(err: unknown, requestId: string): TRPCError {
+  if (err instanceof OnboardingError) {
+    const codeMap: Record<string, 'BAD_REQUEST' | 'CONFLICT' | 'NOT_FOUND'> = {
+      VALIDATION: 'BAD_REQUEST',
+      SLUG_INVALID: 'BAD_REQUEST',
+      SLUG_TAKEN: 'CONFLICT',
+      INVITATION_NOT_FOUND: 'NOT_FOUND',
+      INVITATION_NOT_PENDING: 'CONFLICT',
+      INVITATION_EXPIRED: 'CONFLICT',
+    };
+    return new TRPCError({
+      code: codeMap[err.code] ?? 'BAD_REQUEST',
+      message: `${err.message} request_id=${requestId}`,
+    });
+  }
+  // Unknown / DB fault: generic message only (never echo the raw error).
+  return new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `Operation failed. request_id=${requestId}`,
+  });
+}
 
 export function createBrainRouter(
   dataPlane: DataPlanePort,
@@ -77,46 +115,175 @@ export function createBrainRouter(
   // workspace router
   // -------------------------------------------------------------------
   const workspaceRouter = router({
-    /** List workspaces the caller has access to (authed tier). */
-    list: authedProc.query(async ({ ctx }) => {
-      // Production: query core-service workspace membership.
-      // For Phase-0 harness: returns the single workspace from the claim.
+    /**
+     * List the workspaces the verified caller belongs to (identity tier — works
+     * even mid-onboarding). Slice C: REAL multi-workspace list from the local DB
+     * (core-service listWorkspaces), keyed on the verified sub. NOT the claim.
+     */
+    list: identityProc.query(async ({ ctx }) => {
+      const workspaces = await listWorkspaces(ctx.identity.sub);
       return {
-        workspaces: [
-          {
-            workspaceId: ctx.claim.workspaceId,
-            role: ctx.claim.workspaceRole,
-          },
-        ],
+        workspaces: workspaces.map((w) => ({
+          workspaceId: w.workspaceId,
+          slug: w.slug,
+          name: w.name,
+          role: w.role,
+        })),
         requestId: ctx.requestId,
       };
     }),
 
-    /** Switch active workspace (authed tier). */
-    switch: authedProc
+    /**
+     * Data-reconciliation signal (Slice C). The StubDataPlane analytics are keyed
+     * to the seeded Sugandh-Lok workspace (the demo). A freshly-onboarded workspace
+     * has a brand-new UUID and NO analytics data — and the LIVE data plane is slice
+     * D. Rather than fabricate numbers or crash, the dashboard asks here whether the
+     * active workspace has seed data; if not it renders the honest
+     * "no data yet — connect a store (coming in integrations)" empty-state.
+     * Workspace tier: workspaceId === claim.workspaceId is already asserted.
+     */
+    dataAvailability: workspaceProc.query(({ ctx }) => {
+      return {
+        hasSeedData: ctx.workspaceId === SUGANDH_LOK_WORKSPACE_ID,
+        workspaceId: ctx.workspaceId,
+        requestId: ctx.requestId,
+      };
+    }),
+
+    /**
+     * Switch active workspace (identity tier). Slice C: validates REAL membership
+     * from the DB (multi-workspace capable). FORBIDDEN for a workspace the verified
+     * user is NOT a member of. (Replaces the slice-A claim-equality check, which
+     * was a single-workspace stopgap.)
+     */
+    switch: identityProc
       .input(
         z.object({
           workspaceId: z.string().uuid('workspace_id must be a UUID'),
         }),
       )
-      .mutation(({ ctx, input }) => {
-        // B4 (Slice A): the previous code returned the client-supplied workspaceId
-        // verbatim. There are NO callers enforcing tenancy first — that comment was
-        // false. Until slice C's DbMembershipResolver supports real multi-workspace
-        // switching, the only workspace a user may switch to is the one their
-        // verified claim already grants. Anything else is a spoof attempt.
-        if (input.workspaceId !== ctx.claim.workspaceId) {
+      .mutation(async ({ ctx, input }) => {
+        const workspaces = await listWorkspaces(ctx.identity.sub);
+        const match = workspaces.find((w) => w.workspaceId === input.workspaceId);
+        if (!match) {
+          // Not a member of the requested workspace → spoof / unauthorized switch.
           throw new TRPCError({
             code: 'FORBIDDEN',
             message:
-              `workspace.switch denied: requested workspace is not in the verified claim. ` +
-              `request_id=${ctx.requestId}`,
+              `workspace.switch denied: the verified user is not a member of the ` +
+              `requested workspace. request_id=${ctx.requestId}`,
           });
         }
         return {
-          workspaceId: ctx.claim.workspaceId,
+          workspaceId: match.workspaceId,
+          role: match.role,
           requestId: ctx.requestId,
         };
+      }),
+  });
+
+  // -------------------------------------------------------------------
+  // user router (Slice C) — identity tier: works for a no-membership user.
+  // -------------------------------------------------------------------
+  const userRouter = router({
+    /**
+     * /me Brain-native equivalent. Used by /auth/callback + /auth/confirm to upsert
+     * the user and decide onboarding-vs-dashboard. Returns the verified identity +
+     * the user's memberships; `needsOnboarding` is true when there are zero.
+     */
+    me: identityProc.query(async ({ ctx }) => {
+      // Idempotent upsert of the users row (id = verified sub, email = verified JWT).
+      await ensureUser({ sub: ctx.identity.sub, email: ctx.identity.email });
+      const workspaces = await listWorkspaces(ctx.identity.sub);
+      return {
+        userId: ctx.identity.sub,
+        memberships: workspaces.map((w) => ({
+          workspaceId: w.workspaceId,
+          slug: w.slug,
+          name: w.name,
+          role: w.role,
+        })),
+        needsOnboarding: workspaces.length === 0,
+        requestId: ctx.requestId,
+      };
+    }),
+
+    /**
+     * Ensure-user: idempotent upsert of the public users row for the caller. Ports
+     * legacy POST /api/user/ensure. Identity tier (no workspace needed).
+     */
+    ensure: identityProc.mutation(async ({ ctx }) => {
+      const { userId, created } = await ensureUser({
+        sub: ctx.identity.sub,
+        email: ctx.identity.email,
+      });
+      return { userId, created, requestId: ctx.requestId };
+    }),
+  });
+
+  // -------------------------------------------------------------------
+  // onboarding router (Slice C) — identity tier: the user has no workspace yet.
+  // -------------------------------------------------------------------
+  const onboardingRouter = router({
+    /**
+     * Complete onboarding: in ONE transaction upsert the user, create the workspace
+     * + OWNER membership in the LOCAL dev DB, then return the new workspaceId/slug.
+     * The actual Shopify/Woo OAuth connect is DEFERRED to slice D — we persist the
+     * store handle only.
+     */
+    complete: identityProc
+      .input(
+        z.object({
+          fullName: z.string().max(200),
+          jobRole: z.string().max(120).default(''),
+          brandName: z.string().min(1, 'Brand name is required').max(200),
+          slug: z.string().min(1, 'Workspace URL is required').max(80),
+          industry: z.string().max(120).default(''),
+          monthlyRevenue: z.string().max(60).default(''),
+          platform: z.enum(['SHOPIFY', 'WOOCOMMERCE']),
+          storeHandle: z.string().max(255).optional().nullable(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const { workspaceId, slug } = await completeOnboarding({
+            identity: { sub: ctx.identity.sub, email: ctx.identity.email, fullName: input.fullName },
+            fullName: input.fullName,
+            jobRole: input.jobRole,
+            brandName: input.brandName,
+            slug: input.slug,
+            industry: input.industry,
+            monthlyRevenue: input.monthlyRevenue,
+            platform: input.platform,
+            storeHandle: input.storeHandle ?? null,
+          });
+          return { workspaceId, slug, redirectTo: '/dashboard', requestId: ctx.requestId };
+        } catch (err) {
+          throw mapOnboardingError(err, ctx.requestId);
+        }
+      }),
+  });
+
+  // -------------------------------------------------------------------
+  // invitation router (Slice C) — identity tier: a joiner may have no membership.
+  // -------------------------------------------------------------------
+  const invitationRouter = router({
+    /**
+     * Accept an invitation by token (idempotent, RLS-scoped, role-mapped
+     * EDITOR→MANAGER). Member-invite SENDING (email) is DEFERRED (honest affordance).
+     */
+    accept: identityProc
+      .input(z.object({ token: z.string().min(1, 'invitation token required').max(200) }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const result = await acceptInvitation(input.token, {
+            sub: ctx.identity.sub,
+            email: ctx.identity.email,
+          });
+          return { ...result, requestId: ctx.requestId };
+        } catch (err) {
+          throw mapOnboardingError(err, ctx.requestId);
+        }
       }),
   });
 
@@ -1386,6 +1553,9 @@ export function createBrainRouter(
   return router({
     auth: authRouter,
     workspace: workspaceRouter,
+    user: userRouter,
+    onboarding: onboardingRouter,
+    invitation: invitationRouter,
     metrics: metricsRouter,
     store: storeRouter,
     pnl: pnlRouter,

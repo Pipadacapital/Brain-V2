@@ -1,0 +1,53 @@
+# LOCAL DEV Postgres for slice C (feat-onboarding-membership-db).
+#
+# Founder-binding decision (2026-05-25): onboarding/membership data persists in a
+# LOCAL Postgres (docker, dev-only) with the Brain-native RLS schema — NOT the live
+# shared Supabase production DB. Auth still uses real Supabase for IDENTITY only.
+#
+# This is DISTINCT from docker-compose.test.yml (the CF-C1-POOL-1.a pgbouncer
+# integration harness on :5433/:6544 against brain_test). This dev DB is the
+# app's runtime store on :5432 against brain_dev.
+#
+# Usage:
+#   docker compose -f apps/core-service/docker-compose.dev.yml up -d
+#   # wait until healthy (~10s), then apply the schema (DDL as the superuser):
+#   psql "postgresql://postgres:postgres@localhost:5432/brain_dev" \
+#     -f apps/core-service/migrations/local-dev/01-schema-onboarding.sql
+#   psql "postgresql://postgres:postgres@localhost:5432/brain_dev" \
+#     -f apps/core-service/migrations/local-dev/02-enable-rls-onboarding.sql
+#
+# The api-gateway connects as rls_app (NON-BYPASSRLS) via DATABASE_URL:
+#   DATABASE_URL=postgresql://rls_app:rls_app_pw@localhost:5432/brain_dev
+#   (lives in apps/api-gateway/.env — GIT-IGNORED; key name only in .env.example)
+#
+# Teardown (drops all dev data):
+#   docker compose -f apps/core-service/docker-compose.dev.yml down -v
+
+services:
+  postgres-dev:
+    image: postgres:16-alpine
+    container_name: brain-postgres-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: brain_dev
+    ports:
+      # Session-mode :5432 — the Brain-native withWorkspace/withSuperadmin primitive
+      # requires a session-mode (direct) connection (see workspace-context.ts).
+      - "5432:5432"
+    command:
+      - postgres
+      - -c
+      - row_security=on
+    volumes:
+      # Auto-creates the non-BYPASSRLS rls_app role on first start.
+      - ./docker/initdb-dev:/docker-entrypoint-initdb.d:ro
+      - brain-pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d brain_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  brain-pgdata-dev:

@@ -22,7 +22,31 @@ export interface PublicContext {
   traceId: string;
 }
 
-export interface AuthedContext extends PublicContext {
+/**
+ * Slice C: a VERIFIED identity that may NOT yet have a workspace membership.
+ * Carried so identity-tier procedures (onboarding, user.me) work for a freshly
+ * signed-up user with zero memberships — BEFORE any workspace claim exists.
+ * `email` is PII — never logged (CF-C6-PII-CLIENT-1).
+ */
+export interface VerifiedIdentity {
+  sub: string;
+  email: string;
+}
+
+/**
+ * Identity tier: a verified JWT sub+email is present. `claim`/`workspaceId` are
+ * OPTIONAL here — a no-membership user routes to /onboarding and still needs to
+ * call onboarding.complete + user.me, which require identity but NOT a workspace.
+ */
+export interface IdentityContext extends PublicContext {
+  identity: VerifiedIdentity;
+  /** Present ONLY when the verified user has a resolved membership. */
+  claim?: BrainClaim;
+  /** Present ONLY when claim is present; always === claim.workspaceId. */
+  workspaceId?: string;
+}
+
+export interface AuthedContext extends IdentityContext {
   claim: BrainClaim;
 }
 
@@ -32,14 +56,14 @@ export interface WorkspaceContext extends AuthedContext {
 
 // The tRPC instance uses the union of all context shapes.
 // Each procedure tier narrows the context at middleware time.
-export type RootContext = PublicContext | AuthedContext | WorkspaceContext;
+export type RootContext = PublicContext | IdentityContext | AuthedContext | WorkspaceContext;
 
 // ---------------------------------------------------------------------------
 // tRPC init with superjson transformer (G-BIGINT gate)
 // CF-C6-BIGINT-JSON-1: superjson handles bigint, Date, Map, Set, etc.
 // ---------------------------------------------------------------------------
 
-const t = initTRPC.context<WorkspaceContext>().create({
+const t = initTRPC.context<IdentityContext>().create({
   transformer: superjson,
   // CF-SEC-5: surface the real correlation request_id (not the procedure path) on
   // every error response so operators can trace failures end-to-end.
@@ -67,7 +91,9 @@ export const publicProcedure = t.procedure;
 
 const authedMiddleware = t.middleware(({ ctx, next }) => {
   // In production: claim is set by Fastify auth hook from the verified JWT.
-  // The claim field being absent means the request is unauthenticated.
+  // The claim field being absent means the request is unauthenticated OR the
+  // verified user has no workspace membership yet (slice C). Either way, claim-
+  // requiring (workspace-data) procedures are not reachable — UNAUTHORIZED.
   if (!('claim' in ctx) || !ctx.claim) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -75,6 +101,24 @@ const authedMiddleware = t.middleware(({ ctx, next }) => {
     });
   }
   return next({ ctx: ctx as AuthedContext });
+});
+
+// ---------------------------------------------------------------------------
+// Middleware: identity check (Slice C)
+// A VERIFIED JWT identity (sub+email) is required, but a workspace membership is
+// NOT — this tier serves onboarding + user.me for a no-membership user who must
+// be routed to /onboarding. The verified identity (never spoofable headers) is
+// the gate; fail-closed UNAUTHORIZED when absent.
+// ---------------------------------------------------------------------------
+
+const identityMiddleware = t.middleware(({ ctx, next }) => {
+  if (!('identity' in ctx) || !ctx.identity || !ctx.identity.sub) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: `Authentication required. request_id=${ctx.requestId}`,
+    });
+  }
+  return next({ ctx: ctx as IdentityContext & { identity: VerifiedIdentity } });
 });
 
 // ---------------------------------------------------------------------------
@@ -114,7 +158,14 @@ const workspaceMiddleware = t.middleware(({ ctx, next }) => {
 /** Public tier: no auth required (login page, health check) */
 export const publicProc = t.procedure;
 
-/** Authed tier: requires a valid BrainClaim */
+/**
+ * Identity tier (Slice C): requires a verified JWT identity (sub+email) but NOT a
+ * workspace membership. For onboarding.complete + user.me (the no-membership user
+ * who must be routed to /onboarding).
+ */
+export const identityProc = t.procedure.use(identityMiddleware);
+
+/** Authed tier: requires a valid BrainClaim (verified identity WITH a membership) */
 export const authedProc = t.procedure.use(authedMiddleware);
 
 /** Workspace tier: requires auth + workspace_id === claim.workspaceId */

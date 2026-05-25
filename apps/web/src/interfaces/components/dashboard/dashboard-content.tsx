@@ -9,13 +9,23 @@
 
 import { useQueryState, parseAsString } from "nuqs";
 import { useAppSelector } from "@/domain/store/hooks.js";
+import { trpc } from "@/infrastructure/trpc-client.js";
 import { KpiStrip } from "@/interfaces/components/kpi/kpi-strip.js";
 import { PnlWaterfallPanel } from "@/interfaces/components/waterfall/pnl-waterfall-panel.js";
 import { DrillDrawer } from "@/interfaces/components/drill/drill-drawer.js";
+import { EmptyWorkspaceState } from "@/interfaces/components/dashboard/empty-workspace-state.js";
 
 export function DashboardContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+
+  // Slice C data-reconciliation: a freshly-onboarded workspace has a new UUID and
+  // NO analytics data (the StubDataPlane seed is keyed to Sugandh-Lok; the live data
+  // plane is slice D). Ask the gateway whether the active workspace has seed data; if
+  // not, render the honest "no data yet" empty-state rather than fabricating numbers.
+  const dataAvailability = trpc.workspace.dataAvailability.useQuery(undefined, {
+    retry: false,
+  });
 
   const [dateStart, setDateStart] = useQueryState(
     "from",
@@ -87,32 +97,43 @@ export function DashboardContent() {
         </div>
       </div>
 
-      {/* KPI strip — revenue + profit */}
-      <KpiStrip
-        workspaceId={workspaceId}
-        date_start={dateStart}
-        date_end={dateEnd}
-      />
+      {/* Slice C: a freshly-onboarded workspace (no seed data) shows the honest
+          empty-state; the seeded Sugandh-Lok workspace keeps its demo data. We do
+          NOT fabricate data for a new workspace. While the availability check is in
+          flight we optimistically render the data panels (Sugandh-Lok is the common
+          case); only an explicit hasSeedData=false swaps to the empty-state. */}
+      {dataAvailability.data && !dataAvailability.data.hasSeedData ? (
+        <EmptyWorkspaceState />
+      ) : (
+        <>
+          {/* KPI strip — revenue + profit */}
+          <KpiStrip
+            workspaceId={workspaceId}
+            date_start={dateStart}
+            date_end={dateEnd}
+          />
 
-      {/* P&L / CM Waterfall (Visx) */}
-      <PnlWaterfallPanel
-        workspaceId={workspaceId}
-        date_start={dateStart}
-        date_end={dateEnd}
-      />
+          {/* P&L / CM Waterfall (Visx) */}
+          <PnlWaterfallPanel
+            workspaceId={workspaceId}
+            date_start={dateStart}
+            date_end={dateEnd}
+          />
 
-      {/* Recommended actions placeholder (Phase 2) */}
-      <section
-        aria-label="Recommended actions"
-        className="rounded-lg border border-dashed border-border p-6 text-center bg-card"
-      >
-        <p className="text-sm text-muted-foreground">
-          Top-3 recommended actions — Morning Brief (Phase 2)
-        </p>
-      </section>
+          {/* Recommended actions placeholder (Phase 2) */}
+          <section
+            aria-label="Recommended actions"
+            className="rounded-lg border border-dashed border-border p-6 text-center bg-card"
+          >
+            <p className="text-sm text-muted-foreground">
+              Top-3 recommended actions — Morning Brief (Phase 2)
+            </p>
+          </section>
 
-      {/* Drill-to-source drawer */}
-      <DrillDrawer />
+          {/* Drill-to-source drawer */}
+          <DrillDrawer />
+        </>
+      )}
     </div>
   );
 }

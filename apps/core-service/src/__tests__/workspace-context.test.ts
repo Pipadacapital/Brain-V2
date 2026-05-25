@@ -165,10 +165,12 @@ describe('withWorkspace()', () => {
     ).rejects.toThrow('not a valid UUID')
   })
 
-  it('(-) throws if DIRECT_URL is unset', async () => {
+  it('(-) throws if neither DIRECT_URL nor DATABASE_URL is set', async () => {
     vi.resetModules()
-    const savedUrl = process.env['DIRECT_URL']
+    const savedDirect = process.env['DIRECT_URL']
+    const savedDatabase = process.env['DATABASE_URL']
     delete process.env['DIRECT_URL']
+    delete process.env['DATABASE_URL']
 
     try {
       const mod = await import('../infrastructure/db/workspace-context.js')
@@ -176,9 +178,33 @@ describe('withWorkspace()', () => {
       mod._resetPoolForTest()
       await expect(
         mod.withWorkspace('aaaaaaaa-0000-0000-0000-000000000001', async () => {}),
-      ).rejects.toThrow('DIRECT_URL is not set')
+      ).rejects.toThrow('neither DIRECT_URL nor DATABASE_URL is set')
     } finally {
-      if (savedUrl !== undefined) process.env['DIRECT_URL'] = savedUrl
+      if (savedDirect !== undefined) process.env['DIRECT_URL'] = savedDirect
+      if (savedDatabase !== undefined) process.env['DATABASE_URL'] = savedDatabase
+    }
+  })
+
+  it('(+) falls back to DATABASE_URL when DIRECT_URL is unset (slice C alias)', async () => {
+    vi.resetModules()
+    const savedDirect = process.env['DIRECT_URL']
+    const savedDatabase = process.env['DATABASE_URL']
+    delete process.env['DIRECT_URL']
+    // A syntactically-valid URL is enough — the mock pool short-circuits before connect.
+    process.env['DATABASE_URL'] = 'postgresql://rls_app:rls_app_pw@localhost:5432/brain_dev'
+
+    const mod = await import('../infrastructure/db/workspace-context.js')
+    try {
+      const { pool, queries } = makeMockPool()
+      mod._setPoolForTest(pool)
+      await mod.withWorkspace('aaaaaaaa-0000-0000-0000-000000000001', async () => 'ok')
+      // Proves it did NOT throw the unset-URL error and ran the transaction.
+      expect(queries[0]?.text).toBe('BEGIN')
+    } finally {
+      mod._resetPoolForTest()
+      if (savedDirect !== undefined) process.env['DIRECT_URL'] = savedDirect
+      if (savedDatabase !== undefined) process.env['DATABASE_URL'] = savedDatabase
+      else delete process.env['DATABASE_URL']
     }
   })
 

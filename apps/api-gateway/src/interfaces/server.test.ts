@@ -67,7 +67,7 @@ function buildTestServer() {
           requestId,
           traceId,
         });
-        return { claim, workspaceId, requestId, traceId };
+        return { identity: { sub: userId, email: 'server-test@brain.test' }, claim, workspaceId, requestId, traceId };
       },
     },
   });

@@ -38,6 +38,9 @@ importers:
       jose:
         specifier: ^6.2.3
         version: 6.2.3
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
       superjson:
         specifier: ^2.2.2
         version: 2.2.6
@@ -48,6 +51,9 @@ importers:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       '@vitest/coverage-v8':
         specifier: ^4.1.7
         version: 4.1.7(vitest@4.1.7)

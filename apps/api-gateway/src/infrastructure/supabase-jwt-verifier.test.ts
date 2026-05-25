@@ -92,11 +92,13 @@ describe('createSupabaseJwtVerifier (B2/S1/S2)', () => {
     expect(() => createSupabaseJwtVerifier({ supabaseUrl: '' })).toThrow(/SUPABASE_URL is required/);
   });
 
-  it('verifies a good RS256 token and returns sub ONLY (S2)', async () => {
+  it('verifies a good RS256 token and returns sub (+ email empty when absent) (S2)', async () => {
     const v = createSupabaseJwtVerifier({ supabaseUrl: baseUrl });
     const token = await mint({ iss: `${baseUrl}/auth/v1`, aud: 'authenticated', sub: 'sub-abc' });
     const out = await v.verify(`Bearer ${token}`);
-    expect(out).toEqual({ sub: 'sub-abc' }); // exactly sub, no email/other fields
+    // Slice C: the verifier returns sub + email. With no email claim in the token,
+    // email is '' (the BrainClaim still carries NO email — proven in the context test).
+    expect(out).toEqual({ sub: 'sub-abc', email: '' });
   });
 
   it('S1: missing/non-Bearer header → AuthVerifyError(missing_token)', async () => {
@@ -169,7 +171,9 @@ describe('ES256 (live Supabase signing alg) + symmetric rejection (B2 amended)',
     const ecBase = addr && typeof addr === 'object' ? `http://127.0.0.1:${addr.port}` : '';
 
     const now = Math.floor(Date.now() / 1000);
-    const token = await new SignJWT({})
+    // Slice C: include the email claim (Supabase access tokens carry it) to prove
+    // the verifier extracts it on the live ES256 signing alg.
+    const token = await new SignJWT({ email: 'es-user@brain.test' })
       .setProtectedHeader({ alg: 'ES256', kid: ecKid })
       .setIssuer(`${ecBase}/auth/v1`)
       .setAudience('authenticated')
@@ -180,7 +184,7 @@ describe('ES256 (live Supabase signing alg) + symmetric rejection (B2 amended)',
 
     const v = createSupabaseJwtVerifier({ supabaseUrl: ecBase });
     const out = await v.verify(`Bearer ${token}`);
-    expect(out).toEqual({ sub: 'es-sub-1' });
+    expect(out).toEqual({ sub: 'es-sub-1', email: 'es-user@brain.test' });
     await new Promise<void>((r) => ecServer.close(() => r()));
   });
 

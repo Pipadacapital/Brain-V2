@@ -6,9 +6,20 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { verifyOtpMock } = vi.hoisted(() => ({ verifyOtpMock: vi.fn() }));
+const { verifyOtpMock, getSessionMock, decidePostAuthPathMock } = vi.hoisted(() => ({
+  verifyOtpMock: vi.fn(),
+  getSessionMock: vi.fn(),
+  decidePostAuthPathMock: vi.fn(),
+}));
 vi.mock('@/infrastructure/supabase/server.js', () => ({
-  createSupabaseServerClient: async () => ({ auth: { verifyOtp: verifyOtpMock } }),
+  createSupabaseServerClient: async () => ({
+    auth: { verifyOtp: verifyOtpMock, getSession: getSessionMock },
+  }),
+}));
+// Slice C: the route routes via the /me-equivalent gate. Mock it so the test asserts
+// the route delegates the onboarding-vs-dashboard decision (proven separately).
+vi.mock('@/infrastructure/post-auth-routing.js', () => ({
+  decidePostAuthPath: decidePostAuthPathMock,
 }));
 
 // Capture redirect targets without booting the Next runtime.
@@ -28,35 +39,54 @@ function makeRequest(url: string) {
 
 beforeEach(() => {
   verifyOtpMock.mockReset();
+  getSessionMock.mockReset();
+  decidePostAuthPathMock.mockReset();
+  // Default: a session exists and the gate sends members to /dashboard.
+  getSessionMock.mockResolvedValue({ data: { session: { access_token: 'tok' } } });
+  decidePostAuthPathMock.mockResolvedValue('/dashboard');
 });
 
 describe('/auth/confirm route handler', () => {
-  it('POSITIVE: valid token_hash + type → verifyOtp called, redirect to /dashboard', async () => {
+  it('POSITIVE: valid token_hash + type → verifyOtp called, routes via the /me gate', async () => {
     verifyOtpMock.mockResolvedValue({ error: null });
     const res = (await GET(
       makeRequest('http://localhost:3000/auth/confirm?token_hash=abc123&type=signup'),
     )) as unknown as { redirectedTo: string };
 
     expect(verifyOtpMock).toHaveBeenCalledWith({ type: 'signup', token_hash: 'abc123' });
+    // Slice C: the gate decided /dashboard (member). The token went to the gate, not a URL.
+    expect(decidePostAuthPathMock).toHaveBeenCalledWith('tok');
     expect(res.redirectedTo).toBe('http://localhost:3000/dashboard');
   });
 
-  it('honours a same-origin relative ?next path', async () => {
+  it('Slice C: a no-membership user is routed to /onboarding by the gate', async () => {
+    verifyOtpMock.mockResolvedValue({ error: null });
+    decidePostAuthPathMock.mockResolvedValue('/onboarding');
+    const res = (await GET(
+      makeRequest('http://localhost:3000/auth/confirm?token_hash=abc123&type=signup'),
+    )) as unknown as { redirectedTo: string };
+    expect(res.redirectedTo).toBe('http://localhost:3000/onboarding');
+  });
+
+  it('honours a same-origin relative ?next path (gate NOT consulted)', async () => {
     verifyOtpMock.mockResolvedValue({ error: null });
     const res = (await GET(
       makeRequest('http://localhost:3000/auth/confirm?token_hash=abc&type=email&next=/cohorts'),
     )) as unknown as { redirectedTo: string };
     expect(res.redirectedTo).toBe('http://localhost:3000/cohorts');
+    expect(decidePostAuthPathMock).not.toHaveBeenCalled();
   });
 
-  it('SECURITY: ignores an absolute (off-origin) ?next → falls back to /dashboard', async () => {
+  it('SECURITY: ignores an absolute (off-origin) ?next → routes via the gate instead', async () => {
     verifyOtpMock.mockResolvedValue({ error: null });
     const res = (await GET(
       makeRequest(
         'http://localhost:3000/auth/confirm?token_hash=abc&type=email&next=https://evil.com',
       ),
     )) as unknown as { redirectedTo: string };
+    // Off-origin next is dropped; the gate decides (defaults to /dashboard here).
     expect(res.redirectedTo).toBe('http://localhost:3000/dashboard');
+    expect(res.redirectedTo).not.toContain('evil.com');
   });
 
   it('NEGATIVE: missing token_hash/type → auth-code-error, verifyOtp NOT called', async () => {
