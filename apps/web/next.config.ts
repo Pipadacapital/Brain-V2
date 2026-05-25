@@ -10,6 +10,20 @@ const nextConfig: NextConfig = {
   experimental: {
     // Turbopack is default in Next 16 (--turbopack flag in dev).
   },
+  // LOCAL-HARNESS: @brain/lib-metrics + @brain/api-gateway are aliased to raw TS
+  // source that uses NodeNext-style ".js" import specifiers. webpack's extensionAlias
+  // resolves those ".js" specifiers to the real .ts/.tsx files so the bundler can
+  // consume the workspace packages from source without a build step. Run via `next dev`
+  // (webpack), not `--turbopack` (Turbopack has no extensionAlias equivalent yet).
+  webpack: (config) => {
+    config.resolve = config.resolve ?? {};
+    config.resolve.extensionAlias = {
+      '.js': ['.ts', '.tsx', '.js', '.jsx'],
+      '.mjs': ['.mts', '.mjs'],
+      '.jsx': ['.tsx', '.jsx'],
+    };
+    return config;
+  },
   // CF-C6-PII-CLIENT-1: never log PII in client-facing error pages.
   // Production: configure CSP headers here.
   headers: async () => [
