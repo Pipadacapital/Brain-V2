@@ -1,0 +1,183 @@
+// @paradigm: sql
+// CF-C6-DATA-SEAM-1: proto-first gRPC contract for MetricsService.
+// All _mu fields are int64 minor units (BIGINT). All _bp fields are Int32Value
+// (nullable: NULL from zero-denominator guard). currency_code is ISO 4217.
+// data_epoch is the ClickHouse snapshot timestamp (CF-C6-AS-OF-STAMP-1).
+//
+// scale field on MetricDefinition (CF-C6-ROAS-DISPLAY-CONTRACT-1):
+//   10000 = basis-points metric (_bp)
+//   100   = ×100 integer (blended_roas_x100 — display: value/100 → "2.50×")
+//   1     = raw value (money _mu or count)
+// The display layer reads scale instead of branching on metric-ID strings.
+//
+// DO NOT add business logic here. This is the contract; logic lives in the
+// analytics-service data plane (query_metrics, query_gateway.py).
+
+syntax = "proto3";
+
+package brain.metrics.v1;
+
+option go_package = "github.com/pipada/brain/gen/go/brain/metrics/v1;metricsv1";
+
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/timestamp.proto";
+
+// ---------------------------------------------------------------------------
+// Shared value types
+// ---------------------------------------------------------------------------
+
+// MetricRow — one (workspace_id, date) row from
+// brain.workspace_daily_metrics_computed.
+// Field-for-field mirror of query_gateway.py::MetricRow.
+// All _mu = int64, all _bp = Int32Value (nullable, zero-denominator guard).
+message MetricRow {
+  string workspace_id = 1;
+  // ISO date e.g. "2026-05-01" — stored as string to avoid proto timestamp overhead.
+  string date = 2;
+  // CF-C6-AS-OF-STAMP-1: the ClickHouse snapshot epoch for this row.
+  google.protobuf.Timestamp data_epoch = 3;
+
+  // Revenue ladder (_mu = int64 minor units)
+  int64 gross_sales_mu = 10;
+  int64 returns_mu = 11;
+  int64 discounts_mu = 12;
+  int64 net_sales_mu = 13;
+  int64 total_tax_mu = 14;
+  int64 net_net_tax_mu = 15;
+  int64 shipping_revenue_mu = 16;
+  int64 net_revenue_mu = 17;
+
+  // Cost ladder
+  int64 cogs_mu = 20;
+  int64 total_ad_spend_mu = 21;
+  int64 cm1_mu = 22;
+  int64 cm2_mu = 23;
+  google.protobuf.Int32Value misc_expenses_prorated_mu = 24; // nullable
+  int64 cm3_mu = 25;
+
+  // Ratio metrics (_bp = Int32Value, nullable on zero-denominator day)
+  google.protobuf.Int32Value rto_rate_bp = 30;
+  google.protobuf.Int32Value prepaid_rate_bp = 31;
+  google.protobuf.Int32Value conversion_rate_bp = 32;
+  google.protobuf.Int32Value aov_mu = 33;      // AOV is _mu but nullable
+  google.protobuf.Int32Value acos_bp = 34;     // display_only
+  google.protobuf.Int32Value blended_roas_x100 = 35; // display_only, scale=100
+  string currency_code = 36;                   // ISO 4217, e.g. "INR"
+
+  // Optional channel ratios (nullable)
+  google.protobuf.Int32Value meta_ctr_bp = 40;
+  google.protobuf.Int32Value meta_cpc_mu = 41;
+  google.protobuf.Int32Value meta_cpm_mu = 42;
+  google.protobuf.Int32Value google_ctr_bp = 43;
+  google.protobuf.Int32Value google_avg_cpc_mu = 44;
+}
+
+// MetricDefinition — the registry contract exposed over gRPC for the
+// G-REGISTRY-ONLY mapper. Every KPI tRPC field traces to a definition_id here.
+// CF-C6-ROAS-DISPLAY-CONTRACT-1: scale field.
+message MetricDefinition {
+  string id = 1;
+  string kind = 2;   // "money" | "ratio" | "count"
+  string unit = 4;   // "mu" | "bp" | "x100" | "count"
+  bool display_only = 5;
+  string parity_class = 6; // "shadow_compare" | "correctness_fixture"
+  // CF-C6-ROAS-DISPLAY-CONTRACT-1: display layer reads value/scale.
+  // 10000 = bp metric, 100 = ×100 integer (ROAS), 1 = money/count
+  int32 scale = 7;
+}
+
+// KpiSummaryRow — typed shape for GetKpiSummary. Every field is a registry
+// definition_id (CF-C6-REGISTRY-ONLY-BFF-1). No ad-hoc derived fields.
+message KpiSummaryRow {
+  string workspace_id = 1;
+  // ISO date range label e.g. "2026-05-01/2026-05-24"
+  string period = 2;
+  google.protobuf.Timestamp data_epoch = 3;
+  string currency_code = 4;
+
+  // Revenue strip (definition_ids from METRIC_REGISTRY)
+  int64 net_revenue_mu = 10;    // net_revenue_mu
+  int64 cm2_mu = 11;            // cm2_mu
+  int64 cm3_mu = 12;            // cm3_mu
+  google.protobuf.Int32Value rto_rate_bp = 13;
+  google.protobuf.Int32Value blended_roas_x100 = 14;  // scale=100 → display /100
+  int64 total_orders = 15;      // count metric
+  google.protobuf.Int32Value aov_mu = 16;
+  google.protobuf.Int32Value conversion_rate_bp = 17;
+}
+
+// PnlWaterfallRow — each step in the P&L waterfall. definition_id links to
+// the registry (CF-C6-REGISTRY-ONLY-BFF-1).
+message PnlWaterfallRow {
+  // Registry definition_id for this step (e.g. "net_revenue_mu", "cm1_mu")
+  string definition_id = 1;
+  string label = 2;       // display label (server-side, not UI-computed)
+  int64 value_mu = 3;     // signed: negative = cost deduction
+  int64 cumulative_mu = 4;
+  string currency_code = 5;
+  google.protobuf.Timestamp data_epoch = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Request / Response messages
+// ---------------------------------------------------------------------------
+
+message QueryMetricsRequest {
+  string workspace_id = 1;
+  // Registry definition_ids to return (e.g. ["cm2_mu", "net_revenue_mu"])
+  repeated string definition_ids = 2;
+  // ISO date range
+  string date_start = 3;
+  string date_end = 4;
+  // Cursor pagination — no offset (CF-API-CURSOR-1)
+  string cursor = 5;  // opaque cursor; empty = first page
+  int32 page_size = 6; // default 90 (3 months daily)
+}
+
+message QueryMetricsResponse {
+  repeated MetricRow rows = 1;
+  // CF-C6-AS-OF-STAMP-1: snapshot epoch for this batch
+  google.protobuf.Timestamp data_epoch = 2;
+  // Cursor for next page; empty = last page
+  string next_cursor = 3;
+}
+
+message GetKpiSummaryRequest {
+  string workspace_id = 1;
+  string date_start = 2;
+  string date_end = 3;
+}
+
+message GetKpiSummaryResponse {
+  KpiSummaryRow summary = 1;
+  // CF-C6-AS-OF-STAMP-1
+  google.protobuf.Timestamp data_epoch = 2;
+}
+
+message GetPnlWaterfallRequest {
+  string workspace_id = 1;
+  string date_start = 2;
+  string date_end = 3;
+}
+
+message GetPnlWaterfallResponse {
+  repeated PnlWaterfallRow steps = 1;
+  google.protobuf.Timestamp data_epoch = 2;
+}
+
+// ---------------------------------------------------------------------------
+// MetricsService — the gRPC contract for the api-gateway DataPlanePort
+// (analytics read path). Bound in-process / localhost-loopback in Phase 0–1.
+// ---------------------------------------------------------------------------
+service MetricsService {
+  // Query raw metric rows from the computed MV (wraps query_metrics).
+  // Workspace-scoped, fail-closed (UnscopedQueryError if workspace_id empty).
+  rpc QueryMetrics(QueryMetricsRequest) returns (QueryMetricsResponse);
+
+  // Get typed KPI summary strip for a date range.
+  // Every field is a named registry metric — no derived/ad-hoc values.
+  rpc GetKpiSummary(GetKpiSummaryRequest) returns (GetKpiSummaryResponse);
+
+  // Get P&L / CM waterfall steps for a date range (Visx chart data).
+  rpc GetPnlWaterfall(GetPnlWaterfallRequest) returns (GetPnlWaterfallResponse);
+}

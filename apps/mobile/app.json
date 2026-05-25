@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "Brain",
+    "slug": "brain-mobile",
+    "version": "1.0.0",
+    "scheme": "brain",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#FFFFFF"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/brain-mobile"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.pipadacapital.brain",
+      "infoPlist": {
+        "NSPinnedDomains": {
+          "brain.pipadacapital.com": {
+            "NSIncludesSubdomains": true,
+            "NSPinnedLeafIdentities": [
+              {
+                "SPKI-SHA256-BASE64": "PLACEHOLDER_CURRENT_PIN"
+              },
+              {
+                "SPKI-SHA256-BASE64": "PLACEHOLDER_ROTATION_PIN"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.pipadacapital.brain",
+      "networkSecurityConfig": "./android-network-security-config.xml"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#0A6E30",
+          "sounds": []
+        }
+      ],
+      "expo-device",
+      "expo-application"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

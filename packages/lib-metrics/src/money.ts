@@ -2,6 +2,8 @@
 // CF-C2-SUBUNIT-1: Money carries subunit_multiplier — the conversion reads it, never hardcodes 100.
 // v1 internal contract: field names are stable; Child 4 imports unchanged.
 // Forward note: proto Money message (Child 4) must mirror int64 minor_units / string currency_code / int32 subunit_multiplier.
+// CF-C6-FORMATMONEY-CANONICAL-1: formatMoney is the ONE canonical display formatter.
+//   ONE home: this file. web + mobile import from @brain/lib-metrics. ZERO local reimpls.
 
 import { subunitMultiplier } from './subunits.js';
 

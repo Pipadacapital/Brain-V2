@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "jsx": "react-native",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "allowJs": true,
+    "baseUrl": ".",
+    "paths": {
+      "@brain/lib-metrics": ["../../packages/lib-metrics/src/index.ts"],
+      "@brain/core-auth": ["../../apps/core-service/src/domain/auth/brain-claim.ts"]
+    },
+    "skipLibCheck": true,
+    "types": ["jest"]
+  },
+  "include": ["src/**/*", "__tests__/**/*", "app/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

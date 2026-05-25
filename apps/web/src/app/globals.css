@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  --color-brand-primary: #1a56db;
+  --color-brand-accent:  #0e9f6e;
+
+  /* Goal RAG tokens — CF-C6-RENDER-ONLY-1 */
+  --color-rag-green:  #0e9f6e;
+  --color-rag-amber:  #d97706;
+  --color-rag-red:    #dc2626;
+
+  /* Surface tokens */
+  --color-surface:       #ffffff;
+  --color-surface-muted: #f9fafb;
+  --color-border:        #e5e7eb;
+  --color-text:          #111827;
+  --color-text-muted:    #6b7280;
+
+  /* Severity tokens */
+  --color-severity-critical: #dc2626;
+  --color-severity-warning:  #d97706;
+  --color-severity-info:     #2563eb;
+}
+
+body {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
