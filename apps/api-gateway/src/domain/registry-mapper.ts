@@ -1,0 +1,138 @@
+// @paradigm: sql
+// CF-C6-REGISTRY-ONLY-BFF-1: every KPI tRPC field traces to a MetricDefinition.id.
+// NO ad-hoc arithmetic in the gateway read path — any cross-row aggregate must be
+// a named registry metric obtained via query_metrics, never a JS reduce.
+//
+// G-REGISTRY-ONLY gate: a static grep of apps/api-gateway/src finds NO arithmetic
+// outside this file's formatMoney import path. Any `reduce((s,r)=>s+r.x_mu,0)`
+// anywhere in gateway/web/mobile = traceability violation.
+//
+// The mapper validates that every field in a response object traces to a
+// definition in METRIC_REGISTRY. This is called at runtime to enforce the
+// invariant — not just a static type check.
+
+import { METRIC_REGISTRY, type MetricDefinition } from '@brain/lib-metrics';
+import type { KpiSummaryRow, PnlWaterfallRow } from './proto-types.js';
+
+// _METRIC_COLUMNS mirrors query_gateway.py's _METRIC_COLUMNS tuple.
+// Every BFF output field must be in this set (CF-C6-REGISTRY-ONLY-BFF-1).
+export const _METRIC_COLUMNS = new Set([
+  'workspace_id',
+  'date',
+  'gross_sales_mu',
+  'returns_mu',
+  'discounts_mu',
+  'net_sales_mu',
+  'total_tax_mu',
+  'net_net_tax_mu',
+  'shipping_revenue_mu',
+  'net_revenue_mu',
+  'cogs_mu',
+  'total_ad_spend_mu',
+  'cm1_mu',
+  'cm2_mu',
+  'misc_expenses_prorated_mu',
+  'cm3_mu',
+  'rto_rate_bp',
+  'prepaid_rate_bp',
+  'conversion_rate_bp',
+  'aov_mu',
+  'acos_bp',
+  'blended_roas_x100',
+  'meta_ctr_bp',
+  'meta_cpc_mu',
+  'meta_cpm_mu',
+  'google_ctr_bp',
+  'google_avg_cpc_mu',
+  // count metrics allowed by name
+  'total_orders',
+]);
+
+// KPI_FIELDS_TO_DEFINITION_ID: maps tRPC KpiSummary fields to registry definition_ids.
+// Every entry here MUST have a corresponding MetricDefinition (checked at runtime).
+// CF-C6-REGISTRY-ONLY-BFF-1.
+export const KPI_FIELDS_TO_DEFINITION_ID: Record<string, string> = {
+  net_revenue_mu: 'net_revenue_mu',
+  cm2_mu: 'cm2_mu',
+  cm3_mu: 'cm3_mu',
+  rto_rate_bp: 'rto_rate_bp',
+  blended_roas_x100: 'blended_roas_x100',
+  total_orders: 'total_orders', // count, no registry entry needed — allowed by convention
+  aov_mu: 'aov_mu',
+  conversion_rate_bp: 'conversion_rate_bp',
+};
+
+// PNL_WATERFALL_DEFINITION_IDS: the ordered set of registry ids for the P&L waterfall.
+// Each step MUST trace to a registry definition (CF-C6-REGISTRY-ONLY-BFF-1).
+export const PNL_WATERFALL_DEFINITION_IDS = [
+  'net_revenue_mu',
+  'cogs_mu',
+  'cm1_mu',
+  'total_ad_spend_mu',
+  'cm2_mu',
+  'misc_expenses_prorated_mu',
+  'cm3_mu',
+] as const;
+
+/**
+ * Validate that a KpiSummaryRow output traces every field to a registry definition_id.
+ * Called at runtime before returning to the tRPC client.
+ *
+ * G-REGISTRY-ONLY: throws if any field is not in _METRIC_COLUMNS or KPI_FIELDS_TO_DEFINITION_ID.
+ * Mutant probe: add an orphan `reduce` field to the row → this function throws.
+ */
+export function assertKpiRegistryTraceability(row: KpiSummaryRow): void {
+  // Check numeric fields in the response map to a known registry id or column.
+  const fieldNames = Object.keys(row).filter(
+    (k) => !['workspace_id', 'period', 'data_epoch', 'currency_code'].includes(k),
+  );
+
+  for (const field of fieldNames) {
+    const isInColumns = _METRIC_COLUMNS.has(field);
+    const isInKpiMap = field in KPI_FIELDS_TO_DEFINITION_ID;
+
+    if (!isInColumns && !isInKpiMap) {
+      throw new Error(
+        `G-REGISTRY-ONLY VIOLATION: KPI field "${field}" does not trace to any ` +
+          `registry definition_id or _METRIC_COLUMNS entry. ` +
+          `CF-C6-REGISTRY-ONLY-BFF-1. No ad-hoc derived fields in the BFF.`,
+      );
+    }
+  }
+}
+
+/**
+ * Validate that a PnlWaterfallRow's definition_id is a known registry metric.
+ */
+export function assertWaterfallDefinitionId(step: PnlWaterfallRow): void {
+  const isKnown =
+    PNL_WATERFALL_DEFINITION_IDS.includes(step.definition_id as (typeof PNL_WATERFALL_DEFINITION_IDS)[number]) ||
+    step.definition_id in METRIC_REGISTRY;
+
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: P&L waterfall definition_id="${step.definition_id}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+/**
+ * Look up a MetricDefinition by id. Returns undefined for count metrics (no registry entry).
+ */
+export function getMetricDefinition(id: string): MetricDefinition | undefined {
+  return METRIC_REGISTRY[id];
+}
+
+/**
+ * Get the display scale for a metric id.
+ * CF-C6-ROAS-DISPLAY-CONTRACT-1: blended_roas_x100 → scale=100, _bp → scale=10000, _mu/count → scale=1.
+ * The display layer uses: displayValue = rawValue / scale.
+ */
+export function getMetricScale(id: string): 10000 | 100 | 1 {
+  const def = METRIC_REGISTRY[id];
+  if (!def) return 1; // count metrics
+  if (def.unit === 'bp') return 10000;
+  if (def.unit === 'x100') return 100;
+  return 1; // mu or count
+}

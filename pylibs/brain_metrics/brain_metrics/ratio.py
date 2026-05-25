@@ -61,8 +61,8 @@ def ratio_to_basis_points(numerator: int, denominator: int) -> int:
 
     # Assert INT32 range — throw on overflow, matching TS ratioToBasisPoints RangeError behavior.
     # Parity: both TS and Python throw on overflow (fail-loud, no silent clamp).
-    # F4 fix (Shreya LOW): reconcile cross-language overflow behavior before ratio fields
-    # enter the byte-identity gate (Child 4). CF-C2-RECON-TAXONOMY-1 / M-A5-Q1.
+    # Cross-language overflow behavior reconciled at Child 4 (this child). CF-C2-RECON-TAXONOMY-1.
+    # M-A5-Q1: INT32 overflow → OverflowError in Python; RangeError in TS. Both fail-loud.
     if result > _INT32_MAX or result < _INT32_MIN:
         raise OverflowError(
             f"ratio_to_basis_points: result {result} overflows INT32 range "

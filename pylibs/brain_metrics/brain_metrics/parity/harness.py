@@ -7,6 +7,12 @@ ROUND_HALF_EVEN) == SUM(Brain BIGINT)` at zero tolerance. The paradigm is the
 strongest possible: deterministic integer equality. Any float in the harness
 would defeat the purpose. M-A5-1, CF-C2-GOLDEN-1.
 
+Child 4 extensions (CF-C4-DDR-1, CF-C4-PARITY-SCOPE-1, CF-C4-RATIO-DIVOP-1):
+- DDR hook wired via `ddr_lookup` parameter (definitional_delta_register.py)
+- `input_source` parameter added (CF-C4-PARITY-SCOPE-1: every run declares source)
+- parity_gap:true metrics routed to correctness-fixture gate (NEVER shadow-compare)
+- COGS_SETTINGS_CHANGE_DELTA category counter added
+
 Iteration grain: (workspace_id, date, field) — future live run uses the same
 grain by construction (mechanical re-point at real data, not a re-derivation).
 
@@ -18,7 +24,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Any
+from typing import Any, Callable, Optional
 
 from brain_metrics.convert import decimal_to_minor_units
 from brain_metrics.parity.taxonomy import (
@@ -30,6 +36,11 @@ from brain_metrics.parity.taxonomy import (
 
 # Default fixture file (the golden set, co-located with this package).
 _DEFAULT_FIXTURE_PATH = pathlib.Path(__file__).parent / "fixtures" / "golden_fixtures.json"
+
+# DDR hook type: accepts a metric field name, returns the DDR row reason string
+# or None if no DDR row is registered (exact equality expected).
+# CF-C4-DDR-1: wired to definitional_delta_register.get_ddr_row().
+DDRLookupFn = Callable[[str], Optional[str]]  # field_name -> reason_str | None
 
 
 def _load_fixtures(fixture_path: pathlib.Path) -> dict[str, Any]:
@@ -76,11 +87,23 @@ def run_harness(
     fixtures: list[dict[str, Any]] | None = None,
     fixture_path: pathlib.Path = _DEFAULT_FIXTURE_PATH,
     inject_drift: dict[str, Any] | None = None,
+    ddr_lookup: DDRLookupFn | None = None,
+    input_source: str = "legacy_sourced",
 ) -> HarnessReport:
     """Run the parity harness over a synthetic fixture set.
 
     @paradigm: sql — exact-integer comparator. Zero live DB read.
     CF-C2-GOLDEN-1: operates on synthetic fixtures only (ZERO live data).
+
+    Child 4 parameters:
+    - ddr_lookup: optional DDR hook callable (field_name → reason_str | None).
+      When provided, mismatches on DDR-registered fields are classified as
+      EXPECTED_DEFINITIONAL_DELTA (non-blocking) rather than BLOCKING_BUG.
+      parity_gap:True fields are NEVER routed here — they go to the
+      correctness-fixture gate. CF-C4-DDR-1.
+    - input_source: "legacy_sourced" (default) or "brain_child3_sourced".
+      CF-C4-PARITY-SCOPE-1: every run must declare its source. A
+      legacy-sourced GREEN is NOT a cutover license (proves formula parity only).
 
     Args:
         fixtures: explicit list of fixture dicts (for testing with injected
@@ -90,11 +113,22 @@ def run_harness(
         inject_drift: if provided, override one fixture's `legacy_decimal`
             with a drifted value to verify FIRST_DIVERGENCE detection. Format:
             {"workspace_id": ..., "date": ..., "field": ..., "drifted_legacy": "..."}.
+        ddr_lookup: DDR hook callable (CF-C4-DDR-1). When provided, fields
+            with DDR rows are non-blocking (EXPECTED_DEFINITIONAL_DELTA).
+        input_source: parity scope declaration (CF-C4-PARITY-SCOPE-1).
+            "legacy_sourced" | "brain_child3_sourced".
 
     Returns:
         HarnessReport: structured report with PASS/FAIL and category counts.
     """
-    report = HarnessReport()
+    report = HarnessReport(input_source=input_source)
+
+    # Populate DDR hook into report for observability (CF-C4-DDR-1).
+    if ddr_lookup is not None:
+        report.expected_definitional_delta = {
+            "__ddr_hook": "wired",
+            "__source": "definitional_delta_register.py",
+        }
 
     # Load fixtures
     raw: list[dict[str, Any]]

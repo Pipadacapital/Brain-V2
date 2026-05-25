@@ -6,8 +6,7 @@ Justified: mismatch categories are pure deterministic rules. The
 ROUNDING_MODE_MISMATCH re-derivation is exact Decimal arithmetic.
 CF-C2-RECON-TAXONOMY-1 (HIGH).
 
-5 categories (binding, designed this child — populated at the live
-reconciliation run which is HELD at HOLD-AT-LIVE-RECON):
+6 categories (updated Child 4 — added COGS_SETTINGS_CHANGE_DELTA):
   1. BLOCKING_BUG         — genuine Brain arithmetic or logic error; blocks cutover.
   2. EXPECTED_DEFINITIONAL_DELTA — known semantic difference (Child 4 registers).
   3. EXCLUDED_FX_MISMATCH — cross-currency FX rate difference; excluded from gate.
@@ -15,9 +14,16 @@ reconciliation run which is HELD at HOLD-AT-LIVE-RECON):
   5. ROUNDING_MODE_MISMATCH — division-derived Postgres intermediate: legacy used
                               ROUND_HALF_UP, Brain uses ROUND_HALF_EVEN. Expected
                               and NOT a BLOCKING_BUG.
+  6. COGS_SETTINGS_CHANGE_DELTA — (Child 4 NEW) data-staleness class, NOT a formula
+                              change. Fires when an incremental MV would diverge from
+                              legacy's full-daily-recompute on a coq-settings-change day.
+                              Brain uses full daily recompute → delta = 0 vs legacy.
+                              DISTINCT from EXPECTED_DEFINITIONAL_DELTA (that is for
+                              formula changes, not data-staleness). CF-C4-COGS-MV-REFRESH-1.
 
-The `expected_definitional_delta` hook is PRESENT but UNPOPULATED this child.
-Child 4 populates the Definitional-Delta Register and wires the hook.
+The `expected_definitional_delta` hook is WIRED to the DDR this child (Child 4).
+parity_gap:true metrics route to the correctness-fixture gate, NOT here.
+CF-C4-DDR-1, CF-C4-COGS-MV-REFRESH-1, CF-C4-PARITY-SCOPE-1.
 
 --- ROUNDING_MODE_MISMATCH RE-DERIVATION RULE (F2 fix) ---
 
@@ -89,11 +95,11 @@ DIVISION_DERIVED_FIELDS: frozenset[str] = frozenset(
 
 
 class MismatchCategory(str, Enum):
-    """Parity harness mismatch classification (5 categories).
+    """Parity harness mismatch classification (6 categories, updated Child 4).
 
-    CF-C2-RECON-TAXONOMY-1: all 5 must be present. The harness classifies
-    every field difference into exactly one of these. BLOCKING_BUG is the
+    CF-C2-RECON-TAXONOMY-1: all base categories present. BLOCKING_BUG is the
     only category that blocks cutover.
+    CF-C4-COGS-MV-REFRESH-1: adds COGS_SETTINGS_CHANGE_DELTA (6th category).
     """
 
     BLOCKING_BUG = "BLOCKING_BUG"
@@ -102,11 +108,12 @@ class MismatchCategory(str, Enum):
     EXPECTED_DEFINITIONAL_DELTA = "EXPECTED_DEFINITIONAL_DELTA"
     """Known semantic difference between Brain and legacy (e.g. different field
     definitions). Registered in the Definitional-Delta Register (Child 4).
-    Hook present, UNPOPULATED this child (CF-C2-SCOPE-DEFER-1)."""
+    DDR hook WIRED this child (Child 4) via expected_definitional_delta field."""
 
     EXCLUDED_FX_MISMATCH = "EXCLUDED_FX_MISMATCH"
     """Cross-currency FX rate difference. Excluded from the parity gate.
-    Legacy hardcoded EXCHANGE_RATES (pnl.ts:42-56) are NOT ported to Brain."""
+    Legacy hardcoded EXCHANGE_RATES (workspace-costs.ts:9-21, pnl.ts:11-17).
+    Shadow phase: Brain uses same static 83.5 rate. CF-C4-DDR-FX-RESTATEMENT-1."""
 
     RATIO_MISMATCH = "RATIO_MISMATCH"
     """Ratio / basis-point field mismatch. Evaluated under a separate tolerance
@@ -117,7 +124,23 @@ class MismatchCategory(str, Enum):
     on the stored value; Brain uses ROUND_HALF_EVEN on the re-derived value.
     This is an EXPECTED systematic 1-paise drift on .X45 midpoints for
     miscExpensesProrated / cm3. NOT a BLOCKING_BUG.
+    IMPORTANT (CF-C4-PRORATED-DIVOP-1): this category covers ONLY the Postgres
+    ROUND_HALF_UP story — NOT Float64 coercion artifacts. A wrong days_in_month
+    constant (e.g. hardcoded 30 instead of toDaysInMonth) must NOT be classified
+    here; it is a BLOCKING_BUG. Adjudication must ask "Is Brain's formula correct?"
+    before stamping ROUNDING_MODE_MISMATCH.
     See: DIVISION_DERIVED_FIELDS, re_derive_legacy_via_brain_path()."""
+
+    COGS_SETTINGS_CHANGE_DELTA = "COGS_SETTINGS_CHANGE_DELTA"
+    """Data-staleness class — NOT a formula change. CF-C4-COGS-MV-REFRESH-1.
+    Fires when an incremental MV would capture the old coq for line items
+    before a coq-settings-change and the new coq for line items after it —
+    permanently wrong vs legacy's nightly full daily recompute.
+    Brain uses full daily recompute → delta = 0 vs legacy by construction.
+    DISTINCT from EXPECTED_DEFINITIONAL_DELTA (which is for formula-level
+    semantic differences, not data-staleness from incremental capture).
+    A fixture proving the full-recompute model yields zero delta is REQUIRED.
+    Kill-test: reverting to incremental MV on a coq-change-day fixture → RED."""
 
 
 @dataclass(frozen=True)
@@ -143,7 +166,10 @@ class HarnessReport:
     """Structured report emitted by the parity harness engine.
 
     CF-C2-RECON-TAXONOMY-1: must include rounding_mode_mismatches_count.
-    The expected_definitional_delta hook is present but unpopulated.
+    CF-C4-DDR-1: expected_definitional_delta hook WIRED to DDR (Child 4).
+    CF-C4-COGS-MV-REFRESH-1: cogs_settings_change_delta_count added.
+    CF-C4-RATIO-DIVOP-1: clickhouse_roundtrip_checked flag added.
+    CF-C4-PARITY-SCOPE-1: input_source declaration added.
     """
 
     rows_checked: int = 0
@@ -158,12 +184,32 @@ class HarnessReport:
     ratio_mismatch_count: int = 0
     rounding_mode_mismatches_count: int = 0  # named field per contract
 
+    # CF-C4-COGS-MV-REFRESH-1: new 6th category counter
+    cogs_settings_change_delta_count: int = 0
+
     # First divergence (fail-fast reporting)
     first_divergence: Optional[MismatchRecord] = None
 
-    # expected_definitional_delta hook — UNPOPULATED this child.
-    # Child 4 wires the Definitional-Delta Register lookup here.
-    expected_definitional_delta: Optional[dict] = None  # hook; Child 4 populates
+    # CF-C4-DDR-1: expected_definitional_delta hook WIRED to the DDR.
+    # Child 4 populates this via definitional_delta_register.py.
+    # Shape: {metric_id: DDRRow.reason} for metrics with DDR rows.
+    expected_definitional_delta: Optional[dict] = None  # wired Child 4
+
+    # CF-C4-RATIO-DIVOP-1: ClickHouse round-trip fixtures checked this run.
+    clickhouse_roundtrip_checked: bool = False
+
+    # CF-C4-COGS-MV-REFRESH-1: count of COGS settings change delta fixtures checked.
+    cogs_settings_change_delta_fixtures_checked: int = 0
+
+    # Correctness-fixture gate: count of parity_gap:true metrics verified.
+    correctness_fixture_pass: int = 0
+    correctness_fixture_fail: int = 0
+
+    # CF-C4-PARITY-SCOPE-1: input source declaration.
+    # Every harness run MUST declare its input source.
+    # "legacy_sourced" GREEN proves formula/representation parity only —
+    # NOT a cutover license. "brain_child3_sourced" required for live flip.
+    input_source: str = "legacy_sourced"  # "legacy_sourced" | "brain_child3_sourced"
 
     @property
     def total_mismatches(self) -> int:
@@ -189,9 +235,16 @@ class HarnessReport:
             self.ratio_mismatch_count += 1
         elif record.category == MismatchCategory.ROUNDING_MODE_MISMATCH:
             self.rounding_mode_mismatches_count += 1
+        elif record.category == MismatchCategory.COGS_SETTINGS_CHANGE_DELTA:
+            self.cogs_settings_change_delta_count += 1
 
     def to_dict(self) -> dict:
-        """Serialize to a JSON-compatible dict for structured logging."""
+        """Serialize to a JSON-compatible dict for structured logging.
+
+        CF-C4 extensions: includes clickhouse_roundtrip_checked,
+        cogs_settings_change_delta_count, correctness_fixture_pass,
+        input_source declaration (CF-C4-PARITY-SCOPE-1).
+        """
         return {
             "rows_checked": self.rows_checked,
             "fields_checked": self.fields_checked,
@@ -202,6 +255,7 @@ class HarnessReport:
             "excluded_fx_mismatch_count": self.excluded_fx_mismatch_count,
             "ratio_mismatch_count": self.ratio_mismatch_count,
             "rounding_mode_mismatches_count": self.rounding_mode_mismatches_count,
+            "cogs_settings_change_delta_count": self.cogs_settings_change_delta_count,
             "is_pass": self.is_pass,
             "first_divergence": (
                 {
@@ -217,6 +271,19 @@ class HarnessReport:
                 else None
             ),
             "expected_definitional_delta": self.expected_definitional_delta,
+            # CF-C4 extensions
+            "clickhouse_roundtrip_checked": self.clickhouse_roundtrip_checked,
+            "cogs_settings_change_delta_fixtures_checked": self.cogs_settings_change_delta_fixtures_checked,
+            "correctness_fixture_pass": self.correctness_fixture_pass,
+            "correctness_fixture_fail": self.correctness_fixture_fail,
+            # CF-C4-PARITY-SCOPE-1: source declaration
+            "input_source": self.input_source,
+            "parity_scope_note": (
+                "legacy_sourced GREEN proves formula/representation parity ONLY — "
+                "NOT a cutover license. Live flip requires Brain-Child-3-sourced GREEN."
+                if self.input_source == "legacy_sourced"
+                else "brain_child3_sourced: ingest parity included in this run."
+            ),
         }
 
 

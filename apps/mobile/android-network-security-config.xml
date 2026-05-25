@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android Network Security Config — cert pinning for Brain api-gateway.
+  MASVS L1 + key L2: current pin + rotation pin configured.
+  CF-C6-PII-CLIENT-1: enforces TLS connection to brain.pipadacapital.com only.
+
+  IMPORTANT: replace PLACEHOLDER_CURRENT_PIN / PLACEHOLDER_ROTATION_PIN with the
+  actual SPKI-SHA256 fingerprints derived from the server's TLS certificate before
+  any production build. See the runbook for the pin derivation procedure.
+
+  Rotation procedure:
+    1. Add new pin as a SECOND <pin> entry before rotating the certificate.
+    2. EAS Build (native bump required — NOT OTA) with both pins.
+    3. After rollout, remove the old pin in the next native release.
+    4. OTA updates cannot change cert pins (native asset).
+  OTA-vs-native bump decision: cert pin changes require a NATIVE bump (store review).
+-->
+<network-security-config>
+  <domain-config cleartextTrafficPermitted="false">
+    <domain includeSubdomains="true">brain.pipadacapital.com</domain>
+    <pin-set expiration="2027-01-01">
+      <!-- Current pin (SPKI SHA-256, Base64 encoded). -->
+      <pin digest="SHA-256">PLACEHOLDER_CURRENT_PIN=</pin>
+      <!-- Rotation pin (pre-loaded before certificate rotation). -->
+      <pin digest="SHA-256">PLACEHOLDER_ROTATION_PIN=</pin>
+    </pin-set>
+  </domain-config>
+  <!--
+    Local dev harness: allow cleartext to localhost (Phase 0-1 only).
+    NEVER ship cleartext to production domains.
+  -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">localhost</domain>
+    <domain includeSubdomains="false">10.0.2.2</domain>
+  </domain-config>
+  <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

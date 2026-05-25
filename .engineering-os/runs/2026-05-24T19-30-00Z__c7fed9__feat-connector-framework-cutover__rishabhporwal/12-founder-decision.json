@@ -1,0 +1,32 @@
+{
+  "req_id": "feat-connector-framework-cutover",
+  "epic_child_id": "child-3-connector-framework",
+  "parent_epic": "chore-migrate-legacy-to-brain",
+  "stage": 7,
+  "verdict": "APPROVE",
+  "decided_by": "cto-advisor (Rohan) on Founder's behalf",
+  "decided_at": "2026-05-25T02:42:00Z",
+  "delegation_basis": "standing Founder delegation (feedback_founder_delegates_to_cto_advisor.md) + directive 2026-05-24 'go ahead with all childs without asking, i will approve at last'",
+  "stage6_artifact": "11-final-review.md",
+  "retro_artifact": "14-retro.md",
+  "rule_candidate": ".engineering-os/rule-proposals/2026-05-25__verify-the-verifier-mutation-on-gate.md",
+  "hard_rule_deviation_check": "NONE — auto-approve under delegation permitted",
+  "security_rereview": "PASS (09b — 0 CRITICAL / 0 HIGH)",
+  "qa_rereview": "PASS (10b — 7/7 round-1 findings resolved; 3 mutants killed)",
+  "independent_reverification": "Rohan re-ran the load-bearing gates with captured output and reproduced every reviewer PASS (PII live-fire, allowlist runtime, HMAC base64==legacy, 183 pass / 14 integration gated, table-name parity, correlation src+proto, no money/no legacy/HOLD intact)",
+  "commit_authorization": "NOT GRANTED — feature-branch-only + harness guard; nothing staged/committed until Founder free-text 'commit it' (autonomous-run no-commit policy)",
+  "pending_founder_commit": "pending-founder-commit.md",
+  "held_for_stage8": [
+    "live per-connector token transfer + webhook re-registration / legacy-cron-disable",
+    "legacy-plaintext-credential delete/seal (after write->auth-test->parity; A4 branch before delete)",
+    "Founder credential-custody Option A/B selection (CF-C3-SECRETS-INTERIM-1) — config swap; both backings stubbed",
+    "real-pooler IT (STEP 0.5), live vendor HTTP auth test (STEP 2), live count-parity (STEP 5)",
+    "MSK/Glue provisioning + data-deployable deploy pipeline",
+    "live RLS DDL (step-b-force.sql)",
+    "N1 entrypoint wiring (frozenset from run_all_gates())",
+    "CF-C3-FORCE-UNLOCK-SCOPE-1: Child-1 FORCE held until Shiprocket DECOMMISSION + bare-write grep ZERO + sign-off"
+  ],
+  "next_owner": "platform-devops (Jatin)",
+  "next_stage": 8,
+  "next_stage_class": "readiness-only (no live deploy; mirrors Child-1/Child-2); live single-owner cutover ceremony remains HELD"
+}

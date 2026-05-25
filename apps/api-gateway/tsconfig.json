@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "paths": {
+      "@brain/lib-metrics": ["../../packages/lib-metrics/src/index.ts"],
+      "@brain/core-auth": ["../../apps/core-service/src/domain/auth/brain-claim.ts"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

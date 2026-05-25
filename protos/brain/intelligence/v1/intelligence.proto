@@ -1,0 +1,196 @@
+// @paradigm: sql / render-only
+// CF-C6-DATA-SEAM-1: proto-first gRPC contract for IntelligenceService.
+// CF-C6-MB-CONTRACT-COMPLETENESS-1: InsightItem carries expected_impact + risk
+//   (registry-DERIVED deterministic Tier-A — NOT LLM numbers; Maya consult confirmed).
+// CF-C6-BIGINT-JSON-1: _mu fields are int64 (BigInt on the tRPC edge via superjson).
+// CF-C6-NO-UI-FLOAT-1: confidence arrives as confidence_display_pct int32 (e.g. 87).
+// CF-C6-MB-GRADUATED-LABEL-1: status is server-driven (QUEUED_FOR_EXECUTION | LOGGED_AS_VOTE).
+// CF-C6-MB-PUSH-TOKEN-1: RegisterPushToken is in scope; push SEND is OUT (notifications-service).
+//
+// rationale is render-only — NEVER echoed to any executor or LLM prompt.
+// CF-C5-INJECTION-TYPED-REC-6: action is a closed enum; free-text action strings rejected.
+
+syntax = "proto3";
+
+package brain.intelligence.v1;
+
+option go_package = "github.com/pipada/brain/gen/go/brain/intelligence/v1;intelligencev1";
+
+import "google/protobuf/timestamp.proto";
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+// Closed action enum — mirrors RecommendationActionEnum in recommendation.py.
+// Adding a new action requires a plan amendment (Aryan). CF-C5-INJECTION-TYPED-REC-6.
+enum RecommendationAction {
+  RECOMMENDATION_ACTION_UNSPECIFIED = 0;
+  RECOMMENDATION_ACTION_PAUSE_AD_SET = 1;
+  RECOMMENDATION_ACTION_INCREASE_BUDGET = 2;
+  RECOMMENDATION_ACTION_DECREASE_BUDGET = 3;
+  RECOMMENDATION_ACTION_SEND_REFUND = 4;
+  RECOMMENDATION_ACTION_REVIEW_MANUALLY = 5;
+  RECOMMENDATION_ACTION_NO_ACTION = 6;
+}
+
+// Severity level for an InsightItem.
+enum InsightSeverity {
+  INSIGHT_SEVERITY_UNSPECIFIED = 0;
+  INSIGHT_SEVERITY_INFO = 1;
+  INSIGHT_SEVERITY_WARNING = 2;
+  INSIGHT_SEVERITY_CRITICAL = 3;
+}
+
+// Risk classification for an InsightItem (registry-DERIVED, deterministic).
+enum RiskLevel {
+  RISK_LEVEL_UNSPECIFIED = 0;
+  RISK_LEVEL_LOW = 1;
+  RISK_LEVEL_MEDIUM = 2;
+  RISK_LEVEL_HIGH = 3;
+  RISK_LEVEL_CRITICAL = 4;
+}
+
+// Server-driven graduation status. Day-1: all actions are LOGGED_AS_VOTE.
+// Client NEVER infers graduation state — reads this field verbatim.
+// CF-C6-MB-GRADUATED-LABEL-1.
+enum GraduationStatus {
+  GRADUATION_STATUS_UNSPECIFIED = 0;
+  GRADUATION_STATUS_LOGGED_AS_VOTE = 1;       // Day-1: recommendation logged; will queue when safe to auto-run
+  GRADUATION_STATUS_QUEUED_FOR_EXECUTION = 2; // Action will be executed (graduated workspace)
+}
+
+// Response kind for SubmitInsightResponse.
+enum ResponseKind {
+  RESPONSE_KIND_UNSPECIFIED = 0;
+  RESPONSE_KIND_APPROVE = 1;
+  RESPONSE_KIND_REJECT = 2;
+  RESPONSE_KIND_EDIT = 3;
+}
+
+// ---------------------------------------------------------------------------
+// Sub-messages
+// ---------------------------------------------------------------------------
+
+// TypedRecommendation — closed action enum + entity_id + render-only rationale.
+// CF-C5-INJECTION-TYPED-REC-6: rationale is render-only; never executor input.
+message TypedRecommendation {
+  RecommendationAction action = 1;
+  string entity_id = 2;
+  // Render-only free text. NEVER passed to executor or LLM prompt.
+  string rationale = 3;
+}
+
+// ExpectedImpact — registry-DERIVED deterministic fields (CF-C6-MB-CONTRACT-COMPLETENESS-1).
+// revenue_mu and cm2_mu are int64 minor units (BigInt via superjson at tRPC edge).
+// These are Tier-A signals from the metric/signal layer — NOT LLM-produced numbers.
+// The display layer formats _mu via formatMoney (CF-C6-FORMATMONEY-CANONICAL-1).
+message ExpectedImpact {
+  int64 revenue_mu = 1;    // Expected revenue impact in minor units
+  int64 cm2_mu = 2;        // Expected CM2 impact in minor units
+  string currency_code = 3;
+  // Human-readable label derived deterministically from the signal layer.
+  // e.g. "+₹2.3L net revenue / +₹45K CM2"
+  string impact_label = 4;
+}
+
+// ---------------------------------------------------------------------------
+// InsightItem — the AMENDED contract (CF-C6-MB-CONTRACT-COMPLETENESS-1).
+// Carries problem / evidence / recommended-action / expected-impact / risk /
+// confidence (pre-formatted as int). rationale is render-only.
+// ---------------------------------------------------------------------------
+message InsightItem {
+  string insight_id = 1;       // Stable UUID for this insight (idempotency key anchor)
+  string title = 2;
+  InsightSeverity severity = 3;
+  // CF-C6-NO-UI-FLOAT-1: pre-formatted as int (e.g. 87 = 87%).
+  // UI renders as-is: never multiply or divide this value.
+  int32 confidence_display_pct = 4;
+  string summary = 5;
+  string detail = 6;
+  TypedRecommendation recommendation = 7;
+
+  // CF-C6-MB-CONTRACT-COMPLETENESS-1: additive fields.
+  // Registry-DERIVED deterministic (Tier-A); NOT LLM numbers.
+  ExpectedImpact expected_impact = 8;
+  RiskLevel risk = 9;
+
+  // CF-C6-AS-OF-STAMP-1: signal epoch for this insight (faithfulness-at-render).
+  google.protobuf.Timestamp data_epoch = 10;
+}
+
+// ---------------------------------------------------------------------------
+// Request / Response messages
+// ---------------------------------------------------------------------------
+
+message GetMorningBriefRequest {
+  string workspace_id = 1;
+  // ISO date e.g. "2026-05-25" — the Morning Brief date.
+  string date = 2;
+}
+
+message GetMorningBriefResponse {
+  repeated InsightItem items = 1;
+  // CF-C6-AS-OF-STAMP-1: snapshot epoch for the whole Brief.
+  google.protobuf.Timestamp data_epoch = 2;
+  // Server-driven freshness label (e.g. "Live" | "Cached from <time>").
+  string freshness_label = 3;
+}
+
+// Submit approve/reject/edit response to an insight.
+// CF-C6-MB-IDEMPOTENCY-1: idempotency_key is required; Redis dedup in front of
+// the decision-log writer. Same key → returns cached response, writes ONE row.
+message SubmitInsightResponseRequest {
+  string workspace_id = 1;
+  string insight_id = 2;
+  ResponseKind response_kind = 3;
+  // Optional edit payload (JSON string, only when response_kind=EDIT).
+  string edit_payload = 4;
+  // CF-C6-MB-IDEMPOTENCY-1: caller-generated UUID, generated at action-initiation
+  // (not send-time), persisted until non-error response, reused on offline replay.
+  string idempotency_key = 5;
+}
+
+message SubmitInsightResponseResponse {
+  string decision_log_row_id = 1;
+  // CF-C6-MB-GRADUATED-LABEL-1: server-driven status. Day-1 = LOGGED_AS_VOTE.
+  // Client NEVER infers graduation state — renders this verbatim.
+  GraduationStatus status = 2;
+}
+
+// RegisterPushToken — idempotent upsert on (workspace_id, user_id, device_id).
+// CF-C6-MB-PUSH-TOKEN-1: push SEND is OUT of scope (notifications-service).
+// Only token registration lives here.
+message RegisterPushTokenRequest {
+  string workspace_id = 1;
+  string user_id = 2;
+  string device_id = 3;
+  // Expo push token (e.g. "ExponentPushToken[...]")
+  string expo_push_token = 4;
+}
+
+message RegisterPushTokenResponse {
+  bool registered = 1;
+  // ISO timestamp of the upsert
+  string updated_at = 2;
+}
+
+// ---------------------------------------------------------------------------
+// IntelligenceService — the gRPC contract for the api-gateway DataPlanePort
+// (intelligence read + write path). Bound in-process / loopback in Phase 0–1.
+// ---------------------------------------------------------------------------
+service IntelligenceService {
+  // Get the Morning Brief for a workspace and date.
+  // Returns ≤3 InsightItems with the amended contract.
+  rpc GetMorningBrief(GetMorningBriefRequest) returns (GetMorningBriefResponse);
+
+  // Submit approve/reject/edit response to a Morning Brief insight.
+  // Idempotent: same idempotency_key → returns cached response, ONE decision-log row.
+  // CF-C6-MB-IDEMPOTENCY-1.
+  rpc SubmitInsightResponse(SubmitInsightResponseRequest) returns (SubmitInsightResponseResponse);
+
+  // Register / rotate an Expo push token for a user device.
+  // Idempotent upsert on (workspace_id, user_id, device_id).
+  // CF-C6-MB-PUSH-TOKEN-1: token registration only; SEND is notifications-service.
+  rpc RegisterPushToken(RegisterPushTokenRequest) returns (RegisterPushTokenResponse);
+}

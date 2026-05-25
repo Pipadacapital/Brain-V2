@@ -1,0 +1,52 @@
+# LOCAL docker-compose test harness — Postgres + Kafka.
+#
+# CF-C3-HOLD-AT-CUTOVER-1: NO live Supabase connection, NO MSK/Glue provisioned.
+# This harness is LOCAL-ONLY (Option A ruling).
+#
+# Usage:
+#   docker-compose -f docker-compose.test.yml up -d
+#   INTEGRATION_TEST=1 pytest tests/integration/
+#   docker-compose -f docker-compose.test.yml down -v
+#
+# Services:
+#   postgres-test:  local Postgres (brain_test DB) on port 5434
+#   kafka-test:     local Kafka broker on port 9093 (KRaft mode, no ZooKeeper)
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: brain_test
+      POSTGRES_PASSWORD: brain_test_password
+      POSTGRES_DB: brain_test
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./tests/integration/pg-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brain_test -d brain_test"]
+      interval: 3s
+      timeout: 5s
+      retries: 5
+
+  kafka-test:
+    image: apache/kafka:3.7.0
+    environment:
+      # KRaft mode — no ZooKeeper
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka-test:9093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: /tmp/kafka-logs
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
