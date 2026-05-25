@@ -50,6 +50,7 @@ function makeClaim(
 function makeWorkspaceCtx(workspaceId: string, role: Parameters<typeof makeClaim>[1] = 'MANAGER'): WorkspaceContext {
   const claim = makeClaim(workspaceId, role);
   return {
+    identity: { sub: claim.userId, email: 'gates@brain.test' },
     claim,
     workspaceId,
     requestId: 'req-test-001',
@@ -434,6 +435,7 @@ describe('Tenancy isolation (CF-C6-GATEWAY-TENANCY-1)', () => {
     // The tRPC workspace middleware also asserts workspaceId === claim.workspaceId,
     // so we need a valid claim for WS_B to test the data plane isolation.
     const ctx: WorkspaceContext = {
+      identity: { sub: 'user-ws-b', email: 'gates@brain.test' },
       claim: assembleClaim({
         userId: 'user-ws-b',
         workspaceId: WS_B,
@@ -463,6 +465,7 @@ describe('Tenancy isolation (CF-C6-GATEWAY-TENANCY-1)', () => {
     const r = createBrainRouter(dp, idem);
 
     const ctx: WorkspaceContext = {
+      identity: { sub: 'attacker', email: 'gates@brain.test' },
       claim: assembleClaim({
         userId: 'attacker',
         workspaceId: WS_A,  // claim says WS_A

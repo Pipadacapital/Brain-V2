@@ -37,12 +37,14 @@ Notifications.setNotificationHandler({
  * CF-C6-MB-PUSH-TOKEN-1: REGISTRATION only; no SEND.
  *
  * @param workspaceId - current workspace (scoping the token to the right tenant)
- * @param userId - current user UUID
+ * @param _userId - current user UUID. Kept for signature stability but NO LONGER
+ *   sent to the gateway: per Slice A (S4), the server derives user_id from the
+ *   verified claim, never from client input.
  * @returns the Expo push token string, or null if permission denied / not a device
  */
 export async function registerPushToken(
   workspaceId: string,
-  userId: string,
+  _userId: string,
 ): Promise<string | null> {
   // Push notifications are not supported on simulators.
   if (!Device.isDevice) {
@@ -96,8 +98,9 @@ export async function registerPushToken(
   // Register with the api-gateway (idempotent upsert).
   // CF-C6-MB-PUSH-TOKEN-1: token stored in core.device_tokens (server-side RLS-scoped).
   try {
+    // S4 (Slice A): user_id is NO LONGER sent — the gateway derives it from the
+    // verified claim (a client may not register a token on behalf of another user).
     await trpcClient.device.registerPushToken.mutate({
-      user_id: userId,
       device_id: deviceId,
       expo_push_token: token,
     });

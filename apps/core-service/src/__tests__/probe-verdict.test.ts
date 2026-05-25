@@ -341,26 +341,29 @@ describe('probe runner injection hooks', () => {
     expect(runner.rawQuery).toHaveBeenCalled()
   })
 
-  it('(+) _resetProbeQueryRunner restores to production default (all tables RED without DIRECT_URL)', async () => {
+  it('(+) _resetProbeQueryRunner restores to production default (all tables RED without a direct URL)', async () => {
     const runner = makeMockRunner()
     _setProbeQueryRunner(runner)
     _resetProbeQueryRunner()
     // After reset, runRlsProbe uses the production runner which calls getPool().
-    // Without DIRECT_URL, probeTable catches the error and returns RED per table.
-    // The probe itself does not throw -- it returns a RED ProbeRunResult.
+    // Without DIRECT_URL/DATABASE_URL, probeTable catches the error and returns RED
+    // per table. The probe itself does not throw -- it returns a RED ProbeRunResult.
     // This proves the production runner is active (injected runner would have succeeded).
-    const savedUrl = process.env['DIRECT_URL']
+    const savedDirect = process.env['DIRECT_URL']
+    const savedDatabase = process.env['DATABASE_URL']
     delete process.env['DIRECT_URL']
+    delete process.env['DATABASE_URL'] // slice C alias — must also be absent to force the error
     try {
       const result = await runRlsProbe({ alphaWorkspaceId: ALPHA_WS, betaWorkspaceId: BETA_WS })
       expect(result.overallVerdict).toBe('RED')
-      // Every table should be RED because the production runner throws DIRECT_URL error.
+      // Every table should be RED because the production runner throws the no-URL error.
       for (const t of result.tableResults) {
         expect(t.verdict).toBe('RED')
-        expect(t.errorMessage).toContain('DIRECT_URL is not set')
+        expect(t.errorMessage).toContain('neither DIRECT_URL nor DATABASE_URL is set')
       }
     } finally {
-      if (savedUrl !== undefined) process.env['DIRECT_URL'] = savedUrl
+      if (savedDirect !== undefined) process.env['DIRECT_URL'] = savedDirect
+      if (savedDatabase !== undefined) process.env['DATABASE_URL'] = savedDatabase
     }
   })
 })

@@ -20,6 +20,8 @@ from brain_metrics.registry.definitions import (
     _int_floor_div_or_null,
     _ratio_bp,
     FX_SHADOW_RATE_INR_PER_USD,
+    compute_goal_rag,
+    goal_higher_better,
 )
 
 
@@ -57,7 +59,11 @@ class TestMetricDefinitionStructure:
 
     def test_parity_gap_metrics_are_correctness_fixture(self):
         """parity_gap metrics must use correctness_fixture gate. CF-C4-DDR-1 Rule 1."""
-        parity_gap_ids = {"true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp"}
+        parity_gap_ids = {
+            "true_cm2_mu", "amer_bp", "ltv_cac_bp",
+            # Phase-2 slice-3 (feat-rto-cod-economics): Brain-native econ canon
+            "breakeven_cod_rto_rate_bp", "pincode_reliability_score",
+        }
         for mid in parity_gap_ids:
             m = METRIC_REGISTRY[mid]
             assert m.parity_class == "correctness_fixture", (
@@ -110,7 +116,7 @@ class TestMetricDefinitionStructure:
             "gross_sales_mu", "total_discount_mu", "total_tax_mu",
             "net_sales_mu", "net_revenue_mu", "cogs_mu", "variable_costs_mu",
             "cm1_mu", "total_ad_spend_mu", "cm2_mu", "misc_expenses_prorated_mu",
-            "cm3_mu", "true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp",
+            "cm3_mu", "true_cm2_mu", "amer_bp", "ltv_cac_bp",
             "blended_roas_x100", "acos_bp", "rto_rate_bp", "prepaid_rate_bp",
             "aov_mu", "conversion_rate_bp",
         ]
@@ -164,6 +170,79 @@ class TestRevenueLadderFormulas:
         f = METRIC_REGISTRY["total_ad_spend_mu"].formula_py
         assert f(meta_ad_spend_mu=60000, google_ad_spend_mu=40000) == 100000
         assert f(meta_ad_spend_mu=0, google_ad_spend_mu=0) == 0
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-3: RTO/COD/pincode economics cross-language anchors (NON-VACUOUS).
+# These MIRROR the TS anchors in packages/lib-metrics/src/registry/registry.test.ts byte-for-byte.
+# The break-even anchor BITES the slice-table's naive r*=M/(M+C): the FULL legacy formula
+# returns 500bp on these inputs (the naive form would return ~9493bp).
+# ---------------------------------------------------------------------------
+
+class TestSlice3RtoCodPincodeEconomics:
+    """feat-rto-cod-economics registry anchors. Byte-identical to the TS anchors."""
+
+    def test_rto_cost_and_revenue_lost_passthrough(self):
+        assert METRIC_REGISTRY["rto_cost_mu"].formula_py(rto_cost_mu=4_480_000) == 4_480_000
+        assert METRIC_REGISTRY["rto_revenue_lost_mu"].formula_py(
+            rto_revenue_lost_mu=33_200_000
+        ) == 33_200_000
+
+    def test_cod_realization_rate_bp(self):
+        f = METRIC_REGISTRY["cod_realization_rate_bp"].formula_py
+        # 612 / 800 = 0.765 → 7650 bp
+        assert f(cod_delivered=612, cod_orders=800) == 7650
+        # 2/3 FLOOR
+        assert f(cod_delivered=2, cod_orders=3) == 6666
+        # zero COD orders → NULL
+        assert f(cod_delivered=0, cod_orders=0) is None
+
+    def test_breakeven_cod_rto_rate_bp_full_formula_kills_naive(self):
+        """CF-S3-BREAKEVEN-1: FULL legacy formula = 500bp; the naive M/(M+C) would be ~9493bp."""
+        f = METRIC_REGISTRY["breakeven_cod_rto_rate_bp"].formula_py
+        result = f(
+            aov_mu=150_000,
+            prepaid_rto_rate_bp=500,
+            cod_fee_mu=3_000,
+            gateway_fee_bp=200,
+            return_shipping_mu=8_000,
+            restocking_mu=0,
+        )
+        assert result == 500, f"expected 500bp from the full formula, got {result}"
+        # The naive M/(M+C) (M=aov, C=return_shipping) = intDiv(150000*10000, 158000) = 9493 — DIFFERENT.
+        assert result != 9493
+
+    def test_breakeven_moves_with_gateway_fee(self):
+        f = METRIC_REGISTRY["breakeven_cod_rto_rate_bp"].formula_py
+        base = f(aov_mu=150_000, prepaid_rto_rate_bp=500, cod_fee_mu=3_000,
+                 gateway_fee_bp=200, return_shipping_mu=8_000, restocking_mu=0)
+        higher = f(aov_mu=150_000, prepaid_rto_rate_bp=500, cod_fee_mu=3_000,
+                   gateway_fee_bp=400, return_shipping_mu=8_000, restocking_mu=0)
+        assert higher != base
+
+    def test_breakeven_zero_denominator_null(self):
+        f = METRIC_REGISTRY["breakeven_cod_rto_rate_bp"].formula_py
+        assert f(aov_mu=0, prepaid_rto_rate_bp=500, cod_fee_mu=3_000,
+                 gateway_fee_bp=200, return_shipping_mu=0, restocking_mu=0) is None
+
+    def test_pincode_reliability_score_integer_form_kills_float(self):
+        """CF-S3-PINCODE-1: integer centi-point score = 5900 (= 59.00). Matches the legacy float ×100."""
+        f = METRIC_REGISTRY["pincode_reliability_score"].formula_py
+        result = f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_000, aov_mu=150_000)
+        assert result == 5900, f"expected 5900 centi-points, got {result}"
+
+    def test_pincode_reliability_clamps(self):
+        f = METRIC_REGISTRY["pincode_reliability_score"].formula_py
+        assert f(rto_bp=9_000, cod_bp=9_000, repeat_bp=0, aov_mu=0) == 0
+        assert f(rto_bp=0, cod_bp=0, repeat_bp=10_000, aov_mu=100_000_000) == 10000
+
+    def test_pincode_reliability_moves_with_each_term(self):
+        f = METRIC_REGISTRY["pincode_reliability_score"].formula_py
+        base = f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_000, aov_mu=150_000)
+        assert f(rto_bp=1_900, cod_bp=6_000, repeat_bp=2_000, aov_mu=150_000) != base
+        assert f(rto_bp=1_800, cod_bp=6_200, repeat_bp=2_000, aov_mu=150_000) != base
+        assert f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_200, aov_mu=150_000) != base
+        assert f(rto_bp=1_800, cod_bp=6_000, repeat_bp=2_000, aov_mu=160_000) != base
 
 
 # ---------------------------------------------------------------------------
@@ -341,44 +420,74 @@ class TestTrueCm2CorrectnessFixture:
 # paMER / aMER correctness fixtures (M2)
 # ---------------------------------------------------------------------------
 
-class TestPamerAmerCorrectnessFixtures:
-    """paMER + aMER Brain-native metrics. parity_gap:true. CF-C4-DDR-TRUE-CM2-1."""
+class TestMarketingEfficiencyReconciledToLegacy:
+    """MER / aMER / CAC reconciled to legacy (slice-4). pamer_bp DECOMMISSIONED.
 
-    def test_pamer_bp_worked_example(self):
-        """paMER = CM2 / Ad Spend in bp. 8000000/5000000 = 1.6x = 16000 bp."""
-        f = METRIC_REGISTRY["pamer_bp"].formula_py
-        result = f(cm2_mu=8_000_000, total_ad_spend_mu=5_000_000)
-        # intDiv(8000000 × 10000, 5000000) = intDiv(80000000000, 5000000) = 16000
-        assert result == 16_000
+    aMER = new_customer_revenue / ACQUISITION-classified ad spend (NOT total spend).
+    Legacy: marketing-efficiency.ts:25-28 + ads-spend.ts:82-84.
+    """
 
-    def test_pamer_zero_ad_spend_returns_null(self):
-        f = METRIC_REGISTRY["pamer_bp"].formula_py
-        assert f(cm2_mu=8_000_000, total_ad_spend_mu=0) is None
+    def test_pamer_decommissioned(self):
+        """pamer_bp had no legacy comparand — removed from the registry (slice-4)."""
+        assert "pamer_bp" not in METRIC_REGISTRY
 
-    def test_amer_bp_worked_example(self):
-        """aMER = True CM2 / Ad Spend in bp. 6620000/5000000 ≈ 1.324x = 13240 bp."""
+    def test_mer_bp_worked_example(self):
+        """MER = net_revenue / total_ad_spend in bp. 12000000/10000000 = 1.20x = 12000 bp."""
+        f = METRIC_REGISTRY["mer_bp"].formula_py
+        result = f(net_revenue_mu=12_000_000, total_ad_spend_mu=10_000_000)
+        assert result == 12_000
+
+    def test_mer_zero_ad_spend_returns_null(self):
+        f = METRIC_REGISTRY["mer_bp"].formula_py
+        assert f(net_revenue_mu=12_000_000, total_ad_spend_mu=0) is None
+
+    def test_amer_bp_worked_example_acquisition_split(self):
+        """aMER = nc_revenue / ACQUISITION spend. 6000000/4000000 = 1.50x = 15000 bp.
+
+        The acquisition bucket (₹40k) is LESS than total spend (₹100k) — the load-bearing
+        legacy semantics (Rohan Stage-1 finding + persona Concern 1).
+        """
         f = METRIC_REGISTRY["amer_bp"].formula_py
-        result = f(true_cm2_mu=6_620_000, total_ad_spend_mu=5_000_000)
-        # intDiv(6620000 × 10000, 5000000) = intDiv(66200000000, 5000000) = 13240
-        assert result == 13_240
+        result = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=4_000_000)
+        assert result == 15_000
 
-    def test_amer_zero_ad_spend_returns_null(self):
+    def test_amer_kill_use_total_spend_mutant(self):
+        """The 'use total_ad_spend' mutant (10000000) yields 6000, NOT the canon 15000."""
         f = METRIC_REGISTRY["amer_bp"].formula_py
-        assert f(true_cm2_mu=6_620_000, total_ad_spend_mu=0) is None
+        canon = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=4_000_000)
+        mutant = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=10_000_000)
+        assert canon == 15_000
+        assert mutant == 6_000
+        assert canon != mutant, "aMER must use acquisition-classified spend, not total spend"
 
-    def test_amer_lt_pamer_when_rto_positive(self):
-        """aMER must be ≤ paMER (RTO provisioning reduces profitability)."""
-        pamer_f = METRIC_REGISTRY["pamer_bp"].formula_py
-        amer_f = METRIC_REGISTRY["amer_bp"].formula_py
-        pamer = pamer_f(cm2_mu=8_000_000, total_ad_spend_mu=5_000_000)
-        amer = amer_f(true_cm2_mu=6_620_000, total_ad_spend_mu=5_000_000)
-        assert amer <= pamer, f"aMER ({amer}) must be ≤ paMER ({pamer})"
+    def test_amer_zero_acquisition_spend_returns_null(self):
+        f = METRIC_REGISTRY["amer_bp"].formula_py
+        assert f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=0) is None
 
-    def test_parity_class_pamer(self):
-        assert METRIC_REGISTRY["pamer_bp"].parity_class == "correctness_fixture"
+    def test_cac_mu_worked_example(self):
+        """Blended CAC = total_ad_spend / new_customers. 10000000/200 = 50000p (₹500)."""
+        f = METRIC_REGISTRY["cac_mu"].formula_py
+        assert f(total_ad_spend_mu=10_000_000, new_customers_count=200) == 50_000
+
+    def test_cac_mu_zero_customers_returns_null(self):
+        f = METRIC_REGISTRY["cac_mu"].formula_py
+        assert f(total_ad_spend_mu=10_000_000, new_customers_count=0) is None
+
+    def test_cm2_per_nc_worked_example(self):
+        """CM2 per NC = nc_cm2 / new_customers. 2000000/200 = 10000p (₹100)."""
+        f = METRIC_REGISTRY["cm2_per_nc_mu"].formula_py
+        assert f(nc_cm2_mu=2_000_000, new_customers_count=200) == 10_000
+
+    def test_cm2_per_nc_zero_customers_returns_null(self):
+        f = METRIC_REGISTRY["cm2_per_nc_mu"].formula_py
+        assert f(nc_cm2_mu=2_000_000, new_customers_count=0) is None
 
     def test_parity_class_amer(self):
         assert METRIC_REGISTRY["amer_bp"].parity_class == "correctness_fixture"
+
+    def test_parity_class_mer_cac_shadow(self):
+        assert METRIC_REGISTRY["mer_bp"].parity_class == "shadow_compare"
+        assert METRIC_REGISTRY["cac_mu"].parity_class == "shadow_compare"
 
 
 # ---------------------------------------------------------------------------
@@ -547,3 +656,288 @@ def test_fx_shadow_rate_matches_legacy():
         "Must match legacy workspace-costs.ts EXCHANGE_RATES {INR: 83.5}. "
         "CF-C4-DDR-FX-RESTATEMENT-1."
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade.
+# NON-VACUOUS anchors — every positive case is paired with a killed mutant.
+# Byte-identity twin: packages/lib-metrics/src/registry/registry.test.ts (slice-6 block).
+# ---------------------------------------------------------------------------
+
+class TestSliceSixInventorySellThrough:
+    """inventory_sell_through_bp = sales365 / (sales365 + inventory) in bp. shadow_compare."""
+
+    def test_worked_example_cf_s6_inv_sellthru_1(self):
+        """sales365=300, inv=100 → intDiv(300×10000, 400) = 7500bp (75.00%)."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        assert f(sales365=300, current_inventory=100) == 7500
+
+    def test_kill_divide_by_inventory_only_mutant(self):
+        """A '÷ inventory only' mutant → intDiv(300×10000,100)=30000bp — must DIFFER from canon."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        canon = f(sales365=300, current_inventory=100)
+        mutant = _ratio_bp(300, 100)  # the wrong denominator
+        assert canon == 7500
+        assert mutant == 30000
+        assert canon != mutant
+
+    def test_zero_denominator_returns_null(self):
+        """sales365=0 and inv=0 → None (fail-closed). CF-C4-RATIO-DIVOP-1."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        assert f(sales365=0, current_inventory=0) is None
+
+    def test_full_sell_through_when_no_inventory(self):
+        """All sold, none on hand → 10000bp (100%)."""
+        f = METRIC_REGISTRY["inventory_sell_through_bp"].formula_py
+        assert f(sales365=500, current_inventory=0) == 10000
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["inventory_sell_through_bp"].parity_class == "shadow_compare"
+
+
+class TestSliceSixInventoryDaysLeft:
+    """inventory_days_left = first non-zero velocity window cascade. correctness_fixture."""
+
+    def test_worked_example_cf_s6_daysleft_1_cascade_falls_through(self):
+        """inv=30, L30=0, L90=90 → window falls to L90, qty 90 → round(30×90/90)=30."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=30, qty_l30=0, qty_l90=90, qty_l180=0, qty_l360=0) == 30
+
+    def test_kill_always_l360_mutant(self):
+        """An 'always L360' mutant on L360=0 → 999999, not 30 — KILLED."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        canon = f(current_inventory=30, qty_l30=0, qty_l90=90, qty_l180=0, qty_l360=0)
+        # The 'always L360' mutant would see qty=0 → infinite sentinel.
+        mutant_infinite = 999999
+        assert canon == 30
+        assert canon != mutant_infinite
+
+    def test_cf_s6_daysleft_inf_stock_no_velocity(self):
+        """inv=50, all windows 0 → 999999 (INFINITE sentinel)."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=50, qty_l30=0, qty_l90=0, qty_l180=0, qty_l360=0) == 999999
+
+    def test_zero_inventory_returns_zero_not_infinite(self):
+        """inv<=0 → 0 days left (out of stock), NEVER the infinite sentinel."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=0, qty_l30=10, qty_l90=0, qty_l180=0, qty_l360=0) == 0
+        assert f(current_inventory=-5, qty_l30=10, qty_l90=0, qty_l180=0, qty_l360=0) == 0
+
+    def test_l30_preferred_over_later_windows(self):
+        """L30 wins when non-zero: inv=60, L30=30 → round(60×30/30)=60 (not the L360 read)."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=60, qty_l30=30, qty_l90=900, qty_l180=0, qty_l360=0) == 60
+
+    def test_half_up_rounding(self):
+        """round(inv×w/q) half-up: inv=10, L30=4 → 10×30/4 = 75.0 → 75 (exact)."""
+        f = METRIC_REGISTRY["inventory_days_left"].formula_py
+        assert f(current_inventory=10, qty_l30=4, qty_l90=0, qty_l180=0, qty_l360=0) == 75
+        # inv=7, L30=2 → 7×30/2 = 105.0 exact → 105
+        assert f(current_inventory=7, qty_l30=2, qty_l90=0, qty_l180=0, qty_l360=0) == 105
+
+    def test_parity_class_correctness_fixture(self):
+        assert METRIC_REGISTRY["inventory_days_left"].parity_class == "correctness_fixture"
+
+
+class TestSliceSixFirstProductSecondOrderRate:
+    """first_product_second_order_rate_bp = custWith2plus / cohort in bp. shadow_compare.
+
+    NOT slice-5 repeat_rate_bp (rr90). Different window + cohort semantics.
+    """
+
+    def test_worked_example_cf_s6_fp_2nd_1(self):
+        """3 of 8 cohort have >=2 orders → intDiv(3×10000, 8) = 3750bp (37.50%)."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        assert f(customers_with_2plus=3, cohort_customers=8) == 3750
+
+    def test_kill_divide_by_orders_mutant(self):
+        """A '÷ orders(20) not customers(8)' mutant → 1500bp — KILLED."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        canon = f(customers_with_2plus=3, cohort_customers=8)
+        mutant = f(customers_with_2plus=3, cohort_customers=20)
+        assert canon == 3750
+        assert mutant == 1500
+        assert canon != mutant
+
+    def test_zero_cohort_returns_null(self):
+        """Empty cohort → None (fail-closed)."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        assert f(customers_with_2plus=0, cohort_customers=0) is None
+
+    def test_zero_repeaters(self):
+        """No one re-ordered → 0bp."""
+        f = METRIC_REGISTRY["first_product_second_order_rate_bp"].formula_py
+        assert f(customers_with_2plus=0, cohort_customers=50) == 0
+
+    def test_is_distinct_from_repeat_rate_bp(self):
+        """The cascade rate is a SEPARATE metric id from slice-5 repeat_rate_bp (no conflation)."""
+        assert "first_product_second_order_rate_bp" in METRIC_REGISTRY
+        assert "repeat_rate_bp" in METRIC_REGISTRY
+        assert (
+            METRIC_REGISTRY["first_product_second_order_rate_bp"].id
+            != METRIC_REGISTRY["repeat_rate_bp"].id
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-7 (feat-finance-settings-goals): goal attainment + directional RAG.
+# NON-VACUOUS anchors — every positive case is paired with a killed mutant.
+# Byte-identity twin: packages/lib-metrics/src/registry/registry.test.ts (slice-7 block).
+# ---------------------------------------------------------------------------
+
+class TestSliceSevenGoalAttainment:
+    """goal_attainment_bp = actual / goal in bp. shadow_compare."""
+
+    def test_worked_example_cf_s7_goal_attain_1(self):
+        """actual=9200, goal=10000 → intDiv(9200×10000,10000) = 9200bp (92.00%)."""
+        f = METRIC_REGISTRY["goal_attainment_bp"].formula_py
+        assert f(actual=9200, goal_value=10000) == 9200
+
+    def test_kill_divide_by_actual_mutant(self):
+        """A '÷ actual' (wrong-denominator) mutant → intDiv(9200×10000,9200)=10000bp — KILLED."""
+        f = METRIC_REGISTRY["goal_attainment_bp"].formula_py
+        canon = f(actual=9200, goal_value=10000)
+        mutant = _ratio_bp(9200, 9200)  # the wrong denominator
+        assert canon == 9200
+        assert mutant == 10000
+        assert canon != mutant
+
+    def test_zero_goal_returns_null(self):
+        f = METRIC_REGISTRY["goal_attainment_bp"].formula_py
+        assert f(actual=5000, goal_value=0) is None
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["goal_attainment_bp"].parity_class == "shadow_compare"
+
+
+class TestSliceSevenDirectionalRag:
+    """compute_goal_rag — directional band (the slice-table's flat rule is only higher-better)."""
+
+    def test_higher_better_bands(self):
+        # >=95% green, >=80% amber, else red.
+        assert compute_goal_rag(9800, 10000, True) == "green"
+        assert compute_goal_rag(9500, 10000, True) == "green"   # boundary
+        assert compute_goal_rag(9200, 10000, True) == "amber"
+        assert compute_goal_rag(8000, 10000, True) == "amber"   # boundary
+        assert compute_goal_rag(7000, 10000, True) == "red"
+
+    def test_lower_better_bands(self):
+        # <=105% green, <=120% amber, else red (INVERTED).
+        assert compute_goal_rag(10000, 10000, False) == "green"
+        assert compute_goal_rag(10500, 10000, False) == "green"  # boundary
+        assert compute_goal_rag(12000, 10000, False) == "amber"  # boundary
+        assert compute_goal_rag(12100, 10000, False) == "red"
+
+    def test_kill_all_higher_better_mutant_on_cac(self):
+        """CAC@120% of goal: directional → amber. The 'all-higher-better' mutant → green. KILLED."""
+        directional = compute_goal_rag(12000, 10000, False)   # lower-better
+        mutant = compute_goal_rag(12000, 10000, True)         # treat-all-higher-better
+        assert directional == "amber"
+        assert mutant == "green"
+        assert directional != mutant
+
+    def test_goal_higher_better_resolution(self):
+        # MINIMUM → higher-better, MAXIMUM → lower-better, TARGET → metric default.
+        assert goal_higher_better("MINIMUM", False) is True
+        assert goal_higher_better("MAXIMUM", True) is False
+        assert goal_higher_better("TARGET", True) is True
+        assert goal_higher_better("TARGET", False) is False
+
+    def test_festival_lift_is_not_in_registry(self):
+        """Finding 2: festival learned-lift is a phantom — NEVER registered."""
+        assert "festival_lift" not in METRIC_REGISTRY
+        assert "festival_lift_factor" not in METRIC_REGISTRY
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["first_product_second_order_rate_bp"].parity_class == "shadow_compare"
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY.
+# NON-VACUOUS anchors — every positive case paired with a killed mutant.
+# Byte-identity twin: packages/lib-metrics/src/registry/registry.test.ts (slice-8 block).
+# ---------------------------------------------------------------------------
+
+class TestSliceEightReactivationWindow:
+    """reactivation_window_days = round(0.8 × median 1→2 gap), integer half-up. correctness_fixture."""
+
+    def test_worked_example_cf_s8_react_1(self):
+        """median_1to2=30 → (30×8+5)//10 = 245//10 = 24 days."""
+        f = METRIC_REGISTRY["reactivation_window_days"].formula_py
+        assert f(median_1to2_days=30) == 24
+
+    def test_kill_no_factor_mutant(self):
+        """A '× whole interval (drop the 0.8 factor)' mutant → 30 — KILLED."""
+        f = METRIC_REGISTRY["reactivation_window_days"].formula_py
+        canon = f(median_1to2_days=30)
+        mutant = 30  # the full interval, no 0.8 factor
+        assert canon == 24
+        assert canon != mutant
+
+    def test_zero_median_returns_null(self):
+        f = METRIC_REGISTRY["reactivation_window_days"].formula_py
+        assert f(median_1to2_days=0) is None
+
+    def test_parity_class_correctness_fixture(self):
+        assert METRIC_REGISTRY["reactivation_window_days"].parity_class == "correctness_fixture"
+
+
+class TestSliceEightEmailRates:
+    """email open/click rate (bp) + revenue per recipient (mu). shadow_compare. READ-ONLY reporting."""
+
+    def test_open_rate_cf_s8_email_open_1(self):
+        """opens=450, delivered=1000 → 4500bp (45.00%)."""
+        f = METRIC_REGISTRY["email_open_rate_bp"].formula_py
+        assert f(unique_opens=450, delivered=1000) == 4500
+
+    def test_kill_open_rate_divide_by_opens_mutant(self):
+        """A '÷ unique_opens (rev-per-open denominator)' mutant → 10000bp — KILLED."""
+        f = METRIC_REGISTRY["email_open_rate_bp"].formula_py
+        canon = f(unique_opens=450, delivered=1000)
+        mutant = _ratio_bp(450, 450)  # wrong denominator
+        assert canon == 4500
+        assert mutant == 10000
+        assert canon != mutant
+
+    def test_click_rate_cf_s8_email_click_1(self):
+        """clicks=120, delivered=1000 → 1200bp (12.00%)."""
+        f = METRIC_REGISTRY["email_click_rate_bp"].formula_py
+        assert f(unique_clicks=120, delivered=1000) == 1200
+
+    def test_kill_click_rate_divide_by_opens_mutant(self):
+        """A '÷ unique_opens(450) not delivered(1000)' mutant → 2666bp — KILLED."""
+        f = METRIC_REGISTRY["email_click_rate_bp"].formula_py
+        canon = f(unique_clicks=120, delivered=1000)
+        mutant = _ratio_bp(120, 450)
+        assert canon == 1200
+        assert mutant == 2666
+        assert canon != mutant
+
+    def test_rpr_cf_s8_email_rpr_1(self):
+        """revenue=5000000µ, delivered=1000 → 5000µ (₹50.00/recipient)."""
+        f = METRIC_REGISTRY["email_revenue_per_recipient_mu"].formula_py
+        assert f(revenue_mu=5_000_000, delivered=1000) == 5000
+
+    def test_kill_rpr_divide_by_opens_mutant(self):
+        """A '÷ unique_opens(450) (rev-per-open)' mutant → 11111µ — KILLED."""
+        f = METRIC_REGISTRY["email_revenue_per_recipient_mu"].formula_py
+        canon = f(revenue_mu=5_000_000, delivered=1000)
+        mutant = _int_floor_div_or_null(5_000_000, 450)
+        assert canon == 5000
+        assert mutant == 11111
+        assert canon != mutant
+
+    def test_zero_delivered_returns_null(self):
+        assert METRIC_REGISTRY["email_open_rate_bp"].formula_py(unique_opens=10, delivered=0) is None
+        assert METRIC_REGISTRY["email_click_rate_bp"].formula_py(unique_clicks=5, delivered=0) is None
+        assert METRIC_REGISTRY["email_revenue_per_recipient_mu"].formula_py(revenue_mu=99, delivered=0) is None
+
+    def test_email_cm2_is_not_in_registry(self):
+        """Finding 4: email_cm2_mu is a phantom (legacy has NO CM2 attribution to email)."""
+        assert "email_cm2_mu" not in METRIC_REGISTRY
+        assert "best_send_time" not in METRIC_REGISTRY  # Finding 2 phantom
+
+    def test_parity_class_shadow(self):
+        assert METRIC_REGISTRY["email_open_rate_bp"].parity_class == "shadow_compare"
+        assert METRIC_REGISTRY["email_click_rate_bp"].parity_class == "shadow_compare"
+        assert METRIC_REGISTRY["email_revenue_per_recipient_mu"].parity_class == "shadow_compare"

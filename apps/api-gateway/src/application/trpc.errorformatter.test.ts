@@ -40,6 +40,7 @@ const WS_ID           = SUGANDH_LOK_WORKSPACE_ID;
 
 function makeCtx(role: 'ANALYST' | 'VIEWER' | 'MANAGER' = 'ANALYST'): WorkspaceContext {
   return {
+    identity: { sub: 'user-h1-test', email: 'h1@brain.test' },
     claim: assembleClaim({
       userId: 'user-h1-test',
       workspaceId: WS_ID,

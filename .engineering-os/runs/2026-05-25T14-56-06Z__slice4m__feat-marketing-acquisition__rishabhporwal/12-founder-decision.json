@@ -1,0 +1,17 @@
+{
+  "ts": "2026-05-25T15:22:00Z",
+  "req_id": "feat-marketing-acquisition",
+  "parent_epic": "epic-phase2-feature-parity",
+  "slice": 4,
+  "stage": 7,
+  "decision": "APPROVE",
+  "decided_by": "cto-advisor (Rohan)",
+  "delegation_basis": "Standing Founder delegation (MEMORY: feedback_founder_delegates_to_cto_advisor) — Rohan signs every Founder gate on the Founder's behalf for the EOS pipeline. Stage-6 hard-rule deviation scan = NONE, so auto-approve is permitted.",
+  "conditions": [
+    "Stage-8 readiness only (Jatin): NO live deploy, NO commit, NO read-source flip.",
+    "Nothing committed until the Founder gives free-text 'commit it' (harness guard); commit command staged in pending-founder-commit.md (explicit paths, no git add -A).",
+    "DDR rows new_customer_revenue_mu/nc_cm2_mu/cm2_per_nc_mu/acquisition_ad_spend_mu remain UNSIGNED-PENDING child-3-shopify-connector (Rule 2) — re-signed at the Stage-8 live-flip re-review.",
+    "Candidate rule verify-legacy-formula-at-stage1-not-slice-table awaits Founder /adopt-rule or /reject-rule (NOT self-adopted)."
+  ],
+  "summary": "Slice 4 MER/aMER/CAC + acquisition + distributions on /acquisition + /distributions. Reconciled Child-4 divergent pre-built marketing defs to legacy (amer_bp redefined, pamer_bp decommissioned, mer_bp/cac_mu un-split). TS<->Python parity-green + non-vacuous; RLS fail-closed; per-SKU GST honest; SQL-only; typecheck 0; live smoke PASS."
+}

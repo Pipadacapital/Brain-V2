@@ -20,6 +20,8 @@ export type { GoalType, GoalValue } from './goal-type.js';
 
 // Child 4: metric registry (TS↔Python byte-identity pair; extends Child-2 home)
 export type { MetricDefinition, MetricKind, MetricUnit, ParityClass } from './registry/index.js';
+// Phase-2 slice-7: directional Goal RAG band + types (classification, not registry metric).
+export type { GoalRag, GoalValueType } from './registry/index.js';
 export {
   METRIC_REGISTRY,
   DISPLAY_ONLY_METRIC_IDS,
@@ -27,6 +29,7 @@ export {
   NET_SALES_MU,
   NET_NET_TAX_MU,
   NET_REVENUE_MU,
+  VARIABLE_COSTS_MU,
   CM1_MU,
   CM2_MU,
   MISC_EXPENSES_PRORATED_MU,
@@ -38,7 +41,26 @@ export {
   ACOS_BP,
   BLENDED_ROAS_X100,
   TRUE_CM2_MU,
-  PAMER_BP,
   AMER_BP,
+  MER_BP,
+  CAC_MU,
+  NEW_CUSTOMER_REVENUE_MU,
+  NC_CM2_MU,
+  CM2_PER_NC_MU,
+  ACQUISITION_AD_SPEND_MU,
   LTV_CAC_BP,
+  // Phase-2 slice-6 (feat-catalog-inventory)
+  INVENTORY_SELL_THROUGH_BP,
+  INVENTORY_DAYS_LEFT,
+  INVENTORY_INFINITE_DAYS,
+  FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
+  // Phase-2 slice-7 (feat-finance-settings-goals): goal attainment + directional RAG
+  GOAL_ATTAINMENT_BP,
+  computeGoalRag,
+  goalHigherBetter,
+  // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY
+  REACTIVATION_WINDOW_DAYS,
+  EMAIL_OPEN_RATE_BP,
+  EMAIL_CLICK_RATE_BP,
+  EMAIL_REVENUE_PER_RECIPIENT_MU,
 } from './registry/index.js';

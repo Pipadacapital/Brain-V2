@@ -11,6 +11,13 @@ packages:
   - "apps/notifications-service"
   - "apps/lifecycle-service"
   - "packages/*"
+# Single @types/react across the workspace (Slice A — feat-auth-supabase-identity).
+# Adding @supabase/ssr re-hoisted @types/react@18 (from @brain/mobile / React
+# Native 0.76) into the apps/web compile, breaking the React-19 type singleton
+# (apps/web pins @types/react@^19). Pin to 19 so apps/web compiles against ONE
+# React type. apps/mobile typechecks fine against 19. pnpm v11 reads overrides here.
+overrides:
+  "@types/react": "19.2.15"
 allowBuilds:
   '@parcel/watcher': set this to true or false
   '@shopify/react-native-skia': true

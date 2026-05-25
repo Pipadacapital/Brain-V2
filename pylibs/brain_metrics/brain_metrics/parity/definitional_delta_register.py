@@ -164,6 +164,58 @@ _ROW_CM2 = DDRRow(
     formula_snapshot="cm2_mu = cm1_mu - total_ad_spend_mu (integer subtraction, paise)",
 )
 
+_ROW_CM1 = DDRRow(
+    # Legacy CANONICAL: compute-daily.ts:187 (cm1 = netSales - cogs - shipping - packaging - website)
+    # Legacy DIVERGENT: waterfall.ts:987 (cm1 = revenueAfterTaxShipping - cogs - varCosts - rto)
+    # Phase-2 slice-2 (feat-pnl-cm-waterfall). Closes the TS<->Python cm1_mu divergence.
+    legacy_formula=(
+        "compute-daily.ts:187 (cm1 = netSales - cogs - shipping - packaging - website); "
+        "divergent path waterfall.ts:987 (cm1 = revenueAfterTaxShipping - cogs - varCosts - rto)"
+    ),
+    brain_formula="cm1_mu",
+    reason=(
+        "Brain canonicalizes CM1 on the compute-daily daily path: "
+        "cm1_mu = net_revenue_mu - cogs_mu - variable_costs_mu (variable_costs = shipping + "
+        "packaging + website charges). TWO things this row pins: "
+        "(1) The legacy /waterfall page folds RTO charges AND tax/shipping into the CM1 base; "
+        "Brain does NOT fold RTO into CM1 (that would double-count against the CM2-level RTO "
+        "provision). The honest RTO adjustment lives at CM2 via the Brain-native true_cm2_mu "
+        "(parity_gap:true, _ROW_TRUE_CM2) — the correct place. "
+        "(2) HISTORICAL CORRECTNESS NOTE: before slice-2 the TypeScript registry cm1_mu was "
+        "net_revenue - cogs (COGS-only), silently diverging from the Python cm1_mu and from "
+        "legacy compute-daily.ts:187. The shadow_compare gate compares structural fields and "
+        "golden decimal-conversion vectors, NOT formula text, so the divergence shipped "
+        "unnoticed (same root cause as the feat-metric-engine-olap-split Shreya H-1 bounce). "
+        "Slice-2 added variable_costs_mu to the TS registry, corrected cm1_mu to the 3-arg "
+        "honest form (byte-identical to Python), and added a cross-language formula anchor "
+        "fixture so the gate now bites. This row is the governance record of that correction."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "vs compute-daily canonical: delta = 0 (Brain matches the daily path exactly). "
+        "vs the /waterfall page path: Brain_cm1 >= waterfall_cm1 because waterfall subtracts "
+        "RTO charges (and tax/shipping) inside CM1; Brain defers RTO to true_cm2_mu. "
+        "Magnitude = the RTO charge total + the tax/shipping the waterfall page nets into CM1. "
+        "Worked anchor: net_revenue=779000p, cogs=200000p, variable_costs=50000p -> "
+        "cm1 = 779000 - 200000 - 50000 = 529000p (integer paise)."
+    ),
+    business_impact=(
+        "CM1 (gross contribution after COGS + variable fulfilment costs) is the head of the "
+        "CM ladder feeding CM2 -> CM3 -> True-CM2. The pre-slice-2 COGS-only TS cm1_mu "
+        "OVERSTATED CM1 by the full variable-cost line on every workspace that displayed the "
+        "TS-derived ladder — materially inflating perceived contribution. The correction makes "
+        "the /pnl and /waterfall pages honest and consistent with the analytics rollup."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "cm1_mu = net_revenue_mu - cogs_mu - variable_costs_mu (integer subtraction, paise); "
+        "variable_costs_mu = shipping_mu + packaging_mu + website_charges_mu; "
+        "ClickHouse: toInt64(net_revenue_mu - cogs_mu - variable_costs_mu). "
+        "RTO is NOT in CM1 — RTO provision applied at CM2 via true_cm2_mu."
+    ),
+)
+
 _ROW_MISC_PRORATED = DDRRow(
     # Legacy: compute-daily.ts:236-243 (monthlyAmt / getDaysInMonth(dateAtNoonUtc))
     # CF-C4-DDR-MISC-PRORATE-1: Feb-boundary example; adjudication discipline.
@@ -287,58 +339,158 @@ _ROW_TRUE_CM2 = DDRRow(
     ),
 )
 
-_ROW_PAMER = DDRRow(
-    legacy_formula="NONE — paMER is Brain-native; no legacy comparand",
-    brain_formula="pamer_bp",
+_ROW_REALIZED_REVENUE = DDRRow(
+    # Legacy: NONE — compute-daily.ts stops at the daily revenue figure; it never
+    # subtracts post-sale reversals (cancellations / RTO / refunds) from revenue.
+    # Phase-2 slice-1 (feat-store-order-fact-layer). CF-C2-realized-1.
+    legacy_formula="NONE — compute-daily.ts has no realized-revenue field (no post-sale reversal subtraction from daily revenue)",
+    brain_formula="realized_revenue_mu",
     reason=(
-        "paMER (performance-adjusted MER) = CM2 / Total Ad Spend (basis points). "
-        "Brain-native metric — the legacy system does not compute this ratio. "
-        "paMER replaces blended ROAS as the primary ad efficiency signal (CM2-first). "
-        "Correctness fixture: paMER_bp = intDiv(cm2_mu × 10000, total_ad_spend_mu)."
+        "Realized Revenue is a Brain-native metric with NO legacy comparand — it is "
+        "the honest billing base. Realized = Net Revenue − Cancelled − RTO-reversed − "
+        "Refunded. The legacy system reports daily net revenue but never deducts post-sale "
+        "reversals from it, so a high-cancel / high-RTO day shows legacy revenue that was "
+        "never actually realized. This metric must be verified by a correctness-fixture "
+        "worked example, NEVER by a shadow-compare gate (there is no legacy value to "
+        "compare against). Rohan's Stage-6 sign-off must explicitly acknowledge no legacy "
+        "shadow. Note: this slice subtracts the reversal aggregates as facts; per-SKU GST "
+        "feeds the net_revenue_mu upstream via the India RegionAdapter (total_tax_mu DDR row)."
     ),
     shadow_compare_classification=CORRECTNESS_FIXTURE,
     delta_direction_and_magnitude=(
         "Not applicable — no legacy comparand. "
-        "Example: cm2=₹80,000 (8000000 paise), ad_spend=₹50,000 (5000000 paise). "
-        "paMER_bp = intDiv(8000000×10000, 5000000) = intDiv(80000000000, 5000000) = 16000 bp = 1.60x."
+        "realized_revenue_mu <= net_revenue_mu always (reversals are non-negative). "
+        "Worked example (CF-C2-realized-1): "
+        "net_revenue=4960000p (₹49,600), cancelled=120000p, rto_reversed=300000p, "
+        "refunded=80000p → realized = 4960000 − 120000 − 300000 − 80000 = 4460000p (₹44,600). "
+        "Realized margin = 4460000/4960000 = 89.9% of reported net revenue on this day."
     ),
     business_impact=(
-        "paMER is the primary decision metric for ad budget allocation in Brain. "
-        "A paMER > 10000 (1.0x) means ads are profitable after variable costs. "
-        "This replaces the legacy ROAS (display-only) for decision-making."
+        "Realized Revenue is the honest %-of-GMV billing base and the trustworthy top of "
+        "the contribution-margin ladder. For high-RTO / high-cancel Indian-D2C brands the "
+        "gap between reported net revenue and realized revenue is strategically material — "
+        "billing or CM math on un-realized revenue overstates health. This metric makes the "
+        "reversal leak visible at the top of the /store ladder."
     ),
-    parity_gap=True,
+    parity_gap=True,  # Brain-native: STRUCTURAL RULE 1 applies (no shadow-compare GREEN)
     child_dependency=None,
-    formula_snapshot="pamer_bp = intDiv(cm2_mu * 10000, total_ad_spend_mu); NULL if total_ad_spend_mu <= 0",
+    formula_snapshot=(
+        "realized_revenue_mu = net_revenue_mu - cancelled_revenue_mu "
+        "- rto_reversed_revenue_mu - refunded_revenue_mu (integer subtraction, paise); "
+        "ClickHouse: toInt64(net_revenue_mu - cancelled_revenue_mu "
+        "- rto_reversed_revenue_mu - refunded_revenue_mu)"
+    ),
 )
 
+# _ROW_PAMER DECOMMISSIONED (Phase-2 slice-4, feat-marketing-acquisition).
+# pamer_bp (= cm2/total_ad_spend) was a Child-4 pre-build with NO legacy comparand.
+# It was never consumed by any page and conflated "profit-adjusted MER" with the real
+# legacy aMER. Removed from both registries; see _ROW_PAMER_DECOMMISSION (informational)
+# in the .md register for the audit trail. No DDRRow object remains for pamer_bp.
+
+# aMER REDEFINED to legacy ground truth (slice-4). Previously (Child-4) it was
+# true_cm2/total_ad_spend with no legacy comparand. Legacy aMER = new-customer revenue
+# / ACQUISITION-CLASSIFIED ad spend (marketing-efficiency.ts:25-28; ads-spend.ts:82-84).
 _ROW_AMER = DDRRow(
-    legacy_formula="NONE — aMER is Brain-native; no legacy comparand",
+    legacy_formula=(
+        "marketing-efficiency.ts:25-28 — aMer = newCustomerRevenue / acquisitionAdSpend "
+        "where acquisitionAdSpend is the acquisition campaign-intent bucket ONLY "
+        "(ads-spend.ts:82-84; unclassified/brand/non_acquisition EXCLUDED)."
+    ),
     brain_formula="amer_bp",
     reason=(
-        "aMER (adjusted MER) = True CM2 / Total Ad Spend (basis points). "
-        "Brain-native metric. More conservative than paMER: adjusts for RTO provisioning. "
-        "Correctness fixture: amer_bp = intDiv(true_cm2_mu × 10000, total_ad_spend_mu)."
+        "REDEFINED from the Child-4 placeholder (true_cm2/total_ad_spend) to the legacy "
+        "semantics: aMER = new_customer_revenue_mu / acquisition_ad_spend_mu (basis points). "
+        "The denominator is acquisition-classified spend ONLY (its own def "
+        "acquisition_ad_spend_mu) — NOT total_ad_spend_mu. This is the load-bearing "
+        "correction (Rohan Stage-1 finding + persona Concern 1). correctness_fixture: "
+        "amer_bp = intDiv(new_customer_revenue_mu × 10000, acquisition_ad_spend_mu)."
     ),
     shadow_compare_classification=CORRECTNESS_FIXTURE,
     delta_direction_and_magnitude=(
-        "Not applicable — no legacy comparand. "
-        "Example (continuing true_cm2 example): true_cm2=₹66,200 (6620000 paise), "
-        "ad_spend=₹50,000 (5000000 paise). "
-        "aMER_bp = intDiv(6620000×10000, 5000000) = intDiv(66200000000, 5000000) = 13240 bp = 1.32x. "
-        "aMER < paMER (1.32x vs 1.60x) — reflects RTO cost."
+        "Brain integerizes the legacy float (Math.round(nc_rev/acq_spend×100)/100) to a "
+        "single FLOOR-to-bp. Worked anchor (CF-S4-AMER-1): nc_revenue=₹60,000 (6000000 paise), "
+        "acquisition_ad_spend=₹40,000 (4000000 paise) — note total spend may be ₹100,000 but "
+        "only ₹40,000 is acquisition-classified. amer_bp = intDiv(6000000×10000, 4000000) = "
+        "15000 bp = 1.50x. A 'use total_ad_spend (10000000)' mutant yields 6000 bp — KILLED."
     ),
     business_impact=(
-        "aMER is a leading indicator of true post-RTO profitability. "
-        "For high-RTO categories, aMER < 10000 (< 1.0x) signals unprofitable ad spend "
-        "even if paMER appears healthy."
+        "aMER is THE new-customer acquisition-efficiency decision metric. Using total spend "
+        "instead of acquisition-classified spend understates aMER for any brand that classifies "
+        "campaigns, mis-flagging healthy acquisition as unprofitable."
     ),
     parity_gap=True,
     child_dependency=None,
     formula_snapshot=(
-        "amer_bp = intDiv(true_cm2_mu * 10000, total_ad_spend_mu); "
-        "true_cm2_mu = cm2_mu - intDiv(rto_orders × cost_base, total_orders_count); "
-        "NULL if total_ad_spend_mu <= 0 or total_orders_count <= 0"
+        "amer_bp = intDiv(new_customer_revenue_mu * 10000, acquisition_ad_spend_mu); "
+        "NULL if acquisition_ad_spend_mu <= 0"
+    ),
+)
+
+# MER numerator-basis reconciliation (slice-4). Legacy mer = storeNetRevenue/totalAdSpend.
+# Child-4 PY mer_bp used net_sales_mu; reconciled to net_revenue_mu (the slice-1 /store rung)
+# for cross-surface consistency (MER on /acquisition == /store net revenue ÷ spend).
+_ROW_MER_BASIS = DDRRow(
+    legacy_formula=(
+        "marketing-efficiency.ts:21-24 — mer = storeNetRevenue / totalAdSpend; "
+        "storeNetRevenue from ads-spend.ts:fetchStoreNetRevenueForPeriod "
+        "(net-of-tax minus refund share, analytics+gap-fill reconciled)."
+    ),
+    brain_formula="mer_bp",
+    reason=(
+        "Brain MER numerator = net_revenue_mu (the slice-1 store net-revenue rung) so the "
+        "/acquisition MER equals the /store net revenue for the same range (cross-surface "
+        "consistency; persona Concern 3). Child-4 used net_sales_mu — reconciled to net_revenue_mu."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Numerator basis change net_sales_mu → net_revenue_mu (net_revenue = net_net_tax + "
+        "shipping_revenue). Worked anchor (CF-S4-MER-1): net_revenue=₹120,000 (12000000 paise), "
+        "total_ad_spend=₹100,000 (10000000 paise) → intDiv(12000000×10000, 10000000) = 12000 bp = 1.20x."
+    ),
+    business_impact=(
+        "MER must visibly match the /store net revenue figure or operators distrust the number. "
+        "Numerator-basis drift between surfaces erodes trust in the whole workbench."
+    ),
+    parity_gap=False,  # legacy comparand EXISTS (storeNetRevenue/totalAdSpend) — expected definitional delta, not a no-comparand fixture
+    child_dependency=None,
+    formula_snapshot=(
+        "mer_bp = intDiv(net_revenue_mu * 10000, total_ad_spend_mu); NULL if total_ad_spend_mu <= 0"
+    ),
+)
+
+# New-customer revenue / CM2 / per-NC (slice-4). Connector-sourced first-order facts;
+# unmeasurable pre-Child-3 (mirrors _ROW_TOTAL_TAX). Per-order tax uses per-SKU GST (never blended).
+_ROW_NC_REVENUE_CM2 = DDRRow(
+    legacy_formula=(
+        "acquisition/compute.ts:384-423 — per-NC-order: newCustomerRevenue += totalPrice - "
+        "totalTax - orderShareRefunds (RTO excluded); ncCm2 = totalPrice - cogs - perOrder("
+        "shipping+packaging+website+adSpend) - refundShare (RTO→0); blendedCac = totalAdSpend/"
+        "newCustomers; cm2PerNc = totalNcCm2/newCustomers. New customer = first order in range."
+    ),
+    brain_formula="new_customer_revenue_mu / nc_cm2_mu / cm2_per_nc_mu / acquisition_ad_spend_mu",
+    reason=(
+        "Connector-sourced first-order facts + per-order COGS/variable/adSpend allocation + "
+        "refund share + RTO exclusion + per-SKU GST tax (NEVER blended). The use-case assembles; "
+        "the registry rungs are passthrough aggregates. Unmeasurable pre-Child-3 connector cutover."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "child_dependency: child-3-shopify-connector — not signable until the connector gate is "
+        "GREEN (Rule 2; mirrors _ROW_TOTAL_TAX). Anchors: cac_mu ₹500 (10000000/200); "
+        "cm2_per_nc_mu ₹100 (2000000/200)."
+    ),
+    business_impact=(
+        "New-customer CM2/revenue are the acquisition-quality core. Per-order per-SKU tax (not "
+        "blended) keeps the India GST-2.0 honesty; RTO exclusion keeps CM2 honest."
+    ),
+    parity_gap=False,
+    child_dependency="child-3-shopify-connector",
+    formula_snapshot=(
+        "new_customer_revenue_mu = SUM per-NC-order (totalPrice - totalTax - refundShare), RTO->0; "
+        "nc_cm2_mu = SUM per-NC-order (price - cogs - perOrderVariable - perOrderAdSpend - refundShare), RTO->0; "
+        "cm2_per_nc_mu = intDiv(nc_cm2_mu, new_customers_count); "
+        "acquisition_ad_spend_mu = SUM spend where campaign intent == 'acquisition'"
     ),
 )
 
@@ -366,6 +518,113 @@ _ROW_LTV_CAC = DDRRow(
     parity_gap=True,
     child_dependency=None,
     formula_snapshot="ltv_cac_bp = intDiv(ltv_mu * 10000, cac_mu); NULL if cac_mu <= 0",
+)
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-5 (feat-cohorts-ltv) DDR rows
+# ---------------------------------------------------------------------------
+
+_ROW_COHORT_LTV = DDRRow(
+    legacy_formula=(
+        "lib/cohorts/compute.ts:681-695 — cumulative mode seeds s = firstOrderR "
+        "then s += incr[k] for k=1..12 (float; per-cohort realized CM3 curve)"
+    ),
+    brain_formula="cohort_ltv_mu",
+    reason=(
+        "Cohort cumulative realized CM3 at a horizon — the LTV rung that feeds ltv_cac_bp. "
+        "Rohan Stage-1 Finding 1: cohorts use CM3 (cm2 − misc), NOT CM2; the slice-table's "
+        "'cohort_cumulative_cm2_mu' named the wrong rung. The single-step identity is integer "
+        "additive: ltv_at_step = prev_ltv_mu + incr_cm3_mu; the use-case walks it. "
+        "Legacy is a float cumulative; integer-paise here is the canonical Brain form."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not applicable as a byte comparand — legacy is float, Brain is integer paise. "
+        "Worked anchor CF-S5-LTV-CUM-1: prev=1500000µ, incr=300000µ → 1800000µ. "
+        "An 'incremental-not-cumulative' mutant returns 300000µ — killed by the anchor."
+    ),
+    business_impact=(
+        "cohort_ltv_mu is the numerator of LTV:CAC. Using CM2 (no misc) instead of CM3 "
+        "would OVERSTATE LTV by the misc-expense share and inflate LTV:CAC — a retention "
+        "investment over-confidence error."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "cohort_ltv_mu step = prev_ltv_mu + incr_cm3_mu (integer add); "
+        "cumulative LTV at horizon H = firstOrderR + SUM(incr realized CM3, buckets 1..H)"
+    ),
+)
+
+_ROW_REPEAT_RATE = DDRRow(
+    legacy_formula=(
+        "lib/cohorts/compute.ts:589-608 (rr90 = count90/newCustomers); "
+        "lib/ltv/compute.ts:618-623 (repeat_rate = distinct-repeat-set.size / n)"
+    ),
+    brain_formula="repeat_rate_bp",
+    reason=(
+        "Distinct repeat customers ÷ new customers, in basis points. Covers rr90 (90-day "
+        "window) and the bucketed repeat metric. Legacy comparand EXISTS (float ratio) → "
+        "shadow_compare; no definitional delta — the Brain bp form is the integer FLOOR of "
+        "the same ratio."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Zero definitional delta; only the integer-bp representation differs from the legacy "
+        "float fraction. Anchor CF-S5-RR90-1: 3 of 10 in 90d → intDiv(3×10000,10) = 3000bp. "
+        "A '÷ total-orders(25)' mutant → 1200bp — killed."
+    ),
+    business_impact=(
+        "Repeat rate is the retention health signal on the cohort heatmap. Dividing by the "
+        "wrong denominator (orders vs customers) would mis-state retention by the orders-per-"
+        "customer factor."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot="repeat_rate_bp = intDiv(repeat_customers * 10000, new_customers); NULL if new_customers <= 0",
+)
+
+# Documentary row — the REAL CAC payback (NOT a registry single-expression metric).
+# The phantom cac_payback_months (CAC/MonthlyCM2) was DECOMMISSIONED (Rohan Finding 3).
+# The real payback is the cumulative bucket-walk WITH INTERPOLATION computed in
+# CohortMatrixQuery — it is an iterative array-walk, not a fixed-arity formula, so it
+# is NOT a MetricDefinition. This row pins the canonical formula + the use-case anchor.
+_ROW_CAC_PAYBACK = DDRRow(
+    legacy_formula=(
+        "lib/cohorts/compute.ts:610-652 — cumulative bucket-walk: cum = firstOrderR − cac; "
+        "if cum>=0 → 0; else for k in 1..12: cum += incr[k-1]; on first cum>=0: "
+        "(cm3+post, incrVal>eps, prevCum<0) → payback = (k-1) + (0 − prevCum)/incrVal "
+        "[linear interpolation]; else → k; if never → null. Summary averagePayback = "
+        "customer-weighted mean of per-cohort cm3 payback (compute.ts:632-652)."
+    ),
+    brain_formula="cohort_cac_payback",  # use-case computed; NOT a registry metric id
+    reason=(
+        "The prior cac_payback_months = intDiv(cac_mu, monthly_cm2_mu) was a SPECULATIVE "
+        "PRE-BUILD that does NOT match legacy. A flat CAC ÷ monthly-CM2 ratio diverges from "
+        "the legacy cumulative bucket-walk with interpolation on any non-flat retention curve "
+        "(same phantom class as slice-4's pamer_bp). DECOMMISSIONED from the registry; the "
+        "real payback is computed in CohortMatrixQuery and anchored by a non-vacuous fixture."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Worked anchor CF-S5-COHORT-PAYBACK-1: firstOrderR=30000µ, cac=50000µ, "
+        "incr cm3 = [20000µ, …]. cum0 = 30000−50000 = −20000 (<0). M1: cum = 0 ≥0 → "
+        "cm3+post interpolate: (1-1) + (0 − (−20000))/20000 = 1.0 month (100 centi-months). "
+        "A flat 'CAC/MonthlyCM2' mutant = intDiv(50000,20000) = 2 months — KILLED."
+    ),
+    business_impact=(
+        "Payback months is a headline acquisition-efficiency metric. The phantom flat ratio "
+        "would mis-state payback whenever retention is front- or back-loaded, corrupting the "
+        "spend-vs-retention decision."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "cohort payback (months) = cumulative bucket-walk over per-cohort incremental realized "
+        "CM3: cum=firstOrderR−cac; if cum>=0 → 0; else walk M1..M12 adding incr; first k where "
+        "cum>=0; cm3+post interpolates (k-1)+(0−prevCum)/incrVal; null if never reached. "
+        "Stored as centi-months (×100) for integer interpolation."
+    ),
 )
 
 _ROW_TOTAL_TAX = DDRRow(
@@ -498,22 +757,375 @@ _ROW_ACOS = DDRRow(
 )
 
 
+_ROW_BREAKEVEN_COD_RTO = DDRRow(
+    # Phase-2 slice-3 (feat-rto-cod-economics). Legacy: cod-prepaid-analytics.ts:218-231.
+    # Rohan/persona Concern-1: the slice table's naive r*=M/(M+C) is WRONG; Brain ports the FULL formula.
+    legacy_formula=(
+        "cod-prepaid-analytics.ts:218-231 "
+        "(numerator = V*P + (COD_fee - PG_fee) + P*(S+RS); denominator = V + S + RS; "
+        "rCodBe = numerator/denominator; valid only if 0<=rCodBe<=1; "
+        "PG_fee = V*(gatewayFeePercent/100))"
+    ),
+    brain_formula="breakeven_cod_rto_rate_bp",
+    reason=(
+        "Brain canonicalizes the FULL legacy COD break-even RTO rate, NOT the naive M/(M+C) form "
+        "that appeared in the ratified slice table. The naive form is a degenerate special case and "
+        "would mis-advise COD-vs-prepaid policy — a top India-D2C margin lever. Brain computes the "
+        "exact legacy formula in INTEGER paise with a SINGLE final FLOOR-to-bp (no chained float), "
+        "so TS and Python are byte-identical. parity_gap:true (Brain canonical integer form; the "
+        "legacy float result is not a byte comparand). Routed to the correctness-fixture gate with a "
+        "cross-language worked anchor that FAILS the naive M/(M+C) and PASSES the full form — the "
+        "slice-2 verify-the-verifier lesson applied. Rohan's Stage-6 sign-off must acknowledge no "
+        "legacy byte shadow. When the result is outside [0, 10000] bp the use-case surfaces the "
+        "legacy breakEvenNote instead of a rate; the registry value is the raw bp."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not applicable — no legacy byte comparand (legacy is float, Brain is integer-canonical). "
+        "WORKED ANCHOR (CF-S3-BREAKEVEN-1): aov_mu=150000 (₹1500), prepaid_rto_rate_bp=500 (5%), "
+        "cod_fee_mu=3000 (₹30), gateway_fee_bp=200 (2%), return_shipping_mu=8000 (₹80), restocking_mu=0. "
+        "pg_fee = intDiv(150000*200, 10000) = 3000. "
+        "num_scaled = 150000*500 + (3000-3000)*10000 + 500*(8000+0) = 75000000 + 0 + 4000000 = 79000000. "
+        "denom = 150000 + 8000 + 0 = 158000. "
+        "breakeven_cod_rto_rate_bp = intDiv(79000000, 158000) = 500 bp (5.00%). "
+        "The naive M/(M+C) would yield ~95% — the anchor distinguishes the two formulas."
+    ),
+    business_impact=(
+        "Break-even COD RTO rate is the decision threshold for COD-vs-prepaid policy: above r* prepaid "
+        "is more profitable at the current AOV and fees. For high-RTO Indian-D2C brands this is the "
+        "single largest controllable margin lever. A wrong (naive) formula would systematically "
+        "mis-advise the COD discount / prepaid-nudge strategy."
+    ),
+    parity_gap=True,  # STRUCTURAL RULE 1: correctness-fixture gate, never shadow GREEN
+    child_dependency=None,
+    formula_snapshot=(
+        "breakeven_cod_rto_rate_bp = intDiv("
+        "aov_mu * prepaid_rto_rate_bp "
+        "+ (cod_fee_mu - intDiv(aov_mu * gateway_fee_bp, 10000)) * 10000 "
+        "+ prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu), "
+        "aov_mu + return_shipping_mu + restocking_mu); "
+        "NULL when (aov_mu + return_shipping_mu + restocking_mu) <= 0. "
+        "ClickHouse: if((aov_mu + return_shipping_mu + restocking_mu) > 0, intDiv(aov_mu * prepaid_rto_rate_bp "
+        "+ (cod_fee_mu - intDiv(aov_mu * gateway_fee_bp, 10000)) * 10000 "
+        "+ prepaid_rto_rate_bp * (return_shipping_mu + restocking_mu), "
+        "aov_mu + return_shipping_mu + restocking_mu), NULL)"
+    ),
+)
+
+_ROW_PINCODE_RELIABILITY = DDRRow(
+    # Phase-2 slice-3. Legacy float: pincode-intelligence.ts:60-66 (calcProfitabilityScore).
+    legacy_formula=(
+        "pincode-intelligence.ts:60-66 "
+        "(clamp(0,100, 100 - rtoRate*2 - codRate*0.5 + repeatRate*0.5 + (aov/1000)*10); "
+        "rates in percent points, aov in rupees — FLOAT)"
+    ),
+    brain_formula="pincode_reliability_score",
+    reason=(
+        "Brain integerizes the legacy float profitability score to a deterministic CENTI-POINT score "
+        "(0..10000 = 0.00..100.00), so TS and Python are byte-identical (the legacy float coefficients "
+        "0.5 and aov/1000 are TS<->Python drift risk — persona Concern-2). Inputs are rates in bp "
+        "(=pp*100) and aov in paise. parity_gap:true (Brain-native integer canonical; the legacy float "
+        "is not a byte comparand). Routed to the correctness-fixture gate with a worked anchor. "
+        "aov-term derivation: legacy (aov_rupees/1000)*10 POINTS = aov_rupees/100 points = aov_rupees "
+        "centi-points; aov_rupees = intDiv(aov_mu, 100) ⇒ term_cp = intDiv(aov_mu, 100). "
+        "Rohan's Stage-6 sign-off must acknowledge no legacy byte shadow."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not applicable — no legacy byte comparand (legacy float vs Brain integer centi-points). "
+        "WORKED ANCHOR (CF-S3-PINCODE-1): rto_bp=1800 (18%), cod_bp=6000 (60%), repeat_bp=2000 (20%), "
+        "aov_mu=150000 (₹1500). "
+        "raw = 10000 - 1800*2 - intDiv(6000,2) + intDiv(2000,2) + intDiv(150000,100) "
+        "= 10000 - 3600 - 3000 + 1000 + 1500 = 5900 centi-points (= 59.00). clamp(0,10000) -> 5900. "
+        "Legacy float check: 100 - 18*2 - 60*0.5 + 20*0.5 + (1500/1000)*10 "
+        "= 100 - 36 - 30 + 10 + 15 = 59.00 -> matches (×100 = 5900)."
+    ),
+    business_impact=(
+        "Pincode reliability ranks delivery destinations by RTO risk / COD load / repeat loyalty / AOV. "
+        "It drives serviceability and COD-gating decisions per pincode — a direct RTO-leak control. "
+        "A drifting float score would rank pincodes inconsistently across the web and analytics surfaces."
+    ),
+    parity_gap=True,  # STRUCTURAL RULE 1
+    child_dependency=None,
+    formula_snapshot=(
+        "pincode_reliability_score = clamp(0, 10000, "
+        "10000 - rto_bp*2 - intDiv(cod_bp,2) + intDiv(repeat_bp,2) + intDiv(aov_mu,100)); "
+        "centi-points (×100 of legacy 0..100); inputs: rates in bp, aov in paise. "
+        "ClickHouse: greatest(0, least(10000, toInt64(10000 - rto_bp * 2 - intDiv(cod_bp, 2) "
+        "+ intDiv(repeat_bp, 2) + intDiv(aov_mu, 100))))"
+    ),
+)
+
+_ROW_RTO_COST_VALUE = DDRRow(
+    # Phase-2 slice-3. Legacy: shiprocket-charges.ts (rtoChargesFromRaw / shiprocketRtoRevenueLost).
+    # Connector-sourced per-shipment charges/value — unmeasurable pre-Child-3 (mirrors _ROW_TOTAL_TAX).
+    # Covers BOTH rto_cost_mu (keyed here) and its sibling rto_revenue_lost_mu (same ingest dependency).
+    legacy_formula=(
+        "shiprocket-charges.ts (rtoChargesFromRaw -> rto_cost_mu; "
+        "shiprocketRtoRevenueLost -> rto_revenue_lost_mu); rto-analytics.ts:114-144 sums per RTO shipment"
+    ),
+    brain_formula="rto_cost_mu",
+    reason=(
+        "rto_cost_mu (SUM of per-RTO-shipment charges) and its sibling rto_revenue_lost_mu (SUM of RTO "
+        "order/COD value) are CONNECTOR-SOURCED aggregates extracted from Shiprocket raw_json. They are "
+        "NOT computable until the Child-3 connector cutover provides per-shipment charge/value data — "
+        "exactly like total_tax_mu's per-SKU dependency. During the shadow phase these values are "
+        "unmeasurable; the row is NOT signable until the child-3-shopify-connector gate is GREEN "
+        "(STRUCTURAL RULE 2). The Brain definitions are passthrough money aggregates (toInt64 of the "
+        "summed paise) — never silently float-matched."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Unmeasurable pre-Child-3 (no per-shipment charge/value ingest yet). "
+        "Once Child-3 is GREEN: Brain = SUM(integer paise per RTO shipment); legacy = float "
+        "Math.round(sum*100)/100. Expected delta: sub-paise FLOOR-vs-ROUND rounding only. "
+        "rto_revenue_lost_mu shares this row's dependency and rounding behavior."
+    ),
+    business_impact=(
+        "RTO cost and revenue-lost are the money headline of /rto-analytics and /logistics — the "
+        "explicit ₹ size of the RTO leak. A wrong-but-signed value here would understate or overstate "
+        "the single largest controllable margin leak. NOT signable until Child-3 connector gate is GREEN."
+    ),
+    parity_gap=False,
+    child_dependency="child-3-shopify-connector",  # STRUCTURAL RULE 2 applies
+    formula_snapshot=(
+        "rto_cost_mu = toInt64(SUM(rtoChargesFromRaw(shipment.raw_json))) over RTO shipments; "
+        "rto_revenue_lost_mu = toInt64(SUM(shiprocketRtoRevenueLost(shipment))) over RTO shipments; "
+        "connector-sourced; pending Child-3 per-shipment charge/value ingest."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade.
+# Product CM1 reuses cm1_mu (already _ROW_CM1); product AOV reuses aov_mu — no new rows
+# for those (no phantom duplicates). Three NEW rows below.
+# ---------------------------------------------------------------------------
+
+_ROW_INV_SELL_THROUGH = DDRRow(
+    legacy_formula=(
+        "lib/inventory-constants.ts computeSellThrough — "
+        "round(sales365 / (sales365 + currentInventory) × 1000) / 10 (1-decimal PERCENT)"
+    ),
+    brain_formula="inventory_sell_through_bp",
+    reason=(
+        "Sell-through = sales365 / (sales365 + inventory). Legacy emits a 1-decimal PERCENT "
+        "(0-100). Brain canonicalizes on basis points (×100 of legacy percent), integer FLOOR. "
+        "The economic definition is IDENTICAL; only the scale + rounding-mode representation "
+        "differ — registered here, NOT silently float-matched. Rohan Stage-1 Finding 3: the "
+        "slice-table's 'inventory turnover' does NOT exist in legacy; sellThrough is the real "
+        "primitive."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Scale + rounding delta only: legacy percent (round to 1 decimal) vs Brain bp (FLOOR). "
+        "Brain_bp ≈ legacy_percent × 100, modulo sub-bp FLOOR-vs-ROUND. Anchor CF-S6-INV-"
+        "SELLTHRU-1: sales365=300, inv=100 → intDiv(300×10000,400)=7500bp (legacy 75.0%). "
+        "A '÷ inventory only' mutant → 30000bp — killed."
+    ),
+    business_impact=(
+        "Sell-through drives the overstock/dead-stock read on /inventory. A wrong denominator "
+        "(inventory only, not sales+inventory) would massively overstate velocity and hide "
+        "dead stock — working-capital risk for a D2C brand."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "inventory_sell_through_bp = intDiv(sales365 × 10000, sales365 + current_inventory); "
+        "NULL if (sales365 + current_inventory) <= 0"
+    ),
+)
+
+_ROW_INV_DAYS_LEFT = DDRRow(
+    legacy_formula=(
+        "lib/inventory-constants.ts computeDaysLeft — first NON-ZERO velocity window wins "
+        "(L30→L90→L180→L360): avgDaily = qtyLwin/win; inv<=0→0; avgDaily<=0→999999; "
+        "else round(inv/avgDaily) [float division + Math.round]"
+    ),
+    brain_formula="inventory_days_left",
+    reason=(
+        "Estimated days of cover via the first non-zero velocity window. Brain-native integer "
+        "form: round(inv×win/qty) computed as (inv×win×2 + qty)//(qty×2) [half-up, positive "
+        "ints] — no float, no legacy byte comparand (legacy is float÷ + Math.round). "
+        "999999 is the INFINITE sentinel (stock but no recent velocity). Rohan Stage-1 "
+        "Finding 3: the slice-table's 'inventory_cover_days' is the daysLeft cascade."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not a byte comparand — legacy float÷+round, Brain integer half-up. Anchor "
+        "CF-S6-INV-DAYSLEFT-1: inv=30, L30=0, L90=90 → window falls through to L90, qty 90 → "
+        "round(30×90/90)=30. An 'always L360' mutant on L360=0 → 999999 — killed. Anchor "
+        "CF-S6-INV-DAYSLEFT-INF-1: inv=50, all windows 0 → 999999."
+    ),
+    business_impact=(
+        "Days-left drives the Restock-Soon / Overstocked status badge and reorder timing. "
+        "Skipping the L30→L360 cascade (e.g. always L360) would smear a recent demand spike "
+        "across a year of stale velocity and under-warn on stockouts during a festival run-up."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "inventory_days_left = first non-zero of (L30,30),(L90,90),(L180,180),(L360,360) → "
+        "(inv×win×2 + qty)//(qty×2); inv<=0→0; no window→999999"
+    ),
+)
+
+_ROW_FP_SECOND_ORDER_RATE = DDRRow(
+    legacy_formula=(
+        "lib/metrics/first-product-cascade.ts:338 — secondOrderRate = 100 × "
+        "(customers with >=2 lifetime orders) / cohortCustomers (PERCENT 0-100); cohort = "
+        "customers grouped by deterministic primary first product, observation window default 365d"
+    ),
+    brain_formula="first_product_second_order_rate_bp",
+    reason=(
+        "Per-first-product repeat rate = customers with >=2 lifetime orders / cohort, in bp. "
+        "Rohan Stage-1 Finding 4: this is NOT slice-5 repeat_rate_bp (rr90 = repeat-within-90d "
+        "/ new-customers). The cascade cohort is per-first-product over a long observation "
+        "window with its own deterministic primary-product tie-break. Legacy comparand exists "
+        "(float percent) → shadow_compare; the delta is scale only (percent→bp)."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Scale delta only: legacy percent 0-100 vs Brain bp (×100), integer FLOOR. Anchor "
+        "CF-S6-FP-2ND-1: 3 of 8 cohort have >=2 orders → intDiv(3×10000,8)=3750bp (legacy "
+        "37.5%). A '÷ orders(20) not customers' mutant → 1500bp — killed."
+    ),
+    business_impact=(
+        "This tells the brand WHICH first product best converts to a repeat customer — the "
+        "core acquisition-product decision. Conflating it with rr90 (wrong window/denominator) "
+        "would mis-rank hero products and misdirect acquisition spend."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "first_product_second_order_rate_bp = intDiv(customers_with_2plus × 10000, "
+        "cohort_customers); NULL if cohort_customers <= 0"
+    ),
+)
+
+# ── Phase-2 slice-7 (feat-finance-settings-goals) ──────────────────────────
+_ROW_GOAL_ATTAINMENT = DDRRow(
+    legacy_formula=(
+        "lib/metrics/goals.ts evaluateGoalRow — variancePct = (actual - goal) / |goal| × 100 "
+        "(float PERCENT, signed); the RAG band is computeGoalRag(actual, goal, higherBetter) "
+        "with DIRECTIONAL thresholds (higher-better 0.95/0.80; lower-better 1.05/1.20)"
+    ),
+    brain_formula="goal_attainment_bp",
+    reason=(
+        "Goal attainment = actual / goal in basis points (the magnitude the RAG band reads). "
+        "Legacy carries the equivalent signal as a signed variancePct float; Brain canonicalizes "
+        "on attainment bp (ratio, FLOOR). The DIRECTIONAL RAG band is reproduced byte-for-byte "
+        "by compute_goal_rag (a use-case classification, NOT a registry metric — same shape as "
+        "inventory status / pareto grade). Rohan Stage-1 Finding 1: the slice-table's flat "
+        "'≥95% green / 80-95% amber / <80% red' is ONLY the higher-better case — lower-better "
+        "metrics (CAC/ACOS) invert (1.05/1.20). festival learned-lift (Finding 2) is a phantom "
+        "and is NOT registered."
+    ),
+    shadow_compare_classification=EXPECTED_DEFINITIONAL_DELTA,
+    delta_direction_and_magnitude=(
+        "Representation delta: legacy signed variancePct float vs Brain attainment bp (FLOOR). "
+        "Anchor CF-S7-GOAL-ATTAIN-1: actual=9200, goal=10000 → intDiv(9200×10000,10000)=9200bp "
+        "(92.00%; legacy variancePct=-8.0%). A '÷ actual' (wrong-denominator) mutant → 10000bp — "
+        "killed. Directional band anchor: CAC@120% of goal → amber (NOT green); the "
+        "'treat-all-as-higher-better' mutant flips it to green — killed."
+    ),
+    business_impact=(
+        "Goal RAG is the operator's at-a-glance 'am I on track' signal across /settings/goals and "
+        "every /calendar cell. Using the flat higher-better rule for a lower-is-better metric "
+        "(CAC, ACOS) would paint an over-budget CAC GREEN — directly misleading the spend decision."
+    ),
+    parity_gap=False,
+    child_dependency=None,
+    formula_snapshot=(
+        "goal_attainment_bp = intDiv(actual × 10000, goal_value); NULL if goal_value == 0. "
+        "RAG (use-case): higher-better a*100>=goal*95→green,>=goal*80→amber,else red; "
+        "lower-better a*100<=goal*105→green,<=goal*120→amber,else red"
+    ),
+)
+
+
+# ── Phase-2 slice-8 (feat-lifecycle-timings-email) — READ/ANALYTICS ONLY ────
+# reactivation_window_days is the only correctness_fixture def this slice; the 3 email
+# rate/revenue-per-recipient defs are shadow_compare (Klaviyo comparand exists). The
+# lifecycle classifier + p40/p80 percentile are use-case logic, NOT registry scalars
+# (Finding 1). best_send_time (Finding 2) + email_cm2_mu (Finding 4) DECOMMISSIONED before
+# birth — no DDRRow; audit trail in the .md register.
+_ROW_REACTIVATION_WINDOW = DDRRow(
+    legacy_formula=(
+        "lib/timings/compute.ts:11 REACTIVATION_PCT_OF_1TO2 = 0.8; "
+        "reactivationDays = 0.8 × pickMetric(days1to2, metric) [float multiply]"
+    ),
+    brain_formula="reactivation_window_days",
+    reason=(
+        "Recommended re-engagement timing = 0.8 × median(1→2 inter-order gap), in days. "
+        "Brain-native integerized: round(0.8 × m) computed as (m×8 + 5)//10 [half-up, "
+        "positive ints] — no float, no legacy byte comparand (legacy is a 0.8 float multiply). "
+        "Rohan Stage-1 Finding 2: the slice-table's 'best_send_time' / 'best hours/days' is a "
+        "PHANTOM (legacy timings has NO hour/day-of-week analysis) — decommissioned before birth; "
+        "the real timings signal is the inter-order gap medians + this reactivation window. "
+        "COMPLIANCE: this is a REPORTED recommendation, NEVER an outbound send trigger."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not a byte comparand — legacy 0.8 float multiply, Brain integer half-up. Anchor "
+        "CF-S8-REACT-1: median_1to2_days=30 → (30×8+5)//10 = 245//10 = 24 days. A "
+        "'× whole interval (drop the 0.8 factor)' mutant → 30 — killed. NULL when median<=0."
+    ),
+    business_impact=(
+        "Drives the recommended win-back timing surfaced on /timings. Dropping the 0.8 factor "
+        "(reactivate at the FULL typical interval, not 80% of it) would tell the brand to wait "
+        "too long, re-engaging customers only once they have already slipped toward churn. "
+        "It is a recommendation only — the operator acts; Brain never sends."
+    ),
+    parity_gap=True,
+    child_dependency=None,
+    formula_snapshot=(
+        "reactivation_window_days = (median_1to2_days × 8 + 5) // 10 [round(0.8×m), half-up]; "
+        "NULL if median_1to2_days <= 0"
+    ),
+)
+
+
 # ---------------------------------------------------------------------------
 # The canonical register (ordered by waterfall / priority)
 # ---------------------------------------------------------------------------
 
 DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
+    "cm1_mu":                    _ROW_CM1,
     "cm2_mu":                    _ROW_CM2,
     "misc_expenses_prorated_mu": _ROW_MISC_PRORATED,
     "cogs_mu":                   _ROW_COGS,
     "true_cm2_mu":               _ROW_TRUE_CM2,
-    "pamer_bp":                  _ROW_PAMER,
+    "realized_revenue_mu":       _ROW_REALIZED_REVENUE,
+    # pamer_bp DECOMMISSIONED (slice-4) — no DDRRow; audit trail in the .md register.
     "amer_bp":                   _ROW_AMER,
     "ltv_cac_bp":                _ROW_LTV_CAC,
     "total_tax_mu":              _ROW_TOTAL_TAX,
     "fx_restatement":            _ROW_FX,
     "blended_roas_x100":         _ROW_BLENDED_ROAS,
     "acos_bp":                   _ROW_ACOS,
+    # Phase-2 slice-3 (feat-rto-cod-economics)
+    "breakeven_cod_rto_rate_bp": _ROW_BREAKEVEN_COD_RTO,
+    "pincode_reliability_score": _ROW_PINCODE_RELIABILITY,
+    "rto_cost_mu":               _ROW_RTO_COST_VALUE,
+    # Phase-2 slice-4 (feat-marketing-acquisition): marketing efficiency reconciled to legacy
+    "mer_bp":                    _ROW_MER_BASIS,
+    "new_customer_revenue_mu":   _ROW_NC_REVENUE_CM2,
+    # Phase-2 slice-5 (feat-cohorts-ltv): cohorts + LTV
+    "cohort_ltv_mu":             _ROW_COHORT_LTV,
+    "repeat_rate_bp":            _ROW_REPEAT_RATE,
+    "cohort_cac_payback":        _ROW_CAC_PAYBACK,  # use-case computed; phantom cac_payback_months decommissioned
+    # Phase-2 slice-6 (feat-catalog-inventory): inventory + first-product cascade
+    "inventory_sell_through_bp":          _ROW_INV_SELL_THROUGH,
+    "inventory_days_left":                _ROW_INV_DAYS_LEFT,
+    "first_product_second_order_rate_bp": _ROW_FP_SECOND_ORDER_RATE,
+    # Phase-2 slice-7 (feat-finance-settings-goals): goal attainment + directional RAG
+    # (festival learned-lift DECOMMISSIONED before birth — no DDRRow; audit in the .md register)
+    "goal_attainment_bp":                 _ROW_GOAL_ATTAINMENT,
+    # Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. reactivation_window_days
+    # is the only correctness_fixture (email rates/rpr are shadow_compare — no DDRRow needed).
+    # best_send_time + email_cm2_mu DECOMMISSIONED before birth — no DDRRow; audit in the .md register.
+    "reactivation_window_days":           _ROW_REACTIVATION_WINDOW,
 }
 
 

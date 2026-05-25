@@ -15,6 +15,14 @@ dependencies = [
   "opentelemetry-sdk>=1.42.1",
 ]
 
+# brain-cost-router is a uv workspace member; resolve it from the workspace
+# (not PyPI). Without this entry `uv run` fails to build intelligence-service,
+# which in turn blocks every `uv run` invocation across the workspace — including
+# the Python metric-registry parity tests. Slice-1 worked around this with an
+# ephemeral venv; slice-2 fixes it at the toolchain root per the brief.
+[tool.uv.sources]
+brain-cost-router = { workspace = true }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

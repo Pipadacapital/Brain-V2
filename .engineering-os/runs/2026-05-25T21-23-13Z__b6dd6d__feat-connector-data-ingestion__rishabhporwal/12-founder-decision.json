@@ -1,0 +1,25 @@
+{
+  "req_id": "feat-connector-data-ingestion",
+  "epic": "epic-real-auth-supabase",
+  "slice": "E",
+  "stage": 6,
+  "decision": "APPROVE",
+  "decided_by": "cto-advisor (Rohan)",
+  "delegation_basis": "Founder standing delegation (MEMORY: feedback_founder_delegates_to_cto_advisor) — Rohan signs every Founder gate on the Founder's behalf; run the EOS pipeline end-to-end.",
+  "hard_rule_deviation": "none",
+  "decided_at": "2026-05-25T21:37:00Z",
+  "paradigm": "sql/io (zero LLM/ML)",
+  "verification": {
+    "typecheck": "0 errors across core-service + api-gateway + web (re-run at Stage 6)",
+    "slice_e_unit_tests": "21/21 (acl + normalizers; positive + negative)",
+    "slice_e_integration_proof": "6/6 against live local Postgres (P-001..P-007 with captured output)",
+    "regression": "gateway 225/225, core 245 pass/30 skip, web 89/89 — all green",
+    "live_wire_smoke": "dispatcher: Sugandh→seed (185000000), non-Sugandh→honest empty (0)",
+    "token_leak_gate": "PASS — no console.* / no token field in any log/return/throw across slice-E files",
+    "git_ignore": "PASS — real .env (both apps) git-ignored + untracked; .env.example names only"
+  },
+  "nothing_committed": true,
+  "commit_artifact": "pending-founder-commit.md",
+  "agent_tool_note": "Agent tool unavailable in this subagent context (as in slices B/C/D); each pipeline role run single-operator to its real bar. 1 persona stress-test (connector-ingest-to-analytics-parity-realist) authored + synthesized.",
+  "next": "Founder registers the 3 redirect URIs (slice D) + completes OAuth consent + clicks Sync now to confirm the LIVE pull; then 'commit it' to commit the slice-scoped paths. STOP after slice E."
+}

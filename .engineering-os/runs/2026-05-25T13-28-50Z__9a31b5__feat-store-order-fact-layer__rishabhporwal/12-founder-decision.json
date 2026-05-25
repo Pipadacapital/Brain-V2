@@ -1,0 +1,21 @@
+{
+  "req_id": "feat-store-order-fact-layer",
+  "parent_epic": "epic-phase2-feature-parity",
+  "decision": "APPROVE",
+  "decided_by": "cto-advisor (Rohan)",
+  "decided_on_behalf_of": "founder",
+  "delegation_basis": "Standing Founder delegation — 'Run EOS pipeline end-to-end; Rohan signs every Founder gate on Founder's behalf' (MEMORY: feedback_founder_delegates_to_cto_advisor). Exercisable because §9 hard-rule deviation check = NONE.",
+  "ts": "2026-05-25T13:47:00Z",
+  "stage6_verdict": "PASS",
+  "recommendation": "APPROVE",
+  "committed": false,
+  "commit_authorization": "NOT GRANTED — feature-branch-only + harness guard; awaits Founder free-text 'commit it'. See pending-founder-commit.md (explicit slice-scoped paths, no git add -A).",
+  "carried_nonblocking": [
+    "B0 PRE-EXISTING login-form.test.tsx breakage (not this slice; git-attribution verified) — out-of-scope test-debt, surfaced to Founder",
+    "L1 reversal facts + per-SKU tax live wires held on Child-3 cutover (mechanism proven)"
+  ],
+  "auto_candidate_rule": "PROPOSED (not self-adopted): .engineering-os/rule-proposals/2026-05-25__pre-stage-working-tree-baseline.md — 3rd occurrence of uncommitted-working-tree-contaminates-verification family. Founder reviews via /adopt-rule or /reject-rule.",
+  "next_stage": 8,
+  "next_owner": "platform-devops (Jatin) — Stage-8 readiness only; NO live deploy, NO commit",
+  "founder_directive_compliance": "Slice 1 at Stage-6 PASS. STOP — do not auto-start slice 2. Reported back for Founder review of the assembly line before committing to slices 2-9."
+}

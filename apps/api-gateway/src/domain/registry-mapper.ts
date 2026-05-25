@@ -12,7 +12,12 @@
 // invariant — not just a static type check.
 
 import { METRIC_REGISTRY, type MetricDefinition } from '@brain/lib-metrics';
-import type { KpiSummaryRow, PnlWaterfallRow } from './proto-types.js';
+import type {
+  KpiSummaryRow,
+  PnlWaterfallRow,
+  PnlStatementRow,
+  StoreRevenueLadderStep,
+} from './proto-types.js';
 
 // _METRIC_COLUMNS mirrors query_gateway.py's _METRIC_COLUMNS tuple.
 // Every BFF output field must be in this set (CF-C6-REGISTRY-ONLY-BFF-1).
@@ -64,14 +69,32 @@ export const KPI_FIELDS_TO_DEFINITION_ID: Record<string, string> = {
 
 // PNL_WATERFALL_DEFINITION_IDS: the ordered set of registry ids for the P&L waterfall.
 // Each step MUST trace to a registry definition (CF-C6-REGISTRY-ONLY-BFF-1).
+// Phase-2 slice-2 (feat-pnl-cm-waterfall): variable_costs_mu added (the honest CM1 line)
+// and true_cm2_mu permitted (the RTO-honest CM2 rung).
 export const PNL_WATERFALL_DEFINITION_IDS = [
   'net_revenue_mu',
   'cogs_mu',
+  'variable_costs_mu',
   'cm1_mu',
   'total_ad_spend_mu',
   'cm2_mu',
   'misc_expenses_prorated_mu',
   'cm3_mu',
+  'true_cm2_mu',
+] as const;
+
+// PNL_STATEMENT_DEFINITION_IDS: the registry ids that appear as P&L statement lines.
+// Phase-2 slice-2. Every PnlStatementRow money field must trace to one of these.
+export const PNL_STATEMENT_DEFINITION_IDS = [
+  'net_revenue_mu',
+  'cogs_mu',
+  'variable_costs_mu',
+  'cm1_mu',
+  'total_ad_spend_mu',
+  'cm2_mu',
+  'misc_expenses_prorated_mu',
+  'cm3_mu',
+  'true_cm2_mu',
 ] as const;
 
 /**
@@ -112,6 +135,243 @@ export function assertWaterfallDefinitionId(step: PnlWaterfallRow): void {
   if (!isKnown) {
     throw new Error(
       `G-REGISTRY-ONLY VIOLATION: P&L waterfall definition_id="${step.definition_id}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+/**
+ * Validate that every money field on a PnlStatementRow traces to a registry definition_id.
+ * Phase-2 slice-2 (feat-pnl-cm-waterfall). G-REGISTRY-ONLY: no ad-hoc derived P&L line.
+ * Mutant probe: add an orphan `gross_margin_pct` field → this throws.
+ */
+export function assertPnlStatementTraceability(row: PnlStatementRow): void {
+  const nonMetricFields = ['workspace_id', 'period', 'data_epoch', 'currency_code', 'order_count'];
+  const fieldNames = Object.keys(row).filter((k) => !nonMetricFields.includes(k));
+  const allowed = new Set<string>(PNL_STATEMENT_DEFINITION_IDS);
+
+  for (const field of fieldNames) {
+    if (!allowed.has(field) && !(field in METRIC_REGISTRY)) {
+      throw new Error(
+        `G-REGISTRY-ONLY VIOLATION: P&L statement field "${field}" does not trace to ` +
+          `any registry definition_id. CF-C6-REGISTRY-ONLY-BFF-1. No ad-hoc P&L lines.`,
+      );
+    }
+  }
+}
+
+// STORE_LADDER_DEFINITION_IDS: the ordered registry ids for the /store revenue ladder.
+// Phase-2 slice-1 (feat-store-order-fact-layer). Each MUST trace to a registry def.
+export const STORE_LADDER_DEFINITION_IDS = [
+  'gross_sales_mu',
+  'net_sales_mu',
+  'net_net_tax_mu',
+  'net_revenue_mu',
+  'realized_revenue_mu',
+] as const;
+
+/**
+ * Validate that a store revenue-ladder step's definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived rung in the BFF.
+ * Mutant probe: a step with definition_id "foo_mu" → this throws.
+ */
+export function assertLadderDefinitionId(step: StoreRevenueLadderStep): void {
+  const isKnown =
+    STORE_LADDER_DEFINITION_IDS.includes(
+      step.definition_id as (typeof STORE_LADDER_DEFINITION_IDS)[number],
+    ) || step.definition_id in METRIC_REGISTRY;
+
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: store ladder definition_id="${step.definition_id}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+// LOGISTICS_DEFINITION_IDS: registry ids that appear on the slice-3 logistics surfaces.
+// Phase-2 slice-3 (feat-rto-cod-economics). Every money/ratio/score field on the RTO / COD /
+// logistics / pincode results must trace to one of these (CF-C6-REGISTRY-ONLY-BFF-1).
+export const LOGISTICS_DEFINITION_IDS = [
+  'rto_rate_bp',
+  'rto_cost_mu',
+  'rto_revenue_lost_mu',
+  'cod_realization_rate_bp',
+  'prepaid_rate_bp',
+  'breakeven_cod_rto_rate_bp',
+  'pincode_reliability_score',
+  'aov_mu',
+] as const;
+
+/**
+ * Validate that a logistics definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived logistics field in the BFF.
+ * Mutant probe: an id "foo_mu" → this throws.
+ */
+export function assertLogisticsDefinitionId(definitionId: string): void {
+  const isKnown =
+    LOGISTICS_DEFINITION_IDS.includes(definitionId as (typeof LOGISTICS_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: logistics definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+// MARKETING_DEFINITION_IDS: registry ids on the slice-4 marketing surfaces.
+// Phase-2 slice-4 (feat-marketing-acquisition). aMER uses acquisition-classified spend;
+// ROAS/ACOS are display_only; pamer_bp is DECOMMISSIONED (must NOT appear here).
+export const MARKETING_DEFINITION_IDS = [
+  'mer_bp',
+  'amer_bp',
+  'cac_mu',
+  'cm2_per_nc_mu',
+  'new_customer_revenue_mu',
+  'nc_cm2_mu',
+  'acquisition_ad_spend_mu',
+  'total_ad_spend_mu',
+  'net_revenue_mu',
+  'aov_mu',
+  'acos_bp',
+  'blended_roas_x100',
+] as const;
+
+/**
+ * Validate that a marketing definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived marketing field in the BFF.
+ * Mutant probe: id "pamer_bp" (decommissioned) or "foo_mu" → this throws.
+ */
+export function assertMarketingDefinitionId(definitionId: string): void {
+  const isKnown =
+    MARKETING_DEFINITION_IDS.includes(definitionId as (typeof MARKETING_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: marketing definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+// COHORT_LTV_DEFINITION_IDS: registry ids on the slice-5 cohorts + LTV surfaces.
+// Phase-2 slice-5 (feat-cohorts-ltv). cohort_ltv_mu feeds ltv_cac_bp (cumulative CM3, not CM2);
+// repeat_rate_bp covers rr90 + LTV repeat_rate; the phantom cac_payback_months is DECOMMISSIONED
+// (must NOT appear here — the real payback is use-case computed, not a registry metric).
+export const COHORT_LTV_DEFINITION_IDS = [
+  'cac_mu',
+  'cohort_ltv_mu',
+  'ltv_cac_bp',
+  'repeat_rate_bp',
+  'cm2_mu',
+  'cm3_mu',
+] as const;
+
+/**
+ * Validate that a cohorts/LTV definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived cohort/LTV field in the BFF.
+ * Mutant probe: id "cac_payback_months" (decommissioned phantom) or "foo_mu" → this throws.
+ */
+export function assertCohortLtvDefinitionId(definitionId: string): void {
+  const isKnown =
+    COHORT_LTV_DEFINITION_IDS.includes(definitionId as (typeof COHORT_LTV_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: cohort/ltv definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+// CATALOG_DEFINITION_IDS: registry ids on the slice-6 catalog/inventory/cascade surfaces.
+// Phase-2 slice-6 (feat-catalog-inventory). Products is CM1 (REUSE cm1_mu) — NOT per-SKU CM2,
+// so 'cm2_mu' must NOT appear here; product AOV reuses aov_mu. Inventory = inventory_days_left +
+// inventory_sell_through_bp. Cascade = first_product_second_order_rate_bp (NOT repeat_rate_bp —
+// the slice-5 rr90 conflation must NOT appear here).
+export const CATALOG_DEFINITION_IDS = [
+  'cm1_mu',
+  'aov_mu',
+  'inventory_sell_through_bp',
+  'inventory_days_left',
+  'first_product_second_order_rate_bp',
+] as const;
+
+/**
+ * Validate that a catalog/inventory/cascade definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived catalog field in the BFF.
+ * Mutant probe: id "product_cm2_mu" (phantom) or "inventory_turnover" → this throws.
+ */
+export function assertCatalogDefinitionId(definitionId: string): void {
+  const isKnown =
+    CATALOG_DEFINITION_IDS.includes(definitionId as (typeof CATALOG_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: catalog definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+// SETTINGS_DEFINITION_IDS: registry ids on the slice-7 goals/costs/calendar surfaces.
+// Phase-2 slice-7 (feat-finance-settings-goals). Goal attainment = goal_attainment_bp; the
+// cost stack lands in the EXISTING cm1_mu (one source of truth, NOT a new COGS def); the
+// calendar grid reuses net_revenue_mu/cm3_mu/mer_bp/amer_bp/cac_mu/aov_mu. festival learned-
+// lift is a PHANTOM and must NOT appear here (Rohan Finding 2).
+export const SETTINGS_DEFINITION_IDS = [
+  'goal_attainment_bp',
+  'cm1_mu',
+  'net_revenue_mu',
+  'cm3_mu',
+  'mer_bp',
+  'amer_bp',
+  'cac_mu',
+  'aov_mu',
+] as const;
+
+/**
+ * Validate that a settings/goals/calendar definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived settings field in the BFF.
+ * Mutant probe: id "festival_lift" (phantom) → this throws.
+ */
+export function assertSettingsDefinitionId(definitionId: string): void {
+  const isKnown =
+    SETTINGS_DEFINITION_IDS.includes(definitionId as (typeof SETTINGS_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: settings definition_id="${definitionId}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+// LIFECYCLE_DEFINITION_IDS: registry ids on the slice-8 lifecycle/timings/email surfaces.
+// Phase-2 slice-8 (feat-lifecycle-timings-email) — READ/ANALYTICS ONLY. reactivation_window_days
+// is the timings recommendation; email_open/click_rate_bp + email_revenue_per_recipient_mu are the
+// email/SMS PERFORMANCE rates. best_send_time + email_cm2_mu are PHANTOMS and must NOT appear here
+// (Rohan Findings 2, 4). Lifecycle buckets + p40/p80 are use-case scalars, not registry metrics.
+export const LIFECYCLE_DEFINITION_IDS = [
+  'reactivation_window_days',
+  'email_open_rate_bp',
+  'email_click_rate_bp',
+  'email_revenue_per_recipient_mu',
+] as const;
+
+/**
+ * Validate that a lifecycle/timings/email definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived field in the BFF.
+ * Mutant probe: id "best_send_time" or "email_cm2_mu" (phantoms) → this throws.
+ */
+export function assertLifecycleDefinitionId(definitionId: string): void {
+  const isKnown =
+    LIFECYCLE_DEFINITION_IDS.includes(definitionId as (typeof LIFECYCLE_DEFINITION_IDS)[number]) ||
+    definitionId in METRIC_REGISTRY;
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: lifecycle definition_id="${definitionId}" ` +
         `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
     );
   }

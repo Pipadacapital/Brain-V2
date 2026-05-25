@@ -1,0 +1,13 @@
+{
+  "req_id": "feat-onboarding-membership-db",
+  "slice": "C",
+  "stage": 7,
+  "decision": "approved",
+  "decided_by": "cto-advisor",
+  "delegation_basis": "Founder standing delegation to CTO Advisor (MEMORY: feedback_founder_delegates_to_cto_advisor). Rohan signs every Founder gate on the Founder's behalf.",
+  "stage6_result": "PASS",
+  "hard_rule_deviation": false,
+  "single_operator_pipeline": true,
+  "notes": "Slice C = DB-backed onboarding + membership + invitations on a LOCAL dev Postgres (docker brain_dev) with Brain-native FORCE RLS. Live/legacy production DB untouched (zero-RLS P0 preserved). DbMembershipResolver replaces LocalSeed on the real-auth path: member->workspace, non-member->null(/onboarding, NO auto-grant), DB-error->UNAUTHORIZED(fail-closed). New identity tier for onboarding/user.me/invite; workspace.switch/list validate REAL DB membership (multi-workspace); 31 existing routes unchanged. Reuses Child-1 withWorkspace/withSuperadmin (Single-Primitive; DATABASE_URL alias of DIRECT_URL). RLS fail-closed proven at the wire (context-less read=0, context-less write rejected, cross-workspace=0; app role non-BYPASSRLS; 4 tables ENABLE+FORCE). PII minimized (email/name only; DPDP) + never logged + never in claim. One new gateway dep: pg (+@types/pg), required for DB access. typecheck 0 x3 apps; core-service 182u+8 integ, gateway 215, web 77 — all green. Docker WAS available; DB stood up + migrations applied + assertions run live. No secret VALUES committed; real .env git-ignored (check-ignore proven). Deferred to slice D (per directive): Shopify/Woo live OAuth connect (handle captured, connect disabled) + member-invite email send. Full browser e2e still needs Supabase dashboard redirect/mailer config (carried from A/B; stated, not faked). Run as a single-operator pass (Agent tool unavailable in this subagent context). Nothing committed; sliceC-pending-founder-commit.md produced. STOP after slice C; slice D not started.",
+  "decided_at": "2026-05-26T00:26:00Z"
+}

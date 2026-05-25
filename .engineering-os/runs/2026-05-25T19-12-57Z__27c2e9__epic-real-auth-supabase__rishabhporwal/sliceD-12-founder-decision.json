@@ -1,0 +1,15 @@
+{
+  "req_id": "epic-real-auth-supabase",
+  "slice": "D — live integrations OAuth (Shopify, Meta, Google) + token custody",
+  "stage": 7,
+  "decision": "APPROVE",
+  "decided_by": "cto-advisor (Rohan)",
+  "delegation_basis": "Founder standing delegation (MEMORY: feedback_founder_delegates_to_cto_advisor) — Rohan signs every Founder gate on the Founder's behalf; commit authorization remains a separate Founder free-text 'commit it'.",
+  "ts": "2026-05-26T01:16:00Z",
+  "verdict": "PASS",
+  "hard_rule_deviation_check": "NONE — no dependency/Single-Primitive/compliance/paradigm/gate-skip deviation (sliceD-11-final-review.md §9). Delegation exercisable.",
+  "committed": false,
+  "commit_note": "NO commit. Slice-D-scoped explicit paths in sliceD-pending-founder-commit.md (no git add -A). Real .env git-ignored + check-ignore-proven; only .env.example committed. Awaiting Founder free-text 'commit it'.",
+  "next": "Founder: (1) register the 3 redirect URIs in the provider dashboards for live e2e; (2) authorize the commit. The production seal() (CF-C7-CUSTODY-PROOF-1) remains HELD.",
+  "epic_close_out": "FINAL slice — closes epic-real-auth-supabase (A identity / B signup-recovery / C onboarding+RLS / D live integrations), all built + mechanically verified locally."
+}

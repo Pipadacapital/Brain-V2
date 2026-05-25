@@ -415,3 +415,244 @@
 **Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion, data-privacy-dpdp, incident-response, operational-readiness, subagent-orchestration.
 **Open questions:** None blocking the runbook. Two named Stage-8 pre-execution gates remain Founder-owned: (1) a REAL seal() impl before any plaintext-delete (build_gated_on); (2) my DDR full sign-off (2 rows) post-Shopify-cutover on Brain-sourced data before PoNR #2.
 **Next:** Stage-8 readiness (Jatin) for the runbook artifact; the production cutover EXECUTION is Founder-at-console against 06+07. **EPIC CLOSE-OUT: Child 7 is terminal — chore-migrate-legacy-to-brain is planned/built end-to-end across all 7 children; the only remaining work is the Founder-gated Stage-8 production cutover.**
+
+## 2026-05-25T13:22:45Z — Rohan (cto-advisor) — epic-phase2-feature-parity
+**Stage:** 1 (intake / brainstorm) — EPIC decomposition (Founder Phase-2 directive)
+**Action:** Read canon (business+technical context). Semantic recall (k=8) surfaced the parent migration epic + the 7 layer-children + the Founder UNTRACK directive. Verified ground truth in live tree, did NOT trust prose: legacy = 40 workspace route files + matching lib modules; Brain analytics-service has ZERO application/domain use-cases (only bootstrap+query_gateway); api-gateway = 9 live tRPC procedures; metric registry ~12-17 defs; 31 web routes with /dashboard wired + 30 scaffolds; all 7 layer-children HELD at cutover (legacy still authoritative). Reused Child-0 A1.2 capability map (legacy route-group -> target Brain service) rather than re-deriving.
+**Key reframe (load-bearing):** Phase 2 is NOT a new program — it is the BREADTH phase of `chore-migrate-legacy-to-brain`. The migration epic decomposed by architectural LAYER (depth: RLS/money/connectors/metric+OLAP/AI/frontend — each a vertical slice). Phase 2 decomposes the SAME program by FEATURE (breadth) on top of those layers. Filed as child-epic, reusing the binding A1 map. "Port all 40 endpoints" as one unit = big-bang anti-pattern in disguise; reframed into 9 dependency-ordered feature clusters on 1 shared fact layer.
+**Reuse audit:** ~90% of plumbing reused (tenancy/RLS, money MU+parity harness, connector framework, metric registry+parity CI, OLAP query gateway, AI gateway+@paradigm, frontend shell), ~90% of feature surface net-new (the analytics application layer is EMPTY; the 40 feature computations don't exist Brain-native). Do NOT rebuild foundations; DO build use-cases + metric defs + tRPC + page wiring.
+**Decomposition:** 9 slices. Slice 1 (foundation, FORCED by data dependency) = shared store/order fact layer + revenue ladder (Gross->Net->Net-of-tax per-SKU GST slab->Realized). Then pnl/waterfall (2), rto/cod/pincode (3 — highest honest-CM2 value, the largest controllable Indian-D2C leak), acquisition/MER (4), cohorts/ltv (5), catalog/inventory (6), finance-settings/goals/festivals (7), lifecycle/timings/email (8), AI insight narration LAST + cost-gated (9). Each = full high-stakes pipeline ending in a real data-backed page; each files as its own /requirement when its data-dependency slice ships.
+**Lane:** high-stakes (inherited maximal trigger-surface set; conservative tie-break forbids downgrade). Binds the EPIC and every slice.
+**Personas spawned (Stage 1):** 1 requested — `ai-cost-realist:sonnet` (single dominant NET-NEW dimension = paradigm/cost discipline at breadth; the legacy LLM-narration port is the one %-of-GMV-economics threat, and Child-0 explicitly deferred the AI roster/cost model). Tagged :sonnet (multi-step unit-economics reasoning, not bounded). Declined a 2nd persona — RLS/money/parity are settled by the layer-children (reused, not re-decided); strangler sequence already bound by Child-0's two personas; structure-correctness is Aryan's Stage-2 job. Within high-stakes cap of 2.
+**First-pass paradigm:** sql (epic-dominant; per Child-0 M-A1-Q1 the metric surface needs zero ML). ML only where a persona proves rules don't suffice (LTV projection / RTO risk-scoring / response modeling — default SQL). small_llm only at slice-9 narration boundary. NO frontier-LLM in Phase 2 (Morning-Brief synthesis already built, untouched). Target mix ~85% SQL holds.
+**Decision:** ADVANCE (as ratified EPIC + slice-1 spec) — but BUILD HELD for Founder visibility per the directive. Not a CHALLENGE-BACK (sound, planable, Founder asked for decomposition). The verdict surfaces to the Founder for epic ratification, NOT an auto-handoff to build.
+**Escalation:** none at intake. No compliance ambiguity (analytics read surface, no outbound channel; lifecycle SENDS flagged so no slice silently adds a channel without re-triggering compliance). No cost-paradigm breach the @paradigm gate can't hold (the cost-realist persona pressure-tests slice 9). No moat/non-negotiable change. /escalate stays armed for any slice-level DPDP/PII ambiguity (inherited CF-SEC-3 pattern).
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, india-commerce-economics, architecture-patterns, agentic-design, tech-stack-evaluation, subagent-orchestration, verification-before-completion
+**Open questions (inputs for Aryan/cost-realist, not blockers):** (1) does any ported metric/insight genuinely need ML/LLM vs SQL (slice 9 + ltv/rto/response surfaces); (2) per-feature ML-vs-SQL ruling and the slice-9 narration cost ceiling; (3) join-heavy metrics (MER/aMER/CM2) = scheduled Python rollup vs MV — Aryan per slice; (4) CM2 definitional-delta vs legacy (Definitional-Delta Register) at slice 2.
+**Next:** Founder ratifies the epic frame + slice-1 spec (file `feat-store-order-fact-layer` as a /requirement). The ai-cost-realist adversarial read attaches to the epic's planning + slice-9; the orchestrator may spawn it on ratification to harden the paradigm budget. No build hand-off by me.
+
+## 2026-05-25T13:30:00Z — Rohan (cto-advisor) — feat-store-order-fact-layer (Phase 2, slice 1)
+**Stage:** 1 (intake)
+**Action:** Filed the ratified slice-1 spec as a proper /requirement (child of epic-phase2-feature-parity). Read canon + the epic Stage-1 review (which authored this spec) + Child-4 registry/DDR/query-gateway + Child-6 BFF/store-scaffold. Verified ground truth in the live tree (analytics-service application layer EMPTY; TS registry has net_sales/net_net_tax/net_revenue; Python registry has full ladder incl gross_sales/total_discount/total_tax; DDR already carries total_tax_mu blocked on child-3 + cm2_mu EXPECTED_DEFINITIONAL_DELTA; query gateway is the CH tenant-isolation analogue; DataPlanePort is the BFF data seam; /store is a ScaffoldPage; dashboard KPI reads the SUGANDH_LOK_KPI seed stub). Ran the parity gate GREEN as baseline (25 vectors byte-identical, 2 mutants killed). api-gateway tsc exit 0 baseline.
+**Pre-flight dep check:** blocks = Child-1/2/3/4 (committed-on-branch / awaiting-founder-commit / approved). NO VIOLATION — builds on committed contracts, additive reversible facts for ONE anchor workspace, executes no held cutover. Same build-on-committed-contract ruled non-blocking on Children 4/6.
+**Lane:** high-stakes (multi-tenancy + money + schema-proto + india-compliance per-SKU GST + connectors; carve-out inapplicable; inherited from epic).
+**Personas (Stage 1):** 0. Rule fired: clear repeat of a shipped layer-pattern. Every risk dimension settled by Child-1/2/3/4 + the epic ai-cost-realist persona; no single UNSETTLED dominant dimension. Declined 1 (india-data-isolation/GST) — already bound by the existing DDR total_tax_mu row + RegionAdapter requirement; rigor lands on Aryan's plan + Shreya's per-query VETO + Tanvi's parity gate + my Stage-6. Within high-stakes cap.
+**Paradigm:** sql (zero inference path; any LLM decorator/new runtime = BOUNCE).
+**Decision:** ADVANCE → Stage 2 (Aryan).
+**Rationale:** Foundation-first forced dependency root. Add revenue-ladder defs (TS+Py parity), a StoreSummary use-case through the query gateway (mandatory workspace_id), store.summary/store.revenueLadder tRPC, /store wiring + dashboard reading the same canonical facts. Per-SKU GST never blended; DDR delta registered. Reuse all plumbing; build the feature surface.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, india-commerce-economics, architecture-patterns, agentic-design, tech-stack-evaluation, subagent-orchestration, verification-before-completion
+**Open questions (for Aryan):** per-SKU GST — source through the connector fact path for the anchor workspace, OR carry the registered DDR delta with the per-SKU formula pinned (blended legacy NOT silently matched)? realized_revenue_mu (survives cancel/RTO/refund) has no legacy comparand -> new DDR correctness_fixture row.
+**Next:** Stage 2 — Aryan (architect): binding plan.
+
+## 2026-05-25T13:47:00Z — Rohan (cto-advisor) — feat-store-order-fact-layer (Phase 2, slice 1)
+**Stage:** 6 (final review — VETO)
+**Action:** Drove the full high-stakes pipeline end-to-end on the current feature branch (Stage 2 plan -> Maya+Vikram build -> Shreya security -> Tanvi QA -> my Stage 6). Final review: drift check, independent re-verification of >=3 gates with captured output, paradigm audit, 4-tenancy-layer check, over-engineering audit, Single-Primitive sweep, hard-rule deviation check, retro, auto-candidate-rule detection. PASS; Founder gate signed under delegation. NO commit.
+**Personas spawned (Stage 1):** 0 (clear repeat of a shipped layer-pattern; every risk dimension settled by Child-1/2/3/4 + the epic ai-cost-realist).
+**Decision:** PASS -> Founder gate SIGNED under delegation -> Stage 8 readiness (Jatin). APPROVE.
+**Rationale:** Slice 1 delivers a REAL data-backed /store (HTTP 200, live revenue ladder via store.revenueLadder post-login) + the dashboard reading the SAME canonical facts (kpiSummary.net_revenue == store.realized == 185000000, unified SUGANDH_LOK_CANONICAL seed). Legacy revenue logic ported through the query gateway (StoreSummaryQuery, no second DB path). Revenue-ladder defs added (gross/discount/tax TS-side to match Python; realized_revenue_mu Brain-native both sides + DDR row parity_gap:true) — TS<->Py parity exit 0. store.summary/revenueLadder tRPC (workspaceProc + ANALYST, bigint over superjson). Per-SKU GST 2.0 via india_gst adapter, NEVER blended (blended-cannot-reproduce kill-test). Money BIGINT minor units end-to-end (superjson meta types every _mu bigint). RLS proven 4-layer + cross-ws live-refused. @paradigm sql, zero LLM. Reversible additive; legacy untouched.
+**Independent re-verification (captured):** parity exit 0 (re-run); api-gateway store 8 + analytics store/gst 20 (re-run); independent live boot :3001 -> ladder [218000000,206000000,188000000,191000000,185000000] bigint meta + fresh request_id; verify-the-verifier: I disabled the getStoreSummary tenancy guard -> cross-ws test RED, reverted byte-identical (0 MUTANT, 8 green, tsc 0); dashboard/store same-canonical-fact LIVE; cross-ws header -> UnscopedQueryError.
+**Over-eng:** CLEAN — ZERO new dependency (the apps/web package.json + pnpm-lock churn is PRE-EXISTING Child-6, git-diff-confirmed, EXCLUDED from the commit doc); india_gst is a single pure fn (not a multi-region framework — UAE/GCC is Phase 4, not built); realized_revenue_mu is the only net-new metric; dead test helper removed during build.
+**Hard-rule deviation:** NONE — dependency clean (committed contracts; no held cutover executed); delegation exercisable.
+**Findings carried (non-blocking):** B0 PRE-EXISTING login-form.test.tsx breakage (6 tests; useRouter not wrapped; the slice touched ZERO auth/ files per git diff) — recorded out-of-scope, NOT absorbed into the slice green count, surfaced to Founder. L1 reversal facts + per-SKU tax live wires held on Child-3 (mechanism proven). uv-workspace build break (brain-cost-router sources entry) flagged.
+**Auto-candidate rule:** 3rd occurrence of the "uncommitted-working-tree-contaminates-verification" family (Child-1, Child-2, Child-6, this slice) -> wrote rule-proposals/2026-05-25__pre-stage-working-tree-baseline.md. NOT self-adopted; appended to pending-founder-attention for /adopt-rule.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, india-commerce-economics, architecture-patterns, agentic-design, tech-stack-evaluation, verification-before-completion, subagent-orchestration
+**Open questions:** TS<->Python net_revenue_mu signature asymmetry (reconcile before slice 2 builds CM ladder on it); fix uv-workspace sources entry.
+**Next:** platform-devops (Jatin) Stage-8 readiness (no deploy, no commit). Per Founder directive: slice 1 at Stage-6 PASS -> STOP; do not auto-start slice 2; report to Founder.
+
+## 2026-05-25T14:06:44Z — Rohan (cto-advisor) — feat-pnl-cm-waterfall
+**Stage:** 1 (intake — Phase-2 slice 2)
+**Action:** ADVANCE to Stage 2
+**Personas spawned (Stage 1):** 0 (clear repeat of slice-1 vertical pattern; dominant risks pre-resolved by Children 0/1/2/4; the one net-new finding is a concrete code-level correctness instruction, not an open question)
+**Decision:** ADVANCE
+**Rationale:** Honest P&L + CM waterfall on slice-1 foundation. SQL. CRITICAL binding finding surfaced from code+recall: TS cm1_mu (net_revenue−cogs) diverges from Python cm1_mu (net_revenue−cogs−variable_costs); TS has no variable_costs_mu; the shadow_compare parity gate is vacuous on formula text (same root cause as the feat-metric-engine-olap-split Shreya H-1 bounce). Must be CLOSED, not passed silently.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, verification-before-completion, architecture-patterns
+**Open questions:** None blocking. Aryan to decide re-point vs deprecate of Child-6 metrics.pnlWaterfall (Single-Primitive Rule).
+**Next:** Aryan, Stage 2.
+**Prep fix applied:** intelligence-service/pyproject.toml — added [tool.uv.sources] brain-cost-router={workspace=true}; `uv run` now builds the whole workspace (unblocks Python parity tests; slice 1 had worked around with an ephemeral venv).
+
+## 2026-05-25T14:30:00Z — Rohan (cto-advisor) — feat-pnl-cm-waterfall
+**Stage:** 6 (final review) + 7 (Founder gate, delegated)
+**Action:** PASS → APPROVE (signed under standing delegation; nothing committed)
+**Personas spawned (Stage 1):** 0
+**Decision:** PASS / APPROVE
+**Rationale:** Honest P&L + CM waterfall shipped on /pnl + /waterfall. Closed a SHIPPED correctness bug (TS cm1_mu COGS-only vs Python honest) + hardened the parity gate (non-vacuous cross-language formula anchor) = 8th occurrence of the verify-the-verifier root cause, evidence #8 appended to the human-gated proposal (NOT self-adopted). Over-engineering audit clean; 4-layer tenancy fail-closed (wire-proven); SQL paradigm; FX poison excluded; per-SKU GST preserved. Independently re-ran 5 of Tanvi's gates + hand-re-derived True-CM2 against the live wire — replicated PASS.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion
+**Open questions:** None. Candidate rule surfaced to Founder (/adopt-rule verify-the-verifier-mutation-on-gate).
+**Next:** Founder commit gate (free-text "commit it"); then slice 3 (feat-rto-cod-economics) — NOT auto-started.
+
+## 2026-05-25T14:32:17Z — Rohan (cto-advisor) — feat-rto-cod-economics
+**Stage:** 1 (intake) + 6 (final review) — full high-stakes pipeline driven end-to-end (slice 3 of 9)
+**Action:** ADVANCE at Stage 1 (1 persona: india-rto-cod-numeric-realist:haiku) → PASS at Stage 6 (signed under standing delegation)
+**Personas spawned (Stage 1):** india-rto-cod-numeric-realist:haiku (4 concerns, all bound)
+**Decision:** PASS → /approve-equivalent under delegation; Stage 8 readiness (no commit, no deploy)
+**Rationale:** Ported RTO/COD/logistics/pincode legacy economics Brain-native. READ the actual legacy break-even formula and found the ratified slice table's r*=M/(M+C) was WRONG — bound the FULL legacy formula (500bp, not naive 9493bp) with a non-vacuous cross-language anchor + DDR. 5 metric defs TS<->Python byte-identical; 4 fail-closed use-cases; 4 tRPC procedures; 4 real pages. SQL-only, zero new dep, per-SKU GST untouched, no outbound channel.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion
+**Independent Stage-6 verification:** re-ran parity gate (PASS, non-vacuous), 31 use-case tests, 10 router tests, live wire re-smoke (break-even=500≠9493), hand re-derivation (pincode 6938).
+**Open questions:** NDR metric deferred (no honest pre-Child-3 source); rto_cost_mu/rto_revenue_lost_mu DDR rows UNSIGNED-PENDING child-3-shopify-connector.
+**Next:** orchestrator commits slice-scoped paths (pending-founder-commit.md), then slice 4 (feat-marketing-acquisition) on its turn.
+
+## 2026-05-25T14:56:06Z — Rohan (cto-advisor) — feat-marketing-acquisition (Phase 2, slice 4)
+**Stage:** 1 (intake)
+**Action:** ADVANCE → Stage 2 (Aryan), with a binding reconciliation mandate + slice-table correction
+**Personas spawned (Stage 1):** marketing-efficiency-numeric-parity-realist:sonnet (6 concerns, all bound — accepted, non-vacuous)
+**Decision:** ADVANCE (no CHALLENGE-BACK, no KILL)
+**Rationale:** Slice 4 = MER/aMER/CAC + acquisition + distributions ported to LEGACY semantics. Applied the slice-2/3 lesson: READ the real legacy formulas. Found (a) the ratified slice-table shorthand wrong — paMER has NO legacy basis, payback + placed→realized→incremental are COHORT/slice-5 concepts, not slice 4; (b) Child-4 SPECULATIVELY PRE-BUILT marketing defs that DIVERGE from legacy and are split unevenly across TS/PY behind the parity gate's "shadow phase" carve: amer_bp(TS)=true_cm2/total_spend vs legacy NCrev/acq-spend; pamer_bp=cm2/total_spend (phantom, no comparand); mer_bp/cac_mu/cac_payback_months PY-only (no cross-language parity bites them). Bound a reconciliation: redefine amer_bp to legacy (NCrev/acquisition-classified-spend), decommission pamer_bp, define mer_bp + cac_mu in BOTH registries with DDR numerator-basis rows, keep payback/attribution out (slice 5).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion
+**Lane:** high-stakes (money + multi-tenancy + schema/registry); 1 persona (numeric/definitional parity is the sole dominant net-new dimension); @paradigm sql, zero LLM.
+**Open questions:** confirm aMER acquisition-classified-spend split survives the StubDataPlane seed (cross-surface consistency vs /store net revenue for MER numerator).
+**Next:** Aryan Stage 2 binding plan.
+
+## 2026-05-25T15:22:00Z — Rohan (cto-advisor) — feat-marketing-acquisition (Phase 2, slice 4)
+**Stage:** 6 (final review) — full high-stakes pipeline driven end-to-end (slice 4 of 9)
+**Action:** PASS → APPROVE, signed under standing delegation (no hard-rule deviation); Stage-8 readiness (no commit, no deploy)
+**Decision:** PASS / APPROVE
+**Rationale:** Slice 4 ports MER/aMER/CAC + acquisition + distributions to LEGACY semantics on 2 real pages. The slice's headline value was a Stage-1 FINDING I caught and the build RESOLVED: Child-4 had speculatively pre-built marketing defs diverging from legacy behind the parity gate's "shadow-phase" carve (amer_bp=true_cm2/total_spend vs legacy nc_rev/acquisition-classified-spend; pamer_bp phantom; mer_bp/cac_mu PY-only). Reconciled: amer_bp REDEFINED to legacy, pamer_bp DECOMMISSIONED, mer_bp/cac_mu brought into both registries. Slice-table shorthand corrected (paMER/payback/attribution-ladder are slice-5, not slice-4). 4 new defs TS<->Python byte-identical + non-vacuous anchors (aMER 15000bp on a classification split; "use total spend" mutant KILLED in gate+unit+router tests); 3 fail-closed use-cases; marketing.* tRPC group; 2 live pages. @paradigm sql; per-SKU GST honest; ROAS/ACOS display-only.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion
+**Independent Stage-6 verification (re-ran, captured):** parity gate PASS (non-vacuous, both kill-mutants fire); 142 TS lib-metrics + 73 api-gateway + 299 brain_metrics + 136 analytics tests; tsc 0 on 3 packages; live wire smoke (mer 29384, amer 30000 on acquisition spend, cac 16250, distributions mode 48000; foreign workspace → UnscopedQueryError). Replicated every Tanvi PASS.
+**Over-engineering audit:** 7/7 PASS — no files beyond plan; no new deps/runtime; pamer_bp REMOVED (net-negative dead code); ONE format helper; DataPlanePort seam reused.
+**Auto-candidate rule (step 8a):** root cause "slice-table shorthand + speculative pre-builds diverge from legacy" recurs across ≥3 runs → generated candidate rule verify-legacy-formula-at-stage1-not-slice-table (human-gated, surfaced to Founder).
+**Open questions:** new_customer_revenue_mu/nc_cm2_mu/cm2_per_nc_mu/acquisition_ad_spend_mu DDR rows UNSIGNED-PENDING child-3-shopify-connector (connector facts; flips at held cutover).
+**Next:** orchestrator stages Stage-8 readiness (Jatin); Founder gives "commit it" to commit the slice-scoped paths (pending-founder-commit.md); then slice 5 (feat-cohorts-ltv) on its turn. STOP — do not auto-start slice 5.
+
+## 2026-05-25T15:42:00Z — Rohan (cto-advisor) — feat-cohorts-ltv (Phase 2, slice 5)
+**Stage:** 1 (intake) + 6 (final review) — full high-stakes pipeline driven end-to-end (slice 5 of 9)
+**Action:** ADVANCE at Stage 1 (0 personas) → PASS at Stage 6, signed under standing delegation; Stage-8 readiness (no commit, no deploy)
+**Personas spawned (Stage 1):** 0 (same numeric/definitional-parity dimension already stress-tested slices 2/3/4; I read all 4 legacy files + bound the anchors myself)
+**Decision:** PASS → APPROVE under delegation (no hard-rule deviation)
+**Rationale:** Ported cohorts + LTV Brain-native to LEGACY semantics on /cohorts + /lifetime-value. The standing lesson bit a 4th time — reading the actual legacy formulas found 5 divergences from the slice-table: (1) cohorts use CM3 not CM2; (2) LTV uses CM2 with NO CAC/payback/ltvcac (cohort concepts); (3) the pre-built cac_payback_months (CAC/MonthlyCM2) is a PHANTOM diverging from the legacy cumulative bucket-walk+interpolation — DECOMMISSIONED (mirrors slice-4 pamer_bp), real payback in CohortMatrixQuery as centi-months; (4) ltv_cac_bp comment named wrong rung (fixed); (5) FX poison killed. 2 new defs (cohort_ltv_mu correctness_fixture, repeat_rate_bp shadow) TS<->Python byte-identical + non-vacuous anchors; reused ltv_cac_bp ratio. 2 fail-closed use-cases; cohorts.*/ltv.* tRPC; 2 live pages + CohortHeatmap. @paradigm sql (ML ruled out — legacy has no model); per-SKU GST untouched; no outbound channel; ZERO new deps.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion
+**Independent Stage-6 verification (re-ran, captured):** parity gate PASS (cohort_ltv_mu SQL matched, DDR snapshot present, both kill-mutants fire); 146 TS lib-metrics + 87 api-gateway + 299 brain_metrics + 165 analytics; typecheck 0 (lib-metrics/api-gateway/web); live wire smoke on :3001 — cohorts payback=100 centi-mo (1.0mo bucket-walk, NOT phantom 2mo flat), Feb payback=33 centi-mo (genuine interpolation), ltv_cac 12000/15000bp, ltv cumulative CM2 m1=1500000/m2=1800000; foreign workspace → UnscopedQueryError (fail-closed). Pages render 200. Replicated every Tanvi PASS.
+**Over-engineering audit:** 7/7 PASS — no files beyond plan; ZERO new deps; ONE required net-new component (CohortHeatmap); phantom cac_payback_months REMOVED (net-negative dead code).
+**Auto-candidate rule (step 8a):** evidence #5 appended to verify-legacy-formula-at-stage1-not-slice-table (human-gated; ≥4 runs now).
+**Open questions:** cohort_ltv_mu/cohort_cac_payback DDR rows signable now (Shopify facts present for anchor); WooCommerce cohort/LTV path + customer-lifecycle/RFM (slice 8) deferred.
+**Next:** orchestrator stages Stage-8 readiness (Jatin); Founder "commit it" commits slice-scoped paths (pending-founder-commit.md); then slice 6 (feat-catalog-inventory) on its turn. STOP — do not auto-start slice 6.
+
+## 2026-05-25T15:46:22Z — Rohan (cto-advisor) — feat-catalog-inventory (Phase 2, slice 6)
+**Stage:** 1 (intake)
+**Action:** ADVANCE → Stage 2 (Aryan), with a binding slice-table correction (standing lesson #6)
+**Personas spawned (Stage 1):** catalog-inventory-numeric-parity-realist:sonnet (requested; synthesized into build given deep legacy read)
+**Decision:** ADVANCE (high-stakes; dependency pre-flight PASS — slice-1 approved/stage-8)
+**Rationale:** Slice-table wrong on all 3 — products is CM1 not per-SKU CM2; inventory is sellThrough+daysLeft not turnover; cascade rate is observation-windowed per-first-product not slice-5 rr90. Reconcile not rebuild; REUSE cm1_mu/aov_mu (no phantoms).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, verification-before-completion, code-review, architecture-patterns
+**Open questions:** none
+**Next:** Aryan S2 → build → Rohan S6
+
+## 2026-05-25T16:02:00Z — Rohan (cto-advisor) — feat-catalog-inventory (Phase 2, slice 6)
+**Stage:** 6 (final review — VETO authority)
+**Action:** Drove the full high-stakes pipeline end-to-end on feature/feat-store-order-fact-layer; PASS → APPROVE under standing delegation (no hard-rule deviation). Stage-8 readiness; pending-founder-commit.md produced (nothing committed).
+**Decision:** PASS
+**Rationale:** 3 net-new defs TS↔Py byte-identical + NON-VACUOUS (mutants killed); CM1/sellThrough/daysLeft/second-order-rate reconciled to legacy; cm1_mu+aov_mu reused (no over-engineering); 3 fail-closed use-cases; catalog.* tRPC; RLS fail-closed at the wire; @paradigm sql; 0 new deps; typecheck 0; parity gate PASS; real-network smoke PASS (3 pages 200 + correct values). Over-engineering audit clean. Independent gate re-run: parity gate + 4 test suites + live HTTP smoke all reproduced PASS with captured output.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, architecture-patterns, verification-before-completion
+**Open questions:** none
+**Next:** Founder Stage-7 commit gate (pending-founder-commit.md). Do NOT auto-start slice 7.
+
+## 2026-05-25T16:30:00Z — Rohan (cto-advisor) — feat-finance-settings-goals (Phase-2 slice 7)
+**Stage:** 1 (intake) + 6 (final review) — full high-stakes pipeline, signed under standing delegation
+**Action:** Slice 7 of epic-phase2-feature-parity. ADVANCE (S1) → PASS (S6).
+**Personas spawned (Stage 1):** 0 (clear repeat of slices 1-6 pattern on a settled foundation; the one new dimension — idempotent write — is a solved in-repo pattern).
+**Decision:** PASS → Founder gate (delegated auto-approve; no hard-rule deviation).
+**Rationale:** Standing lesson bit a 7th time at Stage 1 — Goal RAG is DIRECTIONAL not flat (higher-better 0.95/0.80; lower-better CAC/ACOS 1.05/1.20); festival learned-lift is a PHANTOM (decommissioned); calendar = period grid w/ overlays reusing slice-1/2/4 primitives; COGS feeds the EXISTING cm1_mu. Shipped 1 def (goal_attainment_bp, NON-VACUOUS) + directional RAG classification + 4 fail-closed use-cases + settings/calendar tRPC + idempotent MANAGER-gated goals.upsert; RLS fail-closed + idempotent replay proven at the wire; 4 pages HTTP 200; typecheck 0; parity green; ZERO new deps.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, idempotency-handling, defense-in-depth-validation, accessibility
+**Open questions:** None blocking. festival/cost/marketing-action CRUD deferred (pages real READ views); inline goal editor deferred (mutation shipped).
+**Next:** Founder 'commit it' (pending-founder-commit.md) → then slice 8 feat-lifecycle-timings-email (orchestrator-driven; do NOT auto-start).
+
+## 2026-05-25T17:55:00Z — Rohan (cto-advisor) — feat-ai-insight-narration (Slice 9/9, FINAL)
+**Stage:** 1 + 6 (full slice, assembly-line under standing delegation) — LAST slice of EPIC epic-phase2-feature-parity
+**Action:** S1 intake + S6 final review of the grounded AI narration surface. Read the ACTUAL legacy AI surface (module/ai-engine = hardcoded Opus/Sonnet, NOT ported; lib/insights = LLM-invents-numbers anti-pattern; anomalies.ts = correct rule-based signal layer). Ruling: NOT a rebuild — Child-5's intelligence-service vertical already built ~90% (PnlInsightAgent + gateway + faithfulness validator + injection preprocessor + golden-set eval + 5 gates); slice 9 EXPOSES it via insights.forPage so it renders on /pnl.
+**Personas spawned (Stage 1):** 0 — clear repeat of a registry pattern; Child-5's 2 :sonnet personas (ai-cost-realist + prompt-injection-action-injection-realist) already stress-tested the dominant cost+injection dimensions, codified into the reused vertical. Within high-stakes cap.
+**Decision:** S1 ADVANCE → S6 PASS (APPROVE under standing delegation; §9 hard-rule deviation NONE).
+**Rationale:** The 4 non-negotiables met as real load-bearing code — small_llm Haiku narration (never frontier per page, filtersHash-cached, cost Q1-Q4 PASS); faithfulness gate (LLMs NEVER invent numbers — set-compare at gateway AND BFF; golden-set 13/13 incl 1 slice-9 killed mutant; inverse vacuous mutant caught; wire killed-mutant ₹9.9L rejected then reverted byte-clean); injection defense (fence/role-control output gate + Child-5 spotlight, fail-closed); decision-log per synthesis, READ-only (insights.forPage .query only; insights.submit→NOT_FOUND; no executable field on narration). Single-Primitive: ZERO new metric def (narration over slices 1-8 numbers); PageInsightSeverity a DISTINCT type from Morning-Brief InsightSeverity (not overloaded). RLS fail-closed at the wire. ZERO new deps. LOCAL no-key = deterministic grounded narrator behind the gateway contract (prod flips to Haiku by config), stated explicitly.
+**verify-the-verifier:** 8th+ occurrence. The faithfulness gate caught a REAL build-time bug (phantom lakh matches from "CM3 lands"/"CM2 line") + a Stage-6 on-disk mutant. Gates are real.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, agentic-design, india-commerce-economics, architecture-patterns, verification-before-completion
+**Tests:** api-gateway 151 (+17) + web 41 + lib-metrics 166 (no regression) + faithfulness golden-set 13 (+3), all green; typecheck 0 (api-gateway/web); live smoke PASS (insights.forPage paradigm small_llm/faithfulness_ok/₹3.2L grounded; /pnl HTTP 200; cross-ws UnscopedQueryError; insights.submit NOT_FOUND).
+**Open questions:** pre-existing harness quirk — pnl_eval.py uses `src.domain.*` imports that collide with analytics-service/src under monorepo-wide pytest (eval logic proven green with collision excluded); recommend normalizing to `domain.*`. Non-blocking, flagged to Founder.
+**Next:** Founder commits via pending-founder-commit.md ("commit it"), then drives the Child-7 HELD cutover sequence. **EPIC FUNCTIONALLY COMPLETE (9/9) — Brain at functional parity with legacy.**
+
+## 2026-05-25T18:53:59Z — Rohan (cto-advisor) — feat-parity-cleanup-pages (epic-phase2 SLICE 10, FINAL)
+**Stage:** 1 (intake)
+**Action:** ADVANCE — full high-stakes pipeline on feature/feat-store-order-fact-layer
+**Lane:** high-stakes (trigger surfaces: multi-tenancy, connectors, PII /team, schema/proto)
+**Personas requested (Stage 1):** frontend-data-honesty-realist:haiku (1 — honest-state under HELD connector cutover is the single dominant risk)
+**Decision:** ADVANCE
+**Rationale:** 9 ScaffoldPage stubs in (shell) must become real, runnable pages. ~55% pure reuse of shipped tRPC (analytics→store+pnl; meta/google-ads→marketing; shiprocket→logistics; ad-campaigns→acquisition split), ~45% thin net-new honest-state READ surfaces (team/settings/integrations/backfill). ZERO new metric defs expected. @paradigm sql, zero LLM. Honest-state rule: real seed where shipped, explicit "pending cutover" affordance where connector-live, NEVER a fabricated number; WRITE/OAuth/backfill-trigger deferred.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, architecture-patterns, agentic-design, verification-before-completion
+**Open questions:** integrations seed shape (mixed CONNECTED/PENDING vs all-pending — both honest); /team PII shape mirrors legacy (fullName/email/role/joinedAt)
+**Next:** persona round-trip → Aryan Stage 2
+
+## 2026-05-25T19:04:31Z — Rohan (cto-advisor) — feat-parity-cleanup-pages (epic-phase2 SLICE 10, FINAL)
+**Stage:** 6 (final review, VETO authority)
+**Action:** PASS — APPROVE under standing delegation
+**Decision:** PASS
+**Rationale:** All 9 (shell) ScaffoldPage stubs are now real, runnable, honest pages. Zero ScaffoldPage / "Coming in Phase 2" in (shell) (committed test). 5 reuse pages (store+pnl/marketing/logistics) + 4 thin net-new honest READ surfaces (team/settings/integrations/backfill). Honest-state: ConnectorPending for connector-live tiles, NEVER a fake number; held connectors carry NULL last_sync (asserted). RLS fail-closed at the wire (foreign-ws → UnscopedQueryError); team.invite → NOT_FOUND (read-only). @paradigm sql; ZERO new metric defs (registry untouched); ZERO new deps; typecheck 0. Independently re-ran 3 gates (typecheck, router 13/13, no-scaffold 4/4). Over-engineering audit clean. Real-network smoke all 9 routes HTTP 200 + real data on :3050/:3051 (:3001 occupied by a process I did not own — did not kill it). Nothing committed (pending-founder-commit.md).
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, architecture-patterns, india-commerce-economics, verification-before-completion
+**Open questions:** smoke harness should not assume :3001/:3000 free; client-rendered pages would benefit from a headless-browser smoke gate
+**Next:** Founder commit via pending-founder-commit.md. epic-phase2-feature-parity parity gap CLOSED — no dead stubs remain.
+
+## 2026-05-25T19:14:00Z — Rohan (cto-advisor) — epic-real-auth-supabase
+**Stage:** 1 (intake — EPIC frame + slice-A scope)
+**Action:** ADVANCE. Framed the real-auth epic; decomposed into slices A/B/C/D; scoped slice A (identity-only) for the full high-stakes pipeline. Requested 2 personas (NOT spawned — returned in HANDOFF).
+**Personas requested (Stage 1):** auth-secret-leak-realist:sonnet, session-to-claim-tenancy-realist:sonnet (2 = high-stakes cap; two distinct dominant dimensions: secret/PII/prod-gating + tenancy-mapping architecture)
+**Decision:** ADVANCE (no CHALLENGE-BACK, no KILL)
+**Rationale:** Read the ACTUAL legacy auth code (not the directive shorthand). Key reframe: this is a CUTOVER onto Child-1's prebuilt seam, NOT a rebuild. server.ts already documents the exact Phase-2 cutover ("verify Bearer JWT, derive workspace_id from verified claim, not a spoofable header"); brain-claim.ts/trpc.ts/tenancy.ts already consume BrainClaim + assert workspaceId===claim.workspaceId. Slice A only adds the FRONT of the pipe: Supabase identity (signInWithPassword + signInWithOAuth google) + JWKS verify (jose, issuer ${SUPABASE_URL}/auth/v1, aud authenticated, sub→userId) → assembleClaim → real tRPC claim + Next middleware route-protection (→/auth/login) + Bearer on tRPC. Bound 5 mandates: (1) legacy 4-role (OWNER/ADMIN/EDITOR/VIEWER) → Brain 5-role (EDITOR→MANAGER) map must be explicit+tested, no 6th role; (2) @brain/core-auth is a tsconfig alias → reuse the SAME assembleClaim; (3) ONLY 3 new deps allowed (jose gateway; @supabase/ssr + @supabase/supabase-js web); (4) membership lookup is core-service's, gateway gets a thin flag-gated LocalSeedMembershipResolver for slice A (DbMembershipResolver = slice C); (5) x-workspace-id header is a spoof vector once real auth exists → workspace_id MUST come from the resolver keyed on verified sub, header demoted to harness-only.
+**4 Founder risks dispositioned:** (a) OPEN-P0 live-DB-zero-RLS → slice A uses Supabase Auth IDENTITY ONLY, never the live RLS-less Postgres data plane; (b) StubDataPlane keyed 00000…01 → LocalSeedMembershipResolver maps any authed user → seeded Sugandh-Lok OWNER (honest: one seeded workspace); (c) dashboard prereqs (redirect-URL allow-list localhost:3000/auth/callback + Google provider + Site URL) = Founder action items, email/pw proves the path if Google blocked; (d) PII/secret VETO → .env untracked+git-ignored-proven (verified at S1 via git check-ignore), .env.example key-names-only, no secret values anywhere, prod cannot stub-auth (flag-gated), email/token never logged.
+**Lane:** high-stakes (5 trigger surfaces); 2 personas; @paradigm sql (zero ML/LLM — deterministic JWT verify + membership lookup + role compare).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, agentic-design, verification-before-completion
+**Dependency pre-flight:** PASS — only hard dep is Child-1 (committed-on-feature-branch; contract in-tree + imported). Slice-D connector dep is not slice A.
+**Open questions:** Supabase dashboard config (Founder) gates the live-Google path; path-naming reconciled to /auth/* per Founder bar; legacy→Brain role-map mechanics for Aryan.
+**Next:** persona round-trip (orchestrator spawns 2 :sonnet personas → re-invokes me to synthesize) → Aryan Stage 2 binding plan for slice A.
+
+## 2026-05-25T19:42:00Z — Rohan (cto-advisor) — feat-auth-supabase-identity
+**Stage:** drove S2→S6 end-to-end (epic-real-auth-supabase, Slice A)
+**Action:** Synthesized 2 persona stress-tests; built+verified real Supabase identity cutover.
+**Personas synthesized:** auth-secret-leak-realist, session-to-claim-tenancy-realist (B1-B4, S1-S5, N1).
+**Decision:** Stage 6 PASS → Founder gate signed under delegation → Stage 8 HOLD.
+**Rationale:** Cutover filled the documented JWT seam; Child-1 BrainClaim reused; all persona findings implemented+tested; typecheck 0 (4 apps); 196 gateway + 45 web tests green; live real-auth gateway rejects unauth/forged/spoof.
+**Key finding (Stage 5):** live project JWKS is ES256, not RS256 → B2 amended to pin {RS256,ES256} (HS*/none still rejected). This is exactly why Stage-5 real-network verification is a VETO gate.
+**Open questions:** Founder dashboard action for confirmed-user/Google live session (mailer_autoconfirm:false; Google redirect allow-list). Slices B/C/D deferred.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion.
+**Next:** Founder reviews pending-founder-commit.md; STOP after Slice A (do not start Slice B).
+
+## 2026-05-25T23:52:00Z — Rohan (cto-advisor) — feat-auth-supabase-recovery (epic-real-auth-supabase slice B)
+**Stage:** 6 (final review — full pipeline driven single-operator)
+**Action:** Built slice B end-to-end (Stage 2 plan → Stage 3 build → Stage 4 security → Stage 5 verify → Stage 6 PASS).
+**Personas spawned (Stage 1):** n/a (slice already scoped in the epic frame at intake; slice B is a slice-A pattern replication).
+**Decision:** PASS (signed under standing delegation).
+**Rationale:** signup + email-confirm + password-recovery Supabase flows + pages on slice-A's committed clients; ZERO new deps; ZERO backend/DB; carries slice-A posture (generic errors, no PII/secret, noValidate, a11y). typecheck 0; 65/65 web tests; 6 /auth pages render 200 unauth; verifyOtp live-wired (bad token → generic redirect). Full email round-trip blocked on Founder Supabase dashboard config — stated, not faked.
+**Skills loaded:** engineering-discipline, code-review, architecture-patterns, agentic-design, verification-before-completion, india-commerce-economics, cost-routing-paradigms.
+**Open questions:** Founder dashboard: allow redirect URLs /auth/callback + /auth/update-password, Site URL localhost:3000, mailer_autoconfirm for full local e2e.
+**Honest limitation:** Agent tool unavailable in this subagent context → ran each stage's role myself to its real bar (not a 5-agent fan-out). Recorded in the founder-decision JSON + final review.
+**Next:** STOP per directive. Slice C (onboarding/membership/invitations + /api/user/ensure + DbMembershipResolver) NOT started.
+
+## 2026-05-26T00:26:00Z — Rohan (cto-advisor) — feat-onboarding-membership-db (epic-real-auth-supabase slice C)
+**Stage:** 1–6 (single-operator pipeline run; Agent tool unavailable in subagent context — ran each role, held each gate to its real bar, as for slice B)
+**Action:** Built slice C (onboarding + membership + invitations, DB-backed) end-to-end; Stage 6 PASS.
+**Personas spawned (Stage 1):** none (single-operator run); slice-C risk dimensions (RLS fail-closed, PII minimization, DbMembershipResolver fail-closed) carried forward from the epic's 2 slice-A personas + the Child-1 RLS canon.
+**Decision:** PASS → Founder gate signed under standing delegation.
+**Rationale:** Founder-binding: onboarding/membership in a LOCAL dev Postgres (docker brain_dev) with Brain-native FORCE RLS — live production DB untouched. RLS fail-closed proven at the wire (context-less read=0, context-less write rejected, cross-workspace=0, app role non-BYPASSRLS). DbMembershipResolver: member→ws, non-member→null(/onboarding, no auto-grant), DB-error→propagate(UNAUTHORIZED). typecheck 0 across 3 apps; core-service 182u+8 integ, gateway 215, web 77 — all green. No secret VALUES committed; real .env git-ignored (check-ignore proven). PII: email carried in identity for onboarding only — never logged, never in the BrainClaim.
+**Skills loaded:** engineering-discipline, code-review, architecture-patterns, india-commerce-economics, verification-before-completion
+**Key decisions:** (1) Reused Child-1 withWorkspace/withSuperadmin (Single-Primitive — no second pool); DATABASE_URL accepted as a session-mode alias of DIRECT_URL. (2) Membership/onboarding logic lives in core-service (canon); gateway is a thin tRPC pass-through. (3) New identity tier (verified sub+email, no workspace) for onboarding/user.me/invite; authed/workspace tiers unchanged → 31 existing routes intact. (4) Data-reconciliation: fresh workspace → honest empty-state via workspace.dataAvailability; Sugandh-Lok keeps its seed; NO fabricated data. (5) One new gateway dep: pg (+@types/pg) — required for DB access, not over-engineering.
+**Open questions:** Full authenticated HTTP e2e (real Supabase JWT → onboarding → dashboard) still needs the Supabase dashboard redirect/mailer config (Founder action, carried from slices A/B). Proven instead via the integration test (real DB+RLS) + the gateway-runtime DbMembershipResolver proof against the live local DB.
+**Deferred (slice D):** Shopify/Woo LIVE OAuth connect (handle captured, connect affordance disabled); member-invite SENDING (email).
+**Next:** STOP after slice C per directive. Slice D NOT started. Founder commits via sliceC-pending-founder-commit.md.
+
+## 2026-05-26T01:16:30Z — Rohan (cto-advisor) — epic-real-auth-supabase (slice D)
+**Stage:** 1→6 (full high-stakes pass, single-operator; Agent tool unavailable)
+**Action:** Built slice D — Shopify/Meta/Google OAuth connect/callback + token custody; Stage-6 PASS.
+**Personas (Stage 1):** 1 — token-custody-at-rest-realist:sonnet (5 concerns TC-001..005, all accepted, folded into the plan + tests).
+**Decision:** PASS → Founder gate SIGNED under standing delegation (no hard-rule deviation).
+**Rationale:** Tokens encrypted at rest (AES-256-GCM, RLS-scoped, never logged/returned); CSRF state + idempotent callback + FORCE RLS proven at the wire; production seal() HELD (CF-C7-CUSTODY-PROOF-1); data-ingestion DEFERRED (honest "sync pending"); mechanically verified with a fixture token-exchange (no live creds). ZERO new deps; @paradigm sql/io. Closes epic-real-auth-supabase.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, integration-connectors.
+**Open questions:** none blocking. Founder must register 3 redirect URIs for live e2e + authorize the commit. pool-isolation.test.ts (Child-1) needs a pgbouncer :5433 container (pre-existing env gap).
+**Next:** Founder — register redirect URIs + 'commit it' (sliceD-pending-founder-commit.md, explicit paths, real .env excluded).
+
+## 2026-05-25T21:37:00Z — Rohan (cto-advisor) — feat-connector-data-ingestion (epic-real-auth-supabase slice E)
+**Stage:** 1→6 (full high-stakes pipeline, single-operator; Agent tool unavailable in subagent context)
+**Action:** Built slice E — connector data ingestion (Shopify orders/products + Meta/Google ad spend) → real analytics; Stage-6 PASS.
+**Personas (Stage 1):** 1 — connector-ingest-to-analytics-parity-realist:sonnet (P-001..P-007, all ACCEPTED + PROVEN at the analytics layer).
+**Decision:** PASS → Founder gate SIGNED under standing delegation (no hard-rule deviation per §9).
+**Rationale:** WIRED two already-stress-tested primitives (Child-3 ingest contract + slice-D custody) — NOT a rebuild. New work = per-vendor fetch seam (fixture in tests / live-needs-consent in prod), an ACL (decimal-string/micros → BIGINT minor units WITHOUT float; per-SKU GST; COD/Prepaid; opaque customer_ref — DPDP), idempotent fact UPSERT keyed on a UNIQUE business key (re-sync byte-identical at the AGGREGATE layer), and a DispatchingDataPlane routing Sugandh→seed / others→LocalDbDataPlane reading their OWN facts. Honest-empty (18 factories) for non-fed surfaces — NEVER the seed. @paradigm sql/io, ZERO LLM. RLS FORCE on all 4 fact tables; token never logged; READ-only (no outbound → no DLT/NCPR surface). ZERO new deps. Key architectural reframe at S1: the analytics read from a SEED, not a table — the slice's hardest work is the read-seam + dispatcher, not the writer.
+**Verify-the-verifier:** the verification caught 2 real build-time bugs (a wrong micros→minor-units test expectation+fixture; a BigInt JSON.stringify). Gates real.
+**Tests:** core 21 unit + 6 integration (live local Postgres, P-001..P-007 captured); regression gateway 225, core 245/30-skip, web 89 — all green; typecheck 0×3; live wire smoke (Sugandh→₹18.5L seed, non-Sugandh→honest empty 0); token-leak gate PASS; .env git-ignored+untracked (proven).
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, integration-connectors, idempotency-handling.
+**Open questions:** LIVE pull verified-by-fixture (Founder has only app creds — needs interactive OAuth consent to mint per-account tokens); COGS/RTO/Shiprocket/cohorts not connector-fed → honest empty. Both stated, not faked.
+**Next:** Founder registers 3 redirect URIs + consent + "Sync now" to confirm LIVE pull; then 'commit it' (pending-founder-commit.md, exact paths, real .env excluded). STOP after slice E.

@@ -4,6 +4,8 @@
 // DO NOT re-export from an alternate path — Single-Primitive Rule.
 
 export type { MetricDefinition, MetricKind, MetricUnit, ParityClass } from './types.js';
+// Phase-2 slice-7: directional Goal RAG types (classification, not registry metric).
+export type { GoalRag, GoalValueType } from './definitions.js';
 
 export {
   // Revenue ladder
@@ -11,6 +13,7 @@ export {
   NET_NET_TAX_MU,
   NET_REVENUE_MU,
   // Cost ladder
+  VARIABLE_COSTS_MU,
   CM1_MU,
   CM2_MU,
   MISC_EXPENSES_PRORATED_MU,
@@ -25,9 +28,53 @@ export {
   BLENDED_ROAS_X100,
   // Brain-native correctness-fixture metrics (parity_gap:true)
   TRUE_CM2_MU,
-  PAMER_BP,
   AMER_BP,
   LTV_CAC_BP,
+  // Phase-2 slice-4: marketing efficiency reconciled to legacy (pamer_bp decommissioned)
+  MER_BP,
+  CAC_MU,
+  NEW_CUSTOMER_REVENUE_MU,
+  NC_CM2_MU,
+  CM2_PER_NC_MU,
+  ACQUISITION_AD_SPEND_MU,
+  // Phase-2 slice-3: RTO/COD/logistics/pincode economics
+  RTO_COST_MU,
+  RTO_REVENUE_LOST_MU,
+  COD_REALIZATION_RATE_BP,
+  BREAKEVEN_COD_RTO_RATE_BP,
+  PINCODE_RELIABILITY_SCORE,
+  // Phase-2 slice-5: cohorts + LTV
+  COHORT_LTV_MU,
+  REPEAT_RATE_BP,
+  _CF_S5_COHORT_LTV_ANCHOR,
+  _CF_S5_REPEAT_RATE_ANCHOR,
+  // Phase-2 slice-6: catalog/inventory + first-product cascade
+  INVENTORY_SELL_THROUGH_BP,
+  INVENTORY_DAYS_LEFT,
+  INVENTORY_INFINITE_DAYS,
+  FIRST_PRODUCT_SECOND_ORDER_RATE_BP,
+  _CF_S6_INV_SELL_THROUGH_ANCHOR,
+  _CF_S6_INV_DAYS_LEFT_ANCHOR,
+  _CF_S6_INV_DAYS_LEFT_INFINITE_ANCHOR,
+  _CF_S6_FP_SECOND_ORDER_ANCHOR,
+  // Phase-2 slice-7: goal attainment + directional RAG (festival_lift decommissioned)
+  GOAL_ATTAINMENT_BP,
+  computeGoalRag,
+  goalHigherBetter,
+  _CF_S7_GOAL_ATTAINMENT_ANCHOR,
+  _CF_S7_RAG_HIGHER_BETTER_ANCHOR,
+  _CF_S7_RAG_LOWER_BETTER_ANCHOR,
+  _CF_S7_RAG_LOWER_BETTER_RED_ANCHOR,
+  // Phase-2 slice-8: lifecycle + timings + email/SMS performance (READ/ANALYTICS ONLY)
+  // best_send_time + email_cm2_mu DECOMMISSIONED before birth (no legacy comparand)
+  REACTIVATION_WINDOW_DAYS,
+  EMAIL_OPEN_RATE_BP,
+  EMAIL_CLICK_RATE_BP,
+  EMAIL_REVENUE_PER_RECIPIENT_MU,
+  _CF_S8_REACTIVATION_ANCHOR,
+  _CF_S8_EMAIL_OPEN_ANCHOR,
+  _CF_S8_EMAIL_CLICK_ANCHOR,
+  _CF_S8_EMAIL_RPR_ANCHOR,
   // Registry index + derived sets
   METRIC_REGISTRY,
   DISPLAY_ONLY_METRIC_IDS,

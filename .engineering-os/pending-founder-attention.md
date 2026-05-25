@@ -127,3 +127,43 @@
 **Festival-window note (Stage-8 calendar, yours + Jatin's):** the irreversible cutovers + DB shutdown must not be scheduled in a festival peak GMV window (maximum blast radius). The runbook names the constraint; you own the calendar.
 
 **Where it lives:** `02-cto-advisor-review.md` §Escalation ruling + the 5 intake rulings; run folder `.engineering-os/runs/2026-05-25T07-12-38Z__1be105__feat-legacy-decommission__rishabhporwal`.
+
+---
+## 2026-05-25 — Candidate rule from a recurring pattern (Rohan, Stage-6, feat-store-order-fact-layer)
+A 3rd occurrence of the "uncommitted working-tree state contaminates a stage's verification/commit set"
+root-cause family (Child-1 + Child-2 divergent-gate-copy; Child-6 stray staged files; this slice's
+pre-existing login-form.tsx `useRouter` break failing 6 login-form tests that the slice never touched).
+Crosses the >=3 codification threshold. CANDIDATE rule written (NOT self-adopted):
+`.engineering-os/rule-proposals/2026-05-25__pre-stage-working-tree-baseline.md`.
+Review with `/adopt-rule 2026-05-25__pre-stage-working-tree-baseline` or
+`/reject-rule 2026-05-25__pre-stage-working-tree-baseline <reason>`.
+
+ALSO surfaced (not a slice blocker, your disposition):
+- 6 failing `apps/web/src/test/login-form.test.tsx` tests from a pre-existing uncommitted
+  `login-form.tsx` change (useRouter not wrapped in an app-router provider in the test).
+- uv workspace fails to build (`brain-cost-router` missing `tool.uv.sources` entry in
+  intelligence-service) — blocks `uv run` for Python tests; worked around with an ephemeral venv.
+
+---
+
+## 2026-05-25T14:30Z — Recurring-pattern candidate rule (8th occurrence) — feat-pnl-cm-waterfall
+
+The "verify-the-verifier / vacuous gate" root cause recurred for the **8th time** (7th high-stakes
+child of the migration epic), now in Phase-2 slice-2. The `shadow_compare` registry parity gate —
+already shipped and GREEN across prior slices — was silently permitting a TS↔Python `cm1_mu` formula
+divergence (TS shipped COGS-only `net_revenue − cogs`; Python honest `net_revenue − cogs − variable_costs`),
+because it compares structural fields + decimal-conversion vectors, never the formula text. This was a
+real, material correctness bug (CM1 overstated by the entire variable-cost line) that passed every gate.
+
+Caught at Stage-1 by Rohan via code-read + recall of the Child-4 H-1 bounce; closed in slice-2 with a
+production-path cross-language formula anchor and re-verified at Stage-6.
+
+Evidence #8 appended to the existing proposal (NOT self-adopted):
+`.engineering-os/rule-proposals/2026-05-25__verify-the-verifier-mutation-on-gate.md`
+
+**Action:** review with `/adopt-rule verify-the-verifier-mutation-on-gate` or
+`/reject-rule verify-the-verifier-mutation-on-gate <reason>`. 8 occurrences strongly argue for adoption:
+the gate was already green in production and hid a real bug — it was caught only because a reviewer
+recalled the lineage, which is not a repeatable control.
+
+- **📋 CANDIDATE RULE (Rohan, Stage-6, 2026-05-25) — `feat-marketing-acquisition` (Phase-2 slice 4).** Recurring root cause across ≥3 runs (slices 3 & 4 + metric-engine/pnl divergence retros): the ratified slice-table shorthand cannot be trusted as a spec, and speculative pre-builds hidden behind a parity "shadow-phase" carve diverge from legacy silently. Proposal `.engineering-os/rule-proposals/2026-05-25__verify-legacy-formula-at-stage1-not-slice-table.md` would make "read the real legacy formula at Stage 1/2 + reconcile/decommission divergent pre-builds" a mandatory gate. Review with `/brain-engineering-os:adopt-rule .engineering-os/rule-proposals/2026-05-25__verify-legacy-formula-at-stage1-not-slice-table.md` or `/reject-rule verify-legacy-formula-at-stage1-not-slice-table <reason>`.

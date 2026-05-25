@@ -22,6 +22,8 @@ export default defineConfig({
     alias: {
       '@brain/lib-metrics': '../../packages/lib-metrics/src/index.ts',
       '@brain/core-auth': '../../apps/core-service/src/domain/auth/brain-claim.ts',
+      '@brain/core-onboarding': '../../apps/core-service/src/application/onboarding/index.ts',
+      '@brain/core-connectors': '../../apps/core-service/src/application/connectors/index.ts',
     },
   },
 });

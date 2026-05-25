@@ -208,108 +208,21 @@ class TestLockedCanonTrueCm2:
 #   clickhouse_sql: "if(total_ad_spend_mu > 0, intDiv(cm2_mu * 10000, total_ad_spend_mu), NULL)"
 # ---------------------------------------------------------------------------
 
-class TestLockedCanonPamer:
-    """LOCKED CANON for pamer_bp. paMER = CM2 / Ad Spend (basis points)."""
+class TestLockedCanonPamerDecommissioned:
+    """LOCKED CANON UPDATE (slice-4): pamer_bp DECOMMISSIONED.
 
-    def test_id_is_pamer_bp(self):
-        m = get_metric("pamer_bp")
-        assert m.id == "pamer_bp", "Canonical id is 'pamer_bp'."
+    The Child-4 pamer_bp (= cm2/total_ad_spend) had NO legacy comparand — it was an
+    invented "profit-adjusted MER" that never matched the legacy acquisition surface and
+    was never consumed by any page. Rohan's slice-4 Stage-1 review removed it from both
+    registries. The canon now LOCKS its ABSENCE.
+    """
 
-    def test_unit_is_bp(self):
-        m = get_metric("pamer_bp")
-        assert m.unit == "bp", (
-            "CANON VIOLATION: pamer unit must be 'bp' (basis points, scale ×10000)."
-        )
+    def test_pamer_not_in_registry(self):
+        with pytest.raises(KeyError):
+            get_metric("pamer_bp")
 
-    def test_parity_class_is_correctness_fixture(self):
-        m = get_metric("pamer_bp")
-        assert m.parity_class == "correctness_fixture"
-
-    def test_formula_is_cm2_over_ad_spend(self):
-        """CANONICAL: paMER = CM2 / Ad Spend (×10000 bp).
-
-        NOT: ad_spend / net_revenue (that is the TS wrong formula).
-        NOT: ad_spend / gross_sales.
-        Canon source: skills/metric-engine/SKILL.md "paMER = profit-adjusted (CM2 basis)".
-        """
-        f = get_metric("pamer_bp").formula_py
-        # Example: cm2=₹80k (8000000p), ad_spend=₹50k (5000000p)
-        # paMER = intDiv(8000000 × 10000, 5000000) = 16000 bp = 1.60x
-        result = f(cm2_mu=8_000_000, total_ad_spend_mu=5_000_000)
-        assert result == 16_000, (
-            f"CANON VIOLATION: pamer_bp canonical result for cm2=₹80k, spend=₹50k "
-            f"is 16000 bp (1.60x). Got {result}. "
-            "The formula must be CM2/ad_spend, NOT ad_spend/net_revenue."
-        )
-
-    def test_pamer_is_not_reciprocal_formula(self):
-        """KILL TEST: The TS wrong formula (ad_spend/net_revenue) produces a DIFFERENT result.
-
-        Using same inputs: ad_spend=5000000, net_revenue=7000000:
-          TS-wrong: ratioToBasisPoints(5000000, 7000000) = 7142 bp (ad_spend / net_revenue)
-          Canonical: ratioToBasisPoints(8000000, 5000000) = 16000 bp (cm2 / ad_spend)
-        These must NOT be equal.
-        """
-        f = get_metric("pamer_bp").formula_py
-        # Canonical: cm2 / ad_spend
-        canonical = f(cm2_mu=8_000_000, total_ad_spend_mu=5_000_000)
-        # Simulate wrong TS formula (ad_spend / net_revenue, reversed operands)
-        # intDiv(5000000 × 10000, 8000000) — reciprocal
-        wrong_reciprocal = (5_000_000 * 10_000) // 8_000_000  # = 6250
-        assert canonical != wrong_reciprocal, (
-            "Test infrastructure error: canonical and reciprocal should differ."
-        )
-        assert canonical == 16_000, f"Canonical paMER: expected 16000, got {canonical}"
-        assert wrong_reciprocal == 6_250, (
-            f"Reciprocal (wrong TS formula): expected 6250 bp, got {wrong_reciprocal}. "
-            "16000 ≠ 6250: the TS was wrong by factor ~2.56. Vikram must fix TS."
-        )
-
-    def test_pamer_zero_ad_spend_returns_null(self):
-        f = get_metric("pamer_bp").formula_py
-        assert f(cm2_mu=8_000_000, total_ad_spend_mu=0) is None, (
-            "paMER must return None when ad_spend=0. CF-C4-RATIO-DIVOP-1."
-        )
-
-    def test_clickhouse_sql_is_cm2_over_ad_spend(self):
-        """paMER ClickHouse SQL: cm2_mu is the numerator; total_ad_spend_mu is the denominator.
-
-        Canonical: intDiv(cm2_mu * 10000, total_ad_spend_mu)
-        TS-wrong:  intDiv(total_ad_spend_mu * 10000, net_revenue_mu)
-        """
-        sql = get_metric("pamer_bp").clickhouse_sql
-        assert "cm2_mu" in sql, "pamer_bp sql must reference cm2_mu (the numerator)"
-        assert "total_ad_spend_mu" in sql, "pamer_bp sql must reference total_ad_spend_mu"
-        assert "intDiv" in sql, "pamer_bp sql must use intDiv (integer FLOOR)"
-        # The intDiv expression must be intDiv(cm2_mu * ..., total_ad_spend_mu)
-        # Verify by checking cm2_mu appears inside intDiv(...) before the comma
-        intdiv_start = sql.index("intDiv(")
-        intdiv_content = sql[intdiv_start:]
-        # Find the position of cm2_mu and total_ad_spend_mu within intDiv(...)
-        # cm2_mu must come first (numerator)
-        cm2_in_intdiv = intdiv_content.find("cm2_mu")
-        spend_in_intdiv = intdiv_content.find("total_ad_spend_mu")
-        assert cm2_in_intdiv != -1, "cm2_mu must be inside intDiv(...)"
-        assert spend_in_intdiv != -1, "total_ad_spend_mu must be inside intDiv(...)"
-        assert cm2_in_intdiv < spend_in_intdiv, (
-            "CANON VIOLATION: in pamer_bp intDiv(...), cm2_mu (numerator) must appear "
-            "before total_ad_spend_mu (denominator). "
-            "The TS had spend/net_revenue instead of cm2/spend — wrong direction."
-        )
-        # Must not use net_revenue as denominator
-        assert "net_revenue_mu" not in sql, (
-            "CANON VIOLATION: pamer_bp clickhouse_sql must not reference net_revenue_mu. "
-            "The denominator is total_ad_spend_mu, not net_revenue_mu."
-        )
-
-    def test_ddr_formula_snapshot_documents_cm2_numerator(self):
-        row = get_ddr_row("pamer_bp")
-        assert row is not None
-        snapshot = row.formula_snapshot
-        assert "cm2_mu" in snapshot
-        assert "total_ad_spend_mu" in snapshot, (
-            "DDR formula_snapshot must reference total_ad_spend_mu as the denominator."
-        )
+    def test_pamer_has_no_ddr_row(self):
+        assert get_ddr_row("pamer_bp") is None
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +255,13 @@ class TestLockedCanonPamer:
 # ---------------------------------------------------------------------------
 
 class TestLockedCanonAmer:
-    """LOCKED CANON for amer_bp. aMER = True CM2 / Ad Spend (basis points)."""
+    """LOCKED CANON for amer_bp (slice-4 RECONCILED to legacy).
+
+    aMER = new_customer_revenue / ACQUISITION-CLASSIFIED ad spend (basis points).
+    Legacy: marketing-efficiency.ts:25-28 (aMer = newCustomerRevenue/acquisitionAdSpend);
+    the denominator is the acquisition campaign-intent bucket ONLY (ads-spend.ts:82-84).
+    NOT the Child-4 placeholder (true_cm2/total_ad_spend).
+    """
 
     def test_id_is_amer_bp(self):
         m = get_metric("amer_bp")
@@ -354,89 +273,62 @@ class TestLockedCanonAmer:
             "CANON VIOLATION: amer unit must be 'bp' (basis points, scale ×10000)."
         )
 
-    def test_formula_is_true_cm2_over_ad_spend(self):
-        """CANONICAL: aMER = True CM2 / Ad Spend (×10000 bp).
+    def test_parity_class_is_correctness_fixture(self):
+        m = get_metric("amer_bp")
+        assert m.parity_class == "correctness_fixture"
 
-        Continuing the true_cm2 worked example:
-          true_cm2 = 6620000p (₹66,200), ad_spend = 5000000p (₹50,000)
-          aMER = intDiv(6620000 × 10000, 5000000) = 13240 bp = 1.324x
+    def test_formula_is_nc_revenue_over_acquisition_spend(self):
+        """CANONICAL (slice-4): aMER = nc_revenue / acquisition_ad_spend (×10000 bp).
+
+        Worked anchor with a classification split: nc_revenue=₹60,000 (6000000p),
+        acquisition_ad_spend=₹40,000 (4000000p) — note total spend may be ₹100,000 but only
+        ₹40,000 is acquisition-classified. aMER = intDiv(6000000×10000, 4000000) = 15000 bp = 1.50x.
         """
         f = get_metric("amer_bp").formula_py
-        result = f(true_cm2_mu=6_620_000, total_ad_spend_mu=5_000_000)
-        assert result == 13_240, (
-            f"CANON VIOLATION: amer_bp worked example. "
-            f"Expected 13240 bp (1.324x True-CM2/spend). Got {result}. "
-            "The formula must be True-CM2/ad_spend, NOT ad_spend/gross_sales. "
-            "CF-C4-DDR-TRUE-CM2-1."
+        result = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=4_000_000)
+        assert result == 15_000, (
+            f"CANON VIOLATION: amer_bp worked example. Expected 15000 bp (1.50x). Got {result}. "
+            "aMER = nc_revenue / ACQUISITION-classified spend, NOT true_cm2/total_spend."
         )
 
-    def test_amer_lt_pamer_when_rto_nonzero(self):
-        """INVARIANT: aMER ≤ paMER always (RTO provision makes True-CM2 ≤ CM2).
-
-        This invariant FAILS with the wrong TS formula (ad_spend/gross_sales)
-        because that is a completely different metric with no relationship to paMER.
+    def test_amer_kill_use_total_spend_mutant(self):
+        """KILL TEST: using total_ad_spend (10000000) instead of the acquisition bucket
+        (4000000) gives 6000 bp, NOT the canon 15000 bp. The load-bearing legacy correction.
         """
-        pamer_f = get_metric("pamer_bp").formula_py
-        amer_f = get_metric("amer_bp").formula_py
-
-        pamer = pamer_f(cm2_mu=8_000_000, total_ad_spend_mu=5_000_000)  # 16000
-        amer = amer_f(true_cm2_mu=6_620_000, total_ad_spend_mu=5_000_000)  # 13240
-        assert amer <= pamer, (
-            f"CANON VIOLATION: aMER ({amer}) must be ≤ paMER ({pamer}). "
-            "If aMER > paMER, the formula is wrong — aMER adjusts for RTO cost, "
-            "making it more conservative than paMER."
-        )
-
-    def test_amer_equals_pamer_when_zero_rto(self):
-        """When RTO=0, True-CM2 = CM2, so aMER = paMER."""
-        pamer_f = get_metric("pamer_bp").formula_py
-        amer_f = get_metric("amer_bp").formula_py
-
-        cm2_mu = 8_000_000
-        ad_spend = 5_000_000
-        pamer = pamer_f(cm2_mu=cm2_mu, total_ad_spend_mu=ad_spend)
-        # true_cm2 = cm2 when rto_orders = 0
-        amer = amer_f(true_cm2_mu=cm2_mu, total_ad_spend_mu=ad_spend)
-        assert amer == pamer, (
-            f"When RTO=0, true_cm2=cm2, so aMER should equal paMER. "
-            f"paMER={pamer}, aMER={amer}. Mismatch indicates wrong formula."
-        )
-
-    def test_amer_not_gross_sales_ratio(self):
-        """KILL TEST: The TS wrong formula (ad_spend/gross_sales) gives a different result.
-
-        With gross_sales=10000000, ad_spend=5000000:
-          TS-wrong: intDiv(5000000 × 10000, 10000000) = 5000 bp (50%)
-          Canonical: intDiv(6620000 × 10000, 5000000) = 13240 bp (1.324x)
-        These must not be equal.
-        """
-        # Simulate the wrong TS formula
-        ad_spend = 5_000_000
-        gross_sales = 10_000_000
-        wrong_result = (ad_spend * 10_000) // gross_sales  # = 5000
-
         f = get_metric("amer_bp").formula_py
-        canonical_result = f(true_cm2_mu=6_620_000, total_ad_spend_mu=ad_spend)  # = 13240
-
-        assert wrong_result != canonical_result, (
-            "Test infrastructure error: wrong and canonical results must differ."
+        canon = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=4_000_000)
+        mutant = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=10_000_000)
+        assert canon == 15_000
+        assert mutant == 6_000
+        assert canon != mutant, (
+            "CANON VIOLATION: aMER must use acquisition-classified spend, not total spend."
         )
-        assert wrong_result == 5_000, f"Wrong TS formula result: expected 5000, got {wrong_result}"
-        assert canonical_result == 13_240, f"Canonical: expected 13240, got {canonical_result}"
 
-    def test_clickhouse_sql_is_true_cm2_over_ad_spend(self):
+    def test_amer_zero_acquisition_spend_returns_null(self):
+        f = get_metric("amer_bp").formula_py
+        assert f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=0) is None, (
+            "aMER must return None when acquisition_ad_spend=0. CF-C4-RATIO-DIVOP-1."
+        )
+
+    def test_clickhouse_sql_is_nc_revenue_over_acquisition_spend(self):
         sql = get_metric("amer_bp").clickhouse_sql
-        assert "total_ad_spend_mu" in sql
-        assert "intDiv" in sql
-        # The ClickHouse SQL must inline the true_cm2 formula since true_cm2 is derived
-        # (it is not a pre-materialized column — it embeds the RTO provision)
-        assert "cm2_mu" in sql, "amer_bp SQL must reference cm2_mu (base for true_cm2)"
-        assert "rto_orders" in sql, "amer_bp SQL must reference rto_orders (RTO provision input)"
-        # Must NOT reference gross_sales as the denominator
-        assert "gross_sales_mu" not in sql, (
-            "CANON VIOLATION: amer_bp clickhouse_sql must not reference gross_sales_mu. "
-            "The TS had 'ad_spend / gross_sales' — that is NOT aMER."
+        assert "new_customer_revenue_mu" in sql, "amer_bp SQL numerator must be new_customer_revenue_mu"
+        assert "acquisition_ad_spend_mu" in sql, "amer_bp SQL denominator must be acquisition_ad_spend_mu"
+        assert "intDiv" in sql, "amer_bp sql must use intDiv (integer FLOOR)"
+        # Must NOT use total_ad_spend or true_cm2 (the Child-4 placeholder basis)
+        assert "true_cm2" not in sql, (
+            "CANON VIOLATION: amer_bp must NOT use true_cm2 (the Child-4 placeholder)."
         )
+        # numerator before denominator inside intDiv(...)
+        intdiv_content = sql[sql.index("intDiv("):]
+        assert intdiv_content.find("new_customer_revenue_mu") < intdiv_content.find("acquisition_ad_spend_mu")
+
+    def test_ddr_formula_snapshot_documents_acquisition_denominator(self):
+        row = get_ddr_row("amer_bp")
+        assert row is not None
+        snapshot = row.formula_snapshot
+        assert "new_customer_revenue_mu" in snapshot
+        assert "acquisition_ad_spend_mu" in snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -583,23 +475,21 @@ class TestCanonCrossMetricInvariants:
             "RTO provision is always non-negative."
         )
 
-    def test_amer_le_pamer(self):
-        """INVARIANT: amer_bp ≤ pamer_bp (True CM2 ≤ CM2 → aMER ≤ paMER)."""
-        pamer = get_metric("pamer_bp").formula_py(
-            cm2_mu=8_000_000, total_ad_spend_mu=5_000_000
-        )
-        amer = get_metric("amer_bp").formula_py(
-            true_cm2_mu=6_620_000, total_ad_spend_mu=5_000_000
-        )
-        assert amer is not None and pamer is not None
-        assert amer <= pamer, (
-            f"aMER ({amer} bp) must be ≤ paMER ({pamer} bp). "
-            "Both are non-null and use same ad_spend denominator; aMER adjusts for RTO."
+    def test_amer_uses_acquisition_denominator_not_total(self):
+        """INVARIANT (slice-4): aMER uses the acquisition-classified spend bucket, which is
+        ≤ total spend, so aMER computed with total spend understates the true aMER."""
+        f = get_metric("amer_bp").formula_py
+        amer_acq = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=4_000_000)
+        amer_total = f(new_customer_revenue_mu=6_000_000, acquisition_ad_spend_mu=10_000_000)
+        assert amer_acq is not None and amer_total is not None
+        assert amer_acq > amer_total, (
+            f"aMER on acquisition spend ({amer_acq}) must exceed aMER on total spend ({amer_total}) "
+            "when acquisition spend < total spend. Using total spend understates aMER."
         )
 
-    def test_all_four_metrics_in_ddr_as_parity_gap(self):
-        """The 4 brain-native metrics are in the DDR with parity_gap=True."""
-        for mid in ("true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp"):
+    def test_brain_native_metrics_in_ddr_as_parity_gap(self):
+        """The Brain-native parity_gap metrics are in the DDR (pamer_bp decommissioned slice-4)."""
+        for mid in ("true_cm2_mu", "amer_bp", "ltv_cac_bp"):
             row = get_ddr_row(mid)
             assert row is not None, f"DDR row missing for {mid!r}"
             assert row.parity_gap is True, f"{mid}: parity_gap must be True"
@@ -617,7 +507,7 @@ class TestCanonCrossMetricInvariants:
         """
         expected = {
             "true_cm2_mu": "mu",
-            "pamer_bp":    "bp",
+            # pamer_bp DECOMMISSIONED (slice-4)
             "amer_bp":     "bp",
             "ltv_cac_bp":  "bp",
         }
@@ -680,37 +570,22 @@ LOCKED_CANON_PARITY_GATE_CONTRACT = {
             "cm2_mu - (rto_orders × avg_rto_cost_per_order_mu) — flat configured per-order cost"
         ),
     },
-    "pamer_bp": {
-        "kind": "ratio",
-        "unit": "bp",
-        "scale": 10_000,
-        "formula_description": "intDiv(cm2_mu * 10000, total_ad_spend_mu)",
-        "inputs": ["cm2_mu", "total_ad_spend_mu"],
-        "worked_example": {
-            "cm2_mu": 8_000_000, "total_ad_spend_mu": 5_000_000,
-            "expected_result": 16_000,  # 1.60x
-        },
-        "ts_wrong_formula": (
-            "ratioToBasisPoints(total_ad_spend_mu, net_revenue_mu) "
-            "— reciprocal, wrong operands (ad_spend / net_revenue instead of cm2 / ad_spend)"
-        ),
-    },
+    # pamer_bp DECOMMISSIONED (slice-4) — no legacy comparand; removed from the contract.
     "amer_bp": {
         "kind": "ratio",
         "unit": "bp",
         "scale": 10_000,
         "formula_description": (
-            "intDiv(true_cm2_mu * 10000, total_ad_spend_mu); "
-            "true_cm2_mu = cm2_mu - intDiv(rto_orders * cost_base, total_orders_count)"
+            "intDiv(new_customer_revenue_mu * 10000, acquisition_ad_spend_mu)"
         ),
-        "inputs": ["true_cm2_mu", "total_ad_spend_mu"],
+        "inputs": ["new_customer_revenue_mu", "acquisition_ad_spend_mu"],
         "worked_example": {
-            "true_cm2_mu": 6_620_000, "total_ad_spend_mu": 5_000_000,
-            "expected_result": 13_240,  # 1.324x
+            "new_customer_revenue_mu": 6_000_000, "acquisition_ad_spend_mu": 4_000_000,
+            "expected_result": 15_000,  # 1.50x — acquisition-classified spend (₹40k), not total (₹100k)
         },
         "ts_wrong_formula": (
-            "ratioToBasisPoints(total_ad_spend_mu, gross_sales_mu) "
-            "— completely different metric (ad_spend / gross_sales, not True-CM2 / ad_spend)"
+            "intDiv(new_customer_revenue_mu * 10000, total_ad_spend_mu) "
+            "— uses total spend instead of the acquisition-classified bucket (slice-4 landmine)"
         ),
     },
     "ltv_cac_bp": {
@@ -736,9 +611,9 @@ LOCKED_CANON_PARITY_GATE_CONTRACT = {
 class TestLockedCanonContractStructure:
     """Verify the locked canon contract data structure is self-consistent."""
 
-    def test_contract_covers_all_four_divergent_metrics(self):
-        """The contract must cover all 4 metrics Shreya H-1 identified."""
-        required = {"true_cm2_mu", "pamer_bp", "amer_bp", "ltv_cac_bp"}
+    def test_contract_covers_divergent_metrics(self):
+        """The contract must cover the divergent metrics (pamer_bp decommissioned slice-4)."""
+        required = {"true_cm2_mu", "amer_bp", "ltv_cac_bp"}
         assert required.issubset(set(LOCKED_CANON_PARITY_GATE_CONTRACT.keys())), (
             f"Contract missing metrics. Required: {required}"
         )
@@ -765,17 +640,14 @@ class TestLockedCanonContractStructure:
         assert contract.get("ts_wrong_unit") == "x100"
         assert contract.get("ts_wrong_scale") == 100
 
-    def test_pamer_ts_wrong_formula_documented(self):
-        contract = LOCKED_CANON_PARITY_GATE_CONTRACT["pamer_bp"]
-        assert "reciprocal" in contract["ts_wrong_formula"].lower() or \
-               "net_revenue" in contract["ts_wrong_formula"], (
-            "Contract must document the reciprocal/net_revenue wrong formula."
-        )
+    def test_pamer_decommissioned_not_in_contract(self):
+        """pamer_bp DECOMMISSIONED (slice-4) — no longer in the locked-canon contract."""
+        assert "pamer_bp" not in LOCKED_CANON_PARITY_GATE_CONTRACT
 
     def test_amer_ts_wrong_formula_documented(self):
         contract = LOCKED_CANON_PARITY_GATE_CONTRACT["amer_bp"]
-        assert "gross_sales" in contract["ts_wrong_formula"], (
-            "Contract must document the gross_sales wrong formula."
+        assert "total_ad_spend" in contract["ts_wrong_formula"], (
+            "Contract must document the 'use total spend' wrong formula (slice-4 landmine)."
         )
 
     def test_true_cm2_ts_wrong_formula_documented(self):

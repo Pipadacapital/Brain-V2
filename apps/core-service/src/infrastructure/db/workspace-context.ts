@@ -73,12 +73,18 @@ let _pool: Pool | undefined
 function getPool(): Pool {
   if (_pool) return _pool
 
-  const directUrl = process.env['DIRECT_URL']
+  // Slice C (feat-onboarding-membership-db): DATABASE_URL is the Founder-mandated
+  // key name for the LOCAL dev Postgres (docker, :5432 session-mode). It is an
+  // ACCEPTED ALIAS for DIRECT_URL — both must point at the SAME session-mode
+  // (direct, :5432) connection string. We do NOT build a second pool (Single-
+  // Primitive Rule): the one session-context primitive serves every workspace-
+  // scoped read/write, including onboarding/membership. DIRECT_URL wins if both set.
+  const directUrl = process.env['DIRECT_URL'] ?? process.env['DATABASE_URL']
   if (!directUrl) {
     throw new Error(
-      '[workspace-context] DIRECT_URL is not set — the RLS session-context ' +
-        'primitive cannot initialise. All workspace-scoped queries require a ' +
-        'direct (session-mode) connection string on :5432.',
+      '[workspace-context] neither DIRECT_URL nor DATABASE_URL is set — the RLS ' +
+        'session-context primitive cannot initialise. All workspace-scoped queries ' +
+        'require a direct (session-mode) connection string on :5432.',
     )
   }
 
