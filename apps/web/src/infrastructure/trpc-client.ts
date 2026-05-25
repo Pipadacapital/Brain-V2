@@ -11,6 +11,14 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import superjson from 'superjson';
 import type { BrainRouter } from '@brain/api-gateway';
+import { createSupabaseBrowserClient } from './supabase/client.js';
+
+// Slice A: when real auth is active (the default), every tRPC call carries the
+// Supabase access token as `Authorization: Bearer`. The gateway JWKS-verifies it
+// and derives workspace_id from the verified claim — it IGNORES x-workspace-id on
+// the authed path (B3 / N1). The x-workspace-id header is sent ONLY in the LOCAL
+// harness so the offline stub path can pick a workspace.
+const IS_LOCAL_HARNESS = process.env.NEXT_PUBLIC_BRAIN_LOCAL_HARNESS === 'true';
 
 // ---------------------------------------------------------------------------
 // API Gateway URL — resolved from env at build time (or runtime in Next).
@@ -46,12 +54,33 @@ export function createTrpcClient(workspaceId?: string) {
       httpBatchLink({
         url: `${getApiUrl()}/trpc`,
         transformer: superjson,
-        headers() {
+        async headers() {
           const h: Record<string, string> = {
             'x-trace-id': globalThis.crypto?.randomUUID?.() ?? 'browser',
           };
-          if (workspaceId) {
-            h['x-workspace-id'] = workspaceId;
+
+          if (IS_LOCAL_HARNESS) {
+            // Offline harness ONLY: the stub gateway path reads x-workspace-id.
+            // On the real-auth path the server IGNORES this header (B3/N1).
+            if (workspaceId) {
+              h['x-workspace-id'] = workspaceId;
+            }
+            return h;
+          }
+
+          // REAL auth: attach the verified Supabase access token as a Bearer.
+          // CF-C6-PII-CLIENT-1: the token is a credential — never logged.
+          try {
+            const supabase = createSupabaseBrowserClient();
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+            if (session?.access_token) {
+              h['authorization'] = `Bearer ${session.access_token}`;
+            }
+          } catch {
+            // No session / misconfig → send no Bearer; the gateway returns
+            // UNAUTHORIZED and the middleware bounces to /auth/login.
           }
           return h;
         },

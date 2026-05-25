@@ -100,10 +100,21 @@ export function createBrainRouter(
         }),
       )
       .mutation(({ ctx, input }) => {
-        // In Phase-0: accept if workspaceId matches claim (tenancy enforced at callers).
-        // Production: validate workspace membership in core-service.
+        // B4 (Slice A): the previous code returned the client-supplied workspaceId
+        // verbatim. There are NO callers enforcing tenancy first — that comment was
+        // false. Until slice C's DbMembershipResolver supports real multi-workspace
+        // switching, the only workspace a user may switch to is the one their
+        // verified claim already grants. Anything else is a spoof attempt.
+        if (input.workspaceId !== ctx.claim.workspaceId) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message:
+              `workspace.switch denied: requested workspace is not in the verified claim. ` +
+              `request_id=${ctx.requestId}`,
+          });
+        }
         return {
-          workspaceId: input.workspaceId,
+          workspaceId: ctx.claim.workspaceId,
           requestId: ctx.requestId,
         };
       }),
@@ -1281,9 +1292,11 @@ export function createBrainRouter(
   const deviceRouter = router({
     /** Register / rotate an Expo push token. Idempotent upsert. */
     registerPushToken: workspaceProc
+      // S4 (Slice A): user_id is NOT a client input — it is derived from the
+      // verified claim. A client must not be able to register a push token on
+      // behalf of another user.
       .input(
         z.object({
-          user_id: z.string().uuid('user_id must be a UUID'),
           device_id: z.string().min(1),
           expo_push_token: z.string().startsWith('ExponentPushToken'),
         }),
@@ -1298,7 +1311,7 @@ export function createBrainRouter(
 
         const result = await dataPlane.registerPushToken({
           workspace_id: ctx.workspaceId,
-          user_id: input.user_id,
+          user_id: ctx.claim.userId, // S4: from verified claim, never client input
           device_id: input.device_id,
           expo_push_token: input.expo_push_token,
         });
