@@ -30,6 +30,7 @@ import {
 import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
+  assertLadderDefinitionId,
   getMetricScale,
 } from '../domain/registry-mapper.js';
 import {
@@ -208,6 +209,83 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
+  // store router — workspace tier, requireRole(ANALYST)
+  // Phase-2 slice-1 (feat-store-order-fact-layer): the canonical store/order
+  // fact layer + revenue ladder. CF-C6-RENDER-ONLY-1: zero arithmetic here —
+  // all values from the data plane. CF-C6-REGISTRY-ONLY-BFF-1: every ladder
+  // step traces to a registry definition_id. CF-C6-BIGINT-JSON-1: _mu = bigint.
+  // -------------------------------------------------------------------
+  const storeRouter = router({
+    /** Store summary + revenue ladder for a date range. requireRole(ANALYST). */
+    summary: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        // CF-C6-GATEWAY-TENANCY-1: requireRole before data-plane call.
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.summary requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        const result = await dataPlane.getStoreSummary({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+
+        // G-REGISTRY-ONLY: every ladder step must trace to a registry definition_id.
+        for (const step of result.ladder) {
+          assertLadderDefinitionId(step);
+        }
+
+        return {
+          summary: result.summary,
+          ladder: result.ladder,
+          data_epoch: result.data_epoch,   // CF-C6-AS-OF-STAMP-1
+          request_id: ctx.requestId,
+        };
+      }),
+
+    /** Revenue ladder only (the /store strip). requireRole(ANALYST). */
+    revenueLadder: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.revenueLadder requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        const result = await dataPlane.getStoreSummary({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+
+        for (const step of result.ladder) {
+          assertLadderDefinitionId(step);
+        }
+
+        return {
+          ladder: result.ladder,
+          currency_code: result.summary.currency_code,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+  });
+
+  // -------------------------------------------------------------------
   // morningBrief router — workspace tier
   // CF-C6-MB-IDEMPOTENCY-1: submitResponse uses Redis dedup.
   // CF-C6-MB-GRADUATED-LABEL-1: status is server-driven.
@@ -358,6 +436,7 @@ export function createBrainRouter(
     auth: authRouter,
     workspace: workspaceRouter,
     metrics: metricsRouter,
+    store: storeRouter,
     morningBrief: morningBriefRouter,
     device: deviceRouter,
   });

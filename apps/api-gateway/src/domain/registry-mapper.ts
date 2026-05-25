@@ -12,7 +12,7 @@
 // invariant — not just a static type check.
 
 import { METRIC_REGISTRY, type MetricDefinition } from '@brain/lib-metrics';
-import type { KpiSummaryRow, PnlWaterfallRow } from './proto-types.js';
+import type { KpiSummaryRow, PnlWaterfallRow, StoreRevenueLadderStep } from './proto-types.js';
 
 // _METRIC_COLUMNS mirrors query_gateway.py's _METRIC_COLUMNS tuple.
 // Every BFF output field must be in this set (CF-C6-REGISTRY-ONLY-BFF-1).
@@ -112,6 +112,35 @@ export function assertWaterfallDefinitionId(step: PnlWaterfallRow): void {
   if (!isKnown) {
     throw new Error(
       `G-REGISTRY-ONLY VIOLATION: P&L waterfall definition_id="${step.definition_id}" ` +
+        `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
+    );
+  }
+}
+
+// STORE_LADDER_DEFINITION_IDS: the ordered registry ids for the /store revenue ladder.
+// Phase-2 slice-1 (feat-store-order-fact-layer). Each MUST trace to a registry def.
+export const STORE_LADDER_DEFINITION_IDS = [
+  'gross_sales_mu',
+  'net_sales_mu',
+  'net_net_tax_mu',
+  'net_revenue_mu',
+  'realized_revenue_mu',
+] as const;
+
+/**
+ * Validate that a store revenue-ladder step's definition_id is a known registry metric.
+ * CF-C6-REGISTRY-ONLY-BFF-1: no ad-hoc derived rung in the BFF.
+ * Mutant probe: a step with definition_id "foo_mu" → this throws.
+ */
+export function assertLadderDefinitionId(step: StoreRevenueLadderStep): void {
+  const isKnown =
+    STORE_LADDER_DEFINITION_IDS.includes(
+      step.definition_id as (typeof STORE_LADDER_DEFINITION_IDS)[number],
+    ) || step.definition_id in METRIC_REGISTRY;
+
+  if (!isKnown) {
+    throw new Error(
+      `G-REGISTRY-ONLY VIOLATION: store ladder definition_id="${step.definition_id}" ` +
         `is not in the metric registry. CF-C6-REGISTRY-ONLY-BFF-1.`,
     );
   }

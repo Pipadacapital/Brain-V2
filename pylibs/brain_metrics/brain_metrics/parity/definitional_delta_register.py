@@ -287,6 +287,49 @@ _ROW_TRUE_CM2 = DDRRow(
     ),
 )
 
+_ROW_REALIZED_REVENUE = DDRRow(
+    # Legacy: NONE — compute-daily.ts stops at the daily revenue figure; it never
+    # subtracts post-sale reversals (cancellations / RTO / refunds) from revenue.
+    # Phase-2 slice-1 (feat-store-order-fact-layer). CF-C2-realized-1.
+    legacy_formula="NONE — compute-daily.ts has no realized-revenue field (no post-sale reversal subtraction from daily revenue)",
+    brain_formula="realized_revenue_mu",
+    reason=(
+        "Realized Revenue is a Brain-native metric with NO legacy comparand — it is "
+        "the honest billing base. Realized = Net Revenue − Cancelled − RTO-reversed − "
+        "Refunded. The legacy system reports daily net revenue but never deducts post-sale "
+        "reversals from it, so a high-cancel / high-RTO day shows legacy revenue that was "
+        "never actually realized. This metric must be verified by a correctness-fixture "
+        "worked example, NEVER by a shadow-compare gate (there is no legacy value to "
+        "compare against). Rohan's Stage-6 sign-off must explicitly acknowledge no legacy "
+        "shadow. Note: this slice subtracts the reversal aggregates as facts; per-SKU GST "
+        "feeds the net_revenue_mu upstream via the India RegionAdapter (total_tax_mu DDR row)."
+    ),
+    shadow_compare_classification=CORRECTNESS_FIXTURE,
+    delta_direction_and_magnitude=(
+        "Not applicable — no legacy comparand. "
+        "realized_revenue_mu <= net_revenue_mu always (reversals are non-negative). "
+        "Worked example (CF-C2-realized-1): "
+        "net_revenue=4960000p (₹49,600), cancelled=120000p, rto_reversed=300000p, "
+        "refunded=80000p → realized = 4960000 − 120000 − 300000 − 80000 = 4460000p (₹44,600). "
+        "Realized margin = 4460000/4960000 = 89.9% of reported net revenue on this day."
+    ),
+    business_impact=(
+        "Realized Revenue is the honest %-of-GMV billing base and the trustworthy top of "
+        "the contribution-margin ladder. For high-RTO / high-cancel Indian-D2C brands the "
+        "gap between reported net revenue and realized revenue is strategically material — "
+        "billing or CM math on un-realized revenue overstates health. This metric makes the "
+        "reversal leak visible at the top of the /store ladder."
+    ),
+    parity_gap=True,  # Brain-native: STRUCTURAL RULE 1 applies (no shadow-compare GREEN)
+    child_dependency=None,
+    formula_snapshot=(
+        "realized_revenue_mu = net_revenue_mu - cancelled_revenue_mu "
+        "- rto_reversed_revenue_mu - refunded_revenue_mu (integer subtraction, paise); "
+        "ClickHouse: toInt64(net_revenue_mu - cancelled_revenue_mu "
+        "- rto_reversed_revenue_mu - refunded_revenue_mu)"
+    ),
+)
+
 _ROW_PAMER = DDRRow(
     legacy_formula="NONE — paMER is Brain-native; no legacy comparand",
     brain_formula="pamer_bp",
@@ -507,6 +550,7 @@ DEFINITIONAL_DELTA_REGISTER: dict[str, DDRRow] = {
     "misc_expenses_prorated_mu": _ROW_MISC_PRORATED,
     "cogs_mu":                   _ROW_COGS,
     "true_cm2_mu":               _ROW_TRUE_CM2,
+    "realized_revenue_mu":       _ROW_REALIZED_REVENUE,
     "pamer_bp":                  _ROW_PAMER,
     "amer_bp":                   _ROW_AMER,
     "ltv_cac_bp":                _ROW_LTV_CAC,

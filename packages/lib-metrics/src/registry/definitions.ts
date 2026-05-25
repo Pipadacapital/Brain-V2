@@ -17,6 +17,59 @@ import type { MetricDefinition } from './types.js';
 // ---------------------------------------------------------------------------
 // Revenue ladder
 // ---------------------------------------------------------------------------
+//
+// Phase-2 slice-1 (feat-store-order-fact-layer) additions: the ladder head
+// (gross_sales_mu, total_discount_mu, total_tax_mu) was previously Python-only.
+// Added here so the /store revenue ladder lights up TS-side end-to-end. Each is
+// byte-identical (id/kind/unit/scale/display_only/parity_class) to the Python
+// counterpart in pylibs/brain_metrics/registry/definitions.py — the parity gate
+// enforces structural equality for shared shadow_compare metrics.
+//
+// NOTE on spec name mapping: the slice spec calls the net-of-tax rung
+// "net_sales_net_tax_mu". The canonical Brain id for that concept is the existing
+// `net_net_tax_mu` (defined below). Single-Primitive Rule: ONE def per concept —
+// we do NOT add a second id. The /store page labels net_net_tax_mu as "Net of tax".
+
+export const GROSS_SALES_MU: MetricDefinition = {
+  id: 'gross_sales_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  // Gross sales = sum of Shopify line-item prices (before discounts/tax).
+  // Passthrough from the raw fact layer (per-line-item SUM done in ingestion).
+  formula_ts: (gross_sales_mu: bigint): bigint => gross_sales_mu,
+  clickhouse_sql: 'toInt64(gross_sales_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+export const TOTAL_DISCOUNT_MU: MetricDefinition = {
+  id: 'total_discount_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  // Total discounts applied (positive value representing the reduction).
+  formula_ts: (total_discount_mu: bigint): bigint => total_discount_mu,
+  clickhouse_sql: 'toInt64(total_discount_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+export const TOTAL_TAX_MU: MetricDefinition = {
+  id: 'total_tax_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  // CF-C4-DDR-GST-TAX-1: Brain = SUM(per-SKU event-level GST-2.0 line tax via the
+  // India RegionAdapter) — NEVER a day-level blended rate. Legacy = ShopifyQL
+  // day-level aggregate. DIFFERENT INGEST PATHS — carried as a DDR row with
+  // child_dependency: child-3-shopify-connector. The blended legacy value is NOT
+  // silently matched; the per-SKU formula is the canonical Brain definition.
+  formula_ts: (total_tax_mu: bigint): bigint => total_tax_mu,
+  clickhouse_sql: 'toInt64(total_tax_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
 
 export const NET_SALES_MU: MetricDefinition = {
   id: 'net_sales_mu',
@@ -55,6 +108,31 @@ export const NET_REVENUE_MU: MetricDefinition = {
   clickhouse_sql: 'net_net_tax_mu + shipping_revenue_mu',
   display_only: false,
   parity_class: 'shadow_compare',
+};
+
+// Phase-2 slice-1: the honest billing base. Realized revenue survives the events
+// that legacy "net revenue" ignores — cancellations, RTO reversals, and refunds.
+// Brain-native: there is NO legacy comparand (compute-daily.ts stops at net revenue;
+// it never subtracts post-sale reversals from the daily revenue figure). Routed to
+// the correctness-fixture gate; parity_gap:true; a DDR row pins the formula.
+// CF-C2-realized-1 worked example: net_revenue=4_960_000p, cancelled=120_000p,
+// rto_reversed=300_000p, refunded=80_000p → realized = 4_960_000 − 500_000 = 4_460_000p.
+export const REALIZED_REVENUE_MU: MetricDefinition = {
+  id: 'realized_revenue_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (
+    net_revenue_mu: bigint,
+    cancelled_revenue_mu: bigint,
+    rto_reversed_revenue_mu: bigint,
+    refunded_revenue_mu: bigint,
+  ): bigint =>
+    net_revenue_mu - cancelled_revenue_mu - rto_reversed_revenue_mu - refunded_revenue_mu,
+  clickhouse_sql:
+    'toInt64(net_revenue_mu - cancelled_revenue_mu - rto_reversed_revenue_mu - refunded_revenue_mu)',
+  display_only: false,
+  parity_class: 'correctness_fixture', // parity_gap:true — no legacy shadow
 };
 
 // ---------------------------------------------------------------------------
@@ -328,9 +406,13 @@ export const LTV_CAC_BP: MetricDefinition = {
 // ---------------------------------------------------------------------------
 
 export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
+  gross_sales_mu: GROSS_SALES_MU,
+  total_discount_mu: TOTAL_DISCOUNT_MU,
+  total_tax_mu: TOTAL_TAX_MU,
   net_sales_mu: NET_SALES_MU,
   net_net_tax_mu: NET_NET_TAX_MU,
   net_revenue_mu: NET_REVENUE_MU,
+  realized_revenue_mu: REALIZED_REVENUE_MU,
   cm1_mu: CM1_MU,
   cm2_mu: CM2_MU,
   misc_expenses_prorated_mu: MISC_EXPENSES_PRORATED_MU,

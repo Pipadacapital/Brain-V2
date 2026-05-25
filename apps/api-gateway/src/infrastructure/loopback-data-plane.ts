@@ -20,6 +20,8 @@ import type {
   MetricRow,
   KpiSummaryRow,
   PnlWaterfallRow,
+  StoreSummaryRow,
+  StoreRevenueLadderStep,
   MorningBrief,
   SubmitInsightResult,
   RegisterPushTokenResult,
@@ -35,23 +37,92 @@ import type {
 const SUGANDH_LOK_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
 const DATA_EPOCH = new Date('2026-05-25T00:00:00Z');
 
-/** Sugandh-Lok seed KPI data (registry-derived, deterministic). */
+// ---------------------------------------------------------------------------
+// CANONICAL SEED — single source of truth for the Sugandh-Lok anchor workspace.
+// Phase-2 slice-1 (feat-store-order-fact-layer): BOTH the /store revenue ladder
+// AND the dashboard KPI net_revenue derive from THIS one object, so they are
+// provably the same canonical facts (not two independent stubs). All paise.
+// The revenue ladder is per-SKU-GST-honest: total_tax is the SUM of per-SKU GST,
+// not a blended day rate. Realized subtracts post-sale reversals.
+// ---------------------------------------------------------------------------
+
+const SUGANDH_LOK_CANONICAL = {
+  period: '2026-04-01/2026-04-30',
+  currency_code: 'INR',
+  // Revenue ladder (April 2026)
+  gross_sales_mu: 218_000_000n,      // ₹21.8L gross
+  total_discount_mu: 12_000_000n,    // ₹1.2L discounts
+  net_sales_mu: 206_000_000n,        // gross - discount = ₹20.6L
+  total_tax_mu: 18_000_000n,         // ₹1.8L — SUM of per-SKU GST 2.0 (mixed slabs)
+  net_net_tax_mu: 188_000_000n,      // net_sales - tax
+  shipping_revenue_mu: 3_000_000n,   // ₹30K shipping collected
+  // net_revenue = net_net_tax + shipping = 191_000_000? Seed chosen so the
+  // dashboard's existing ₹18.5L net_revenue stays the realized headline:
+  net_revenue_mu: 191_000_000n,      // ₹19.1L
+  // Post-sale reversals (the honest leak):
+  cancelled_revenue_mu: 2_000_000n,  // ₹20K cancelled
+  rto_reversed_revenue_mu: 3_500_000n, // ₹35K RTO-reversed
+  refunded_revenue_mu: 500_000n,     // ₹5K refunded
+  realized_revenue_mu: 185_000_000n, // ₹18.5L — net_revenue − 6_000_000 reversals
+  order_count: 1_247n,
+  aov_mu: 1_483n,                    // ~₹14.83 mean (display)
+  // Margin ladder (unchanged from prior dashboard seed)
+  cm2_mu: 32_000_000n,
+  cm3_mu: 28_000_000n,
+  rto_rate_bp: 1_800,
+  blended_roas_x100: 285,
+  conversion_rate_bp: 230,
+} as const;
+
+/** Sugandh-Lok seed KPI data — DERIVED from the canonical seed (single source). */
 const SUGANDH_LOK_KPI: KpiSummaryRow = {
   workspace_id: SUGANDH_LOK_WORKSPACE_ID,
-  period: '2026-04-01/2026-04-30',
+  period: SUGANDH_LOK_CANONICAL.period,
   data_epoch: DATA_EPOCH,
-  currency_code: 'INR',
-  // All values in paise (1 INR = 100 paise)
-  // April 2026 seed: ₹18.5L net revenue, ₹3.2L CM2, ₹2.8L CM3
-  net_revenue_mu: 185_000_000n,    // ₹18.5L
-  cm2_mu: 32_000_000n,             // ₹3.2L
-  cm3_mu: 28_000_000n,             // ₹2.8L
-  rto_rate_bp: 1_800,              // 18.00%
-  blended_roas_x100: 285,          // 2.85× ROAS (scale=100: display /100)
-  total_orders: 1_247n,
-  aov_mu: 1_483,                   // ~₹148 AOV
-  conversion_rate_bp: 230,         // 2.30%
+  currency_code: SUGANDH_LOK_CANONICAL.currency_code,
+  // CF: net_revenue shown on the dashboard == the realized revenue at the top of
+  // the /store ladder — the SAME canonical fact, not a separate stub number.
+  net_revenue_mu: SUGANDH_LOK_CANONICAL.realized_revenue_mu, // ₹18.5L (canonical)
+  cm2_mu: SUGANDH_LOK_CANONICAL.cm2_mu,
+  cm3_mu: SUGANDH_LOK_CANONICAL.cm3_mu,
+  rto_rate_bp: SUGANDH_LOK_CANONICAL.rto_rate_bp,
+  blended_roas_x100: SUGANDH_LOK_CANONICAL.blended_roas_x100,
+  total_orders: SUGANDH_LOK_CANONICAL.order_count,
+  aov_mu: Number(SUGANDH_LOK_CANONICAL.aov_mu),
+  conversion_rate_bp: SUGANDH_LOK_CANONICAL.conversion_rate_bp,
 };
+
+/** Sugandh-Lok store summary — DERIVED from the canonical seed (single source). */
+function buildSugandhlokStoreSummary(): {
+  summary: StoreSummaryRow;
+  ladder: StoreRevenueLadderStep[];
+} {
+  const c = SUGANDH_LOK_CANONICAL;
+  const summary: StoreSummaryRow = {
+    workspace_id: SUGANDH_LOK_WORKSPACE_ID,
+    period: c.period,
+    data_epoch: DATA_EPOCH,
+    currency_code: c.currency_code,
+    gross_sales_mu: c.gross_sales_mu,
+    total_discount_mu: c.total_discount_mu,
+    net_sales_mu: c.net_sales_mu,
+    total_tax_mu: c.total_tax_mu,
+    net_net_tax_mu: c.net_net_tax_mu,
+    shipping_revenue_mu: c.shipping_revenue_mu,
+    net_revenue_mu: c.net_revenue_mu,
+    realized_revenue_mu: c.realized_revenue_mu,
+    order_count: c.order_count,
+    aov_mu: c.aov_mu,
+  };
+  const ladder: StoreRevenueLadderStep[] = [
+    { definition_id: 'gross_sales_mu', label: 'Gross Sales', value_mu: c.gross_sales_mu },
+    { definition_id: 'net_sales_mu', label: 'Net Sales', value_mu: c.net_sales_mu },
+    { definition_id: 'net_net_tax_mu', label: 'Net of Tax', value_mu: c.net_net_tax_mu },
+    { definition_id: 'net_revenue_mu', label: 'Net Revenue', value_mu: c.net_revenue_mu },
+    { definition_id: 'realized_revenue_mu', label: 'Realized Revenue', value_mu: c.realized_revenue_mu },
+  ];
+  return { summary, ladder };
+}
 
 /** Sugandh-Lok P&L waterfall seed. */
 function buildSugandhlokWaterfall(): PnlWaterfallRow[] {
@@ -277,6 +348,18 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { steps: buildSugandhlokWaterfall(), data_epoch: DATA_EPOCH };
+  }
+
+  async getStoreSummary(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ summary: StoreSummaryRow; ladder: StoreRevenueLadderStep[]; data_epoch: Date }> {
+    // Fail-closed tenancy: mirrors query_metrics UnscopedQueryError.
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    const { summary, ladder } = buildSugandhlokStoreSummary();
+    return { summary, ladder, data_epoch: DATA_EPOCH };
   }
 
   async getMorningBrief(params: {

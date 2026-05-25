@@ -74,6 +74,40 @@ export interface KpiSummaryRow {
   conversion_rate_bp: number | null;
 }
 
+/**
+ * StoreRevenueLadderStep — one rung of the /store revenue ladder.
+ * Phase-2 slice-1 (feat-store-order-fact-layer). value_mu is bigint (int64 paise).
+ * definition_id traces to the metric registry (CF-C6-REGISTRY-ONLY-BFF-1).
+ */
+export interface StoreRevenueLadderStep {
+  definition_id: string;   // registry id, e.g. "realized_revenue_mu"
+  label: string;           // display label, e.g. "Realized Revenue"
+  value_mu: bigint;        // int64 minor units (CF-C6-BIGINT-JSON-1)
+}
+
+/**
+ * StoreSummaryRow — workspace store summary over a date range.
+ * Phase-2 slice-1. All _mu are bigint (int64 minor units). Every field traces to
+ * a registry definition_id (CF-C6-REGISTRY-ONLY-BFF-1).
+ */
+export interface StoreSummaryRow {
+  workspace_id: string;
+  period: string;
+  data_epoch: Date;
+  currency_code: string;
+
+  gross_sales_mu: bigint;
+  total_discount_mu: bigint;
+  net_sales_mu: bigint;
+  total_tax_mu: bigint;
+  net_net_tax_mu: bigint;
+  shipping_revenue_mu: bigint;
+  net_revenue_mu: bigint;
+  realized_revenue_mu: bigint;   // Brain-native honest billing base
+  order_count: bigint;
+  aov_mu: bigint | null;
+}
+
 /** Mirror of PnlWaterfallRow from metrics.proto. */
 export interface PnlWaterfallRow {
   definition_id: string;   // registry id (CF-C6-REGISTRY-ONLY-BFF-1)
@@ -186,6 +220,16 @@ export interface DataPlanePort {
     workspace_id: string;
     date_range: DateRange;
   }): Promise<{ steps: PnlWaterfallRow[]; data_epoch: Date }>;
+
+  /**
+   * Phase-2 slice-1: workspace store summary + revenue ladder.
+   * CF-C6-DATA-SEAM-1: additive method on the SAME port — no second code path.
+   * Returns the canonical revenue ladder (Gross→Net→Net-of-tax→Net Revenue→Realized).
+   */
+  getStoreSummary(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ summary: StoreSummaryRow; ladder: StoreRevenueLadderStep[]; data_epoch: Date }>;
 
   getMorningBrief(params: {
     workspace_id: string;

@@ -197,6 +197,53 @@ net_revenue_mu = MetricDefinition(
     parity_class="shadow_compare",
 )
 
+# ── Realized Revenue (honest billing base — Brain-native, NO legacy comparand) ──
+# Phase-2 slice-1 (feat-store-order-fact-layer). Realized revenue survives the
+# post-sale reversals that legacy "net revenue" ignores: cancellations, RTO
+# reversals, and refunds. compute-daily.ts stops at the daily revenue figure and
+# never subtracts post-sale reversals — so there is NO legacy comparand.
+# parity_gap:true → correctness_fixture gate. DDR row _ROW_REALIZED_REVENUE pins
+# the formula. clickhouse_sql MUST be byte-identical (whitespace-normalized) to
+# the TS counterpart in packages/lib-metrics/src/registry/definitions.ts.
+#
+# WORKED EXAMPLE (CF-C2-realized-1):
+#   net_revenue_mu          = 4_960_000   (₹49,600)
+#   cancelled_revenue_mu    =   120_000   (₹1,200)
+#   rto_reversed_revenue_mu =   300_000   (₹3,000)
+#   refunded_revenue_mu     =    80_000   (₹800)
+#   realized_revenue_mu = 4_960_000 − 120_000 − 300_000 − 80_000 = 4_460_000 (₹44,600)
+def _realized_revenue_mu(
+    net_revenue_mu: int,
+    cancelled_revenue_mu: int,
+    rto_reversed_revenue_mu: int,
+    refunded_revenue_mu: int,
+) -> int:
+    """Realized Revenue = Net Revenue − Cancelled − RTO-reversed − Refunded.
+
+    @paradigm: sql — integer subtraction, no float, no LLM.
+    parity_gap:true — Brain-native; routed to correctness-fixture gate.
+    """
+    return (
+        net_revenue_mu
+        - cancelled_revenue_mu
+        - rto_reversed_revenue_mu
+        - refunded_revenue_mu
+    )
+
+
+realized_revenue_mu = MetricDefinition(
+    id="realized_revenue_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_realized_revenue_mu,
+    clickhouse_sql=(
+        "toInt64(net_revenue_mu - cancelled_revenue_mu "
+        "- rto_reversed_revenue_mu - refunded_revenue_mu)"
+    ),
+    display_only=False,
+    parity_class="correctness_fixture",  # parity_gap:true — no legacy comparand
+)
+
 # ── COGS ──────────────────────────────────────────────────────────────────
 # Legacy: compute-daily.ts — sum of resolveLineItemCogs() per line item (float)
 # Brain: SUM(line_item_mu × coq_rate) — integer per-item, full daily recompute
@@ -819,6 +866,7 @@ METRIC_REGISTRY: dict[str, MetricDefinition] = {
     "total_tax_mu":              total_tax_mu,
     "net_sales_mu":              net_sales_mu,
     "net_revenue_mu":            net_revenue_mu,
+    "realized_revenue_mu":       realized_revenue_mu,
     # Cost components
     "cogs_mu":                   cogs_mu,
     "variable_costs_mu":         variable_costs_mu,
