@@ -56,3 +56,42 @@ export {
 
 export { LocalAesGcmCustody } from '../../infrastructure/secrets/local-aesgcm-custody.js'
 export { HeldProductionCustody, NotImplementedCustodyError } from '../../infrastructure/secrets/production-custody.js'
+
+// Slice E — connector data ingestion (sync + ACL + normalizers + fact-analytics read).
+export {
+  syncConnector,
+  type SyncResult,
+  type SyncDeps,
+  type ConnectorFetch,
+  type SyncWindow,
+  type ShopifyPull,
+  LiveConnectorFetch,
+  defaultConnectorFetch,
+  defaultWindow,
+  shopifyBackfillDays,
+  adsBackfillDays,
+  decimalStringToMinorUnits,
+  microsToMinorUnits,
+  classifyPaymentMethod,
+  resolveGstSlabBp,
+  customerRef,
+  INDIA_DEFAULT_GST_BP,
+  type OrderFact,
+  type LineItemFact,
+  type ProductFact,
+  type AdSpendFact,
+  normalizeShopifyOrder,
+  normalizeShopifyProduct,
+  normalizeMetaSpend,
+  normalizeGoogleSpend,
+  type ShopifyOrderNode,
+  type ShopifyProductNode,
+  type MetaInsightRaw,
+  type GoogleAdsRaw,
+  readStoreSummary,
+  readPnl,
+  readMarketing,
+  type FactStoreSummary,
+  type FactPnl,
+  type FactMarketing,
+} from './sync/index.js'

@@ -14,9 +14,10 @@ vi.mock('@/domain/store/hooks.js', () => ({
     sel({ session: { workspaceId: 'ws-1', isAuthenticated: true } }),
 }));
 
-const { initiateMutate, disconnectMutate, invalidate } = vi.hoisted(() => ({
+const { initiateMutate, disconnectMutate, syncMutate, invalidate } = vi.hoisted(() => ({
   initiateMutate: vi.fn(),
   disconnectMutate: vi.fn(),
+  syncMutate: vi.fn(),
   invalidate: vi.fn(),
 }));
 let initiateOnSuccess: ((d: { authUrl: string }) => void) | undefined;
@@ -41,8 +42,19 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
         },
       },
       disconnect: { useMutation: () => ({ mutate: disconnectMutate, isPending: false }) },
+      sync: { useMutation: () => ({ mutate: syncMutate, isPending: false }) },
     },
-    useUtils: () => ({ connectors: { list: { invalidate } } }),
+    store: { invalidate },
+    pnl: { invalidate },
+    metrics: { invalidate },
+    marketing: { invalidate },
+    useUtils: () => ({
+      connectors: { list: { invalidate } },
+      store: { invalidate },
+      pnl: { invalidate },
+      metrics: { invalidate },
+      marketing: { invalidate },
+    }),
   },
 }));
 
@@ -104,5 +116,21 @@ describe('IntegrationsContent (Slice D — real Connect/Disconnect)', () => {
     const disconnectBtn = screen.getByRole('button', { name: /disconnect/i });
     await user.click(disconnectBtn);
     expect(disconnectMutate).toHaveBeenCalledWith({ vendor: 'META' });
+  });
+
+  // Slice E — "Sync now" on a CONNECTED vendor fires connectors.sync.
+  it('Sync now on the connected Meta vendor calls sync.mutate', async () => {
+    render(<IntegrationsContent />);
+    const user = userEvent.setup();
+    const syncBtn = screen.getByRole('button', { name: /sync now/i });
+    expect(syncBtn).toBeInTheDocument();
+    await user.click(syncBtn);
+    expect(syncMutate).toHaveBeenCalledWith({ vendor: 'META' });
+  });
+
+  it('does not render Sync now for a NOT_CONNECTED vendor', () => {
+    render(<IntegrationsContent />);
+    // Only the connected Meta vendor has a Sync now button (1 total).
+    expect(screen.getAllByRole('button', { name: /sync now/i })).toHaveLength(1);
   });
 });

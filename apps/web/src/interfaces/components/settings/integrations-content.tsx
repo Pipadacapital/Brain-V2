@@ -11,8 +11,11 @@
 // ?connected={vendor} | ?error=<slug>. Per-vendor live status (connected /
 // not-connected / token-expired) from connectors.list.
 //
-// Data-ingestion is DEFERRED: a connected connector shows "Connected · sync pending"
-// (syncPending) — NO fabricated last-sync time. NEVER renders a token value.
+// Slice E (feat-connector-data-ingestion): a connected connector now has a real
+// "Sync now" button → connectors.sync (pull → normalize → idempotent UPSERT → advance
+// last_sync_at). After a sync the analytics queries are invalidated so the pages render
+// the workspace's REAL pulled data. A connected-but-never-synced connector shows
+// "sync pending"; after a sync it shows the last-sync time. NEVER renders a token value.
 // CF-C6-RENDER-ONLY-1: zero arithmetic.
 
 import { useState } from 'react';
@@ -60,6 +63,28 @@ export function IntegrationsContent() {
     },
     onSettled: () => setBusyVendor(null),
   });
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const sync = trpc.connectors.sync.useMutation({
+    onSuccess: (data) => {
+      void utils.connectors.list.invalidate();
+      // Invalidate the analytics surfaces so the pages re-render with REAL pulled data.
+      void utils.store.invalidate();
+      void utils.pnl.invalidate();
+      void utils.metrics.invalidate();
+      void utils.marketing.invalidate();
+      if (data.status === 'synced') {
+        setSyncMsg(
+          `${VENDOR_LABEL[data.vendor as Vendor]} synced: ${data.ordersSynced} orders, ` +
+            `${data.lineItemsSynced} line items, ${data.productsSynced} products, ${data.adRowsSynced} ad rows.`,
+        );
+      } else if (data.status === 'not_connected') {
+        setSyncMsg(`${VENDOR_LABEL[data.vendor as Vendor]} is not connected.`);
+      } else {
+        setSyncMsg(data.error ?? 'Sync failed.');
+      }
+    },
+    onSettled: () => setBusyVendor(null),
+  });
 
   if (!isAuthenticated || !workspaceId) {
     return (
@@ -102,6 +127,11 @@ export function IntegrationsContent() {
           Connection did not complete ({errorSlug.replace(/_/g, ' ')}). Please try again.
         </div>
       )}
+      {syncMsg && (
+        <div role="status" className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          {syncMsg}
+        </div>
+      )}
 
       {connectorsQuery.isLoading && (
         <div aria-busy="true" aria-label="Loading connectors" className="space-y-2">
@@ -134,14 +164,26 @@ export function IntegrationsContent() {
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {r.status === 'CONNECTED' && r.syncPending
-                        ? 'Connected · sync pending (data ingestion coming soon)'
-                        : r.accountRef
-                          ? `Account: ${r.accountRef}`
-                          : 'Read-only access to your store / ad data'}
+                        ? 'Connected · sync pending — click “Sync now” to pull your data'
+                        : r.lastSyncAt
+                          ? `Last synced: ${new Date(r.lastSyncAt).toLocaleString()}`
+                          : r.accountRef
+                            ? `Account: ${r.accountRef}`
+                            : 'Read-only access to your store / ad data'}
                       {r.lastSyncError ? ` · ${r.lastSyncError}` : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    {isConnected && r.status === 'CONNECTED' && (
+                      <button
+                        type="button"
+                        disabled={busy || (sync.isPending && busyVendor === vendor)}
+                        onClick={() => { setBusyVendor(vendor); setSyncMsg(null); sync.mutate({ vendor }); }}
+                        className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                      >
+                        {sync.isPending && busyVendor === vendor ? 'Syncing…' : 'Sync now'}
+                      </button>
+                    )}
                     {isConnected ? (
                       <button
                         type="button"

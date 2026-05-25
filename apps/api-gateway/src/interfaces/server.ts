@@ -44,6 +44,7 @@ import {
   InMemoryDecisionLog,
   SUGANDH_LOK_WORKSPACE_ID,
 } from '../infrastructure/loopback-data-plane.js';
+import { DispatchingDataPlane } from '../infrastructure/dispatching-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
 import type { WorkspaceContext, IdentityContext } from '../application/trpc.js';
 import {
@@ -125,7 +126,11 @@ export function assertBootableAuthConfig(cfg: GatewayAuthConfig): string | null 
 // at module scope — the web app's BrainRouter type import depends on it.
 // ---------------------------------------------------------------------------
 
-const dataPlane      = new StubDataPlane(new InMemoryDecisionLog(), LOCAL_DEV_WORKSPACE);
+// Slice E: the DispatchingDataPlane routes Sugandh-Lok → the seed StubDataPlane and
+// every OTHER workspace → a per-workspace LocalDbDataPlane reading its OWN ingested
+// connector facts from local Postgres. ONE DataPlanePort to the router (no second path).
+const seedPlane      = new StubDataPlane(new InMemoryDecisionLog(), LOCAL_DEV_WORKSPACE);
+const dataPlane      = new DispatchingDataPlane(seedPlane);
 const idempotencyStore = new InMemoryIdempotencyStore();
 
 // ---------------------------------------------------------------------------

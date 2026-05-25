@@ -40,6 +40,7 @@ import {
   completeCallback,
   listConnectors,
   disconnect,
+  syncConnector,
   ConnectorError,
 } from '@brain/core-connectors';
 import {
@@ -1687,6 +1688,30 @@ export function createBrainRouter(
         }
         const result = await disconnect({ vendor: input.vendor, workspaceId: ctx.workspaceId });
         return { ...result, requestId: ctx.requestId };
+      }),
+
+    /**
+     * Slice E — "Sync now": pull the connector's data using the custody token, normalize
+     * to canonical facts, idempotently UPSERT, advance last_sync_at. requireRole(MANAGER)
+     * (config-class action, mirrors initiate). RLS-scoped + workspace-scoped + idempotent.
+     * Returns row COUNTS only — NEVER the token, NEVER a provider body. A NOT_CONNECTED
+     * vendor returns a clean {status:'not_connected'} (no crash, no token read).
+     */
+    sync: workspaceProc
+      .input(z.object({ vendor: connectorVendor }))
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `connectors.sync requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+        try {
+          const result = await syncConnector({ vendor: input.vendor, workspaceId: ctx.workspaceId });
+          return { ...result, requestId: ctx.requestId };
+        } catch (err) {
+          throw mapConnectorError(err, ctx.requestId);
+        }
       }),
   });
 
