@@ -78,3 +78,30 @@ export function createLogger(
 
   return pino(base);
 }
+
+/**
+ * Create a logger bound to a "package" within a service.
+ *
+ * Use this at the top of a `@brain/core-*` module so every log line emitted
+ * inside that module carries `package: '<name>'` — when a failure surfaces,
+ * the log immediately tells the on-call WHICH package failed inside WHICH
+ * service (mandatory for microservice debugging).
+ *
+ *   // apps/core-service/src/application/onboarding/index.ts
+ *   const log = packageLogger('api-gateway', 'core-onboarding');
+ *
+ *   export async function listWorkspaces(sub: string) {
+ *     log.debug({ sub_prefix: sub.slice(0, 8) }, 'listWorkspaces start');
+ *     try { ... } catch (err) { log.error({ err }, 'listWorkspaces failed'); throw err; }
+ *   }
+ *
+ * Per-request correlation IDs (request_id / trace_id / workspace_id / user_id)
+ * are NOT auto-bound — pass them as fields on the .info/.error call when the
+ * caller has them, or thread the per-request `req.log` child through the
+ * function args. AsyncLocalStorage-based auto-binding is a planned follow-up.
+ */
+export function packageLogger(service: string, pkg: string): BrainLogger {
+  return createLogger(service, {
+    bindings: { package: pkg },
+  });
+}

@@ -14,6 +14,7 @@
 
 export {
   createLogger,
+  packageLogger,
   type BrainLogger,
 } from './create-logger.js';
 

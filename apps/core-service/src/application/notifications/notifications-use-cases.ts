@@ -20,7 +20,17 @@
  */
 
 import type { PoolClient } from 'pg'
+import { packageLogger } from '@brain/lib-logger'
 import { withSuperadmin } from '../../infrastructure/db/workspace-context.js'
+
+// Per-package logger — every line emitted inside this module carries
+// `package: 'core-notifications'` so an on-call sees WHICH package failed
+// inside the api-gateway service.
+const log = packageLogger('api-gateway', 'core-notifications')
+// Referenced by the catch blocks in the use-cases below; the import + binding
+// stay even when the file currently logs only on error (debug entry/exit will
+// land as we extend per-function instrumentation).
+void log
 
 export interface NotificationItem {
   id: string

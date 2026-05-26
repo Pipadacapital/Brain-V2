@@ -14,9 +14,24 @@
  */
 
 import type { PoolClient } from 'pg'
+import { packageLogger } from '@brain/lib-logger'
 import { withWorkspace } from '../../infrastructure/db/workspace-context.js'
 import { selectCustody } from '../../infrastructure/secrets/custody-factory.js'
 import type { CredentialCustody } from '../../infrastructure/secrets/credential-custody.js'
+
+// Per-package logger — every line emitted inside this module carries
+// `package: 'core-connectors'` so an on-call sees WHICH package failed
+// inside the api-gateway service. CRITICAL for OAuth flows: when a
+// Shopify/Meta/Google callback fails, this binding pins the failure to
+// THIS package, not "somewhere in the gateway."
+//
+// SAFETY: this module handles OAuth tokens. NEVER log the token VALUE itself;
+// the canonical PII redact list (packages/lib-logger/src/redact-paths.ts)
+// scrubs `access_token`, `refresh_token`, `credential.content`, etc. — but
+// don't rely on redact: log shapes that don't include the secret in the
+// first place (vendor, workspace_id_prefix, error code, duration_ms).
+const log = packageLogger('api-gateway', 'core-connectors')
+void log
 import {
   createOAuthState,
   validateAndConsumeOAuthState,

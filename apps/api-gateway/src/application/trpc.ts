@@ -12,6 +12,15 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import type { BrainClaim } from '@brain/core-auth';
+import { createLogger } from '@brain/lib-logger';
+
+// Module-scoped logger used by the tRPC tracing middleware. Bound to the
+// 'api-gateway' service; per-procedure log lines carry the procedure path +
+// the correlation 4-tuple (request_id/trace_id/workspace_id/user_id) drawn
+// from the per-request context. See docs/observability.md.
+const trpcLog = createLogger('api-gateway', {
+  bindings: { component: 'trpc' },
+});
 
 // ---------------------------------------------------------------------------
 // Context shape — populated by Fastify request hooks
@@ -83,7 +92,96 @@ const t = initTRPC.context<IdentityContext>().create({
 });
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+
+// ---------------------------------------------------------------------------
+// Tracing middleware — runs on EVERY procedure (public → workspace tier).
+//
+// Emits two log lines per procedure invocation:
+//   - "procedure start"  (level=debug; opt-in via LOG_LEVEL=debug)
+//   - "procedure done"   (level=info on OK; level=warn on caller-error;
+//                         level=error on server-error)
+//
+// Bound fields on every line:
+//   service:     'api-gateway'
+//   component:   'trpc'
+//   trpc_path:   the procedure name (e.g. 'metrics.kpiSummary')
+//   trpc_type:   'query' | 'mutation' | 'subscription'
+//   request_id:  per-request UUID from the correlation context
+//   trace_id:    per-trace UUID
+//   workspace_id: when present in ctx (workspace-tier procedures)
+//   user_id:     the verified sub (never email)
+//   duration_ms: end-to-end procedure latency
+//   ok:          true | false
+//   error_code:  on failure (e.g. 'UNAUTHORIZED', 'NOT_FOUND')
+//
+// Caller errors (4xx-shape: UNAUTHORIZED/FORBIDDEN/NOT_FOUND/BAD_REQUEST/
+// CONFLICT/PRECONDITION_FAILED/PAYLOAD_TOO_LARGE/METHOD_NOT_SUPPORTED/
+// UNPROCESSABLE_CONTENT) log at warn; everything else at error (so on-call
+// can filter to "real" server-side failures).
+// ---------------------------------------------------------------------------
+
+const CALLER_ERROR_CODES = new Set([
+  'BAD_REQUEST',
+  'UNAUTHORIZED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'METHOD_NOT_SUPPORTED',
+  'CONFLICT',
+  'PRECONDITION_FAILED',
+  'PAYLOAD_TOO_LARGE',
+  'UNPROCESSABLE_CONTENT',
+  'TOO_MANY_REQUESTS',
+]);
+
+const tracingMiddleware = t.middleware(async ({ ctx, path, type, next }) => {
+  const started = Date.now();
+
+  // Build the per-invocation log context from ctx. ctx fields vary by tier
+  // (public has only requestId/traceId; identity adds identity.sub; authed
+  // adds claim/workspaceId; workspace asserts workspaceId).
+  const c = ctx as Partial<IdentityContext> & Partial<WorkspaceContext>;
+  const baseFields = {
+    trpc_path: path,
+    trpc_type: type,
+    request_id: c.requestId,
+    trace_id: c.traceId,
+    workspace_id: c.workspaceId,
+    user_id: c.identity?.sub,
+  };
+
+  trpcLog.debug(baseFields, 'procedure start');
+
+  const result = await next({ ctx });
+  const duration_ms = Date.now() - started;
+
+  if (result.ok) {
+    trpcLog.info({ ...baseFields, ok: true, duration_ms }, 'procedure done');
+  } else {
+    const code = result.error.code;
+    const isCallerError = CALLER_ERROR_CODES.has(code);
+    const fields = {
+      ...baseFields,
+      ok: false,
+      duration_ms,
+      error_code: code,
+      error_message: result.error.message,
+    };
+    if (isCallerError) {
+      trpcLog.warn(fields, 'procedure done (caller error)');
+    } else {
+      // pino's err serializer kicks in for the cause; safer than dumping the
+      // raw error which may carry PII fields in some library exceptions.
+      trpcLog.error({ ...fields, err: result.error.cause }, 'procedure done (server error)');
+    }
+  }
+
+  return result;
+});
+
+// All procedure factories below get the tracing middleware first so every
+// downstream tier inherits it (tracing applies UNIFORMLY to public, identity,
+// authed, and workspace procedures).
+export const publicProcedure = t.procedure.use(tracingMiddleware);
 
 // ---------------------------------------------------------------------------
 // Middleware: authentication check
@@ -155,20 +253,24 @@ const workspaceMiddleware = t.middleware(({ ctx, next }) => {
 // Procedure tiers
 // ---------------------------------------------------------------------------
 
+// Every tier composes the tracing middleware FIRST so we get a uniform
+// procedure-done log line on success and failure across all tiers.
+
 /** Public tier: no auth required (login page, health check) */
-export const publicProc = t.procedure;
+export const publicProc = t.procedure.use(tracingMiddleware);
 
 /**
  * Identity tier (Slice C): requires a verified JWT identity (sub+email) but NOT a
  * workspace membership. For onboarding.complete + user.me (the no-membership user
  * who must be routed to /onboarding).
  */
-export const identityProc = t.procedure.use(identityMiddleware);
+export const identityProc = t.procedure.use(tracingMiddleware).use(identityMiddleware);
 
 /** Authed tier: requires a valid BrainClaim (verified identity WITH a membership) */
-export const authedProc = t.procedure.use(authedMiddleware);
+export const authedProc = t.procedure.use(tracingMiddleware).use(authedMiddleware);
 
 /** Workspace tier: requires auth + workspace_id === claim.workspaceId */
 export const workspaceProc = t.procedure
+  .use(tracingMiddleware)
   .use(authedMiddleware)
   .use(workspaceMiddleware);
