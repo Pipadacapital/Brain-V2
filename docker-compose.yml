@@ -164,11 +164,26 @@ services:
       - brain-net
 
 # ---------------------------------------------------------------------------
-# Volumes (persistent across container restart; nuked on `down -v`)
+# Volumes — bind to the EXISTING volumes from the per-service dev compose
+# files (`apps/core-service/docker-compose.dev.yml` and
+# `apps/analytics-service/docker-compose.dev.yml`). Those compose files
+# created `core-service_brain-pgdata-dev` and `analytics-service_brain-chdata-dev`
+# (Docker prefixes volume names with the compose project name = parent
+# directory). The migrated workspace data lives in those volumes; switching
+# to compose-scoped empty volumes would lose every migrated workspace +
+# every fact row (`workspace_members` missing → auth.session 500 loop).
+#
+# `external: true` tells compose to USE the existing volume rather than
+# create a new one — and to leave it alone on `down -v` (the bound volume
+# survives so the data is never accidentally wiped).
 # ---------------------------------------------------------------------------
 volumes:
   brain-pgdata-dev:
+    external: true
+    name: core-service_brain-pgdata-dev
   brain-chdata-dev:
+    external: true
+    name: analytics-service_brain-chdata-dev
 
 # ---------------------------------------------------------------------------
 # Network — services reach each other by container name on this single net.
