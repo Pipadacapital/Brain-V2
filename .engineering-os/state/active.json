@@ -6,7 +6,7 @@
     {
       "req_id": "feat-store-order-fact-layer",
       "title": "Shared store/order fact layer + revenue ladder \u2014 Brain-native (Phase 2, slice 1)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit)",
       "parent_epic": "epic-phase2-feature-parity",
@@ -93,12 +93,16 @@
         "apps/web/src/interfaces/components/store/revenue-ladder-strip.tsx",
         "apps/web/src/interfaces/components/store/store-content.tsx",
         "apps/web/src/app/(shell)/store/page.tsx"
-      ]
+      ],
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/feat-store-order-fact-layer + feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-legacy-decommission",
       "title": "Legacy decommission \u2014 final cutover sequence + retirement runbook (Child 7)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness-only for the runbook artifact (no live deploy, no commit). The actual cutover EXECUTION is Founder-at-console against 06-decommission-runbook.md + 07-handoff-to-developer.md, gated on (a) a real seal() impl [FIRED escalation, build_gated_on CF-C7-CUSTODY-PROOF-1], (b) Rohan's DDR full sign-off [2 rows, post-Shopify-cutover, pre-L3], (c) per-PoNR Founder authorization.",
       "stage6_final_review": {
@@ -225,7 +229,11 @@
       },
       "festival_window_constraint": "the irreversible cutovers + legacy DB shutdown must NOT be scheduled in a festival peak GMV window (Founder/Jatin own the calendar at Stage 8); runbook names the constraint.",
       "next_stage_recommendation": "Stage 2 (Aryan) authors the decommission runbook + PoNR ledger + final-state verification checklist + DPDP close-out (design/runbook-only, no code). MUST: carry the DAG-forced order with a per-hold PoNR ledger row {hold, pre-req gate ref, reversibility action, explicit PoNR, what's destroyed past it, festival check, custody/dwell/P2 gate}; bind the 5 CF-C7-* gates; name a \u00a712-satisfying archive format (else CF-C7-DPDP-ERASURE-1 tripwire FIRES at Stage 2); write the per-connector delete PoNR with CF-C7-CUSTODY-PROOF-1 (real seal() + prod-custody-path 200 + parity) as a hard signed precondition, Shiprocket last; bind the 24h serve->read dwell + P1/P2 two-gate; design the festival machine-query gate; sequence Rohan's DDR full sign-off AFTER Shopify cutover + BEFORE the read-flip PoNR; introduce NO app code / NO @paradigm decorator / NO new runtime (paradigm sql/runbook). Rohan Stage-6 design review (compliance + reversibility) IS the gate (VETO). Execution Stage-8/Founder-at-console.",
-      "guardrails": "NO git commit. NO live operator cutover. Plan/runbook artifacts only \u2014 no product code. Legacy reference-only (being retired, not edited). Paradigm sql/runbook."
+      "guardrails": "NO git commit. NO live operator cutover. Plan/runbook artifacts only \u2014 no product code. Legacy reference-only (being retired, not edited). Paradigm sql/runbook.",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "1+2",
+      "merged_via_branch": "feature/feat-tenancy-auth-rls-hardening",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-frontend-dashboard-morningbrief",
@@ -484,12 +492,13 @@
       "track_k_status": "complete",
       "track_k_completed_at": "2026-05-25T11:30:00Z",
       "track_k_tests": "52 tests, 0 failures",
-      "track_k_tsc_exit": 0
+      "track_k_tsc_exit": 0,
+      "hygiene_sweep_note": "Hygiene sweep 2026-05-26T11:15:00Z: NO matching commit on origin/development \u2014 genuinely still pending."
     },
     {
       "req_id": "feat-metric-engine-olap-split",
       "title": "Metric engine + OLTP/OLAP split \u2014 Brain-native (Child 4)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops",
       "stage6_final_review": {
@@ -777,12 +786,16 @@
         "parity_gate_status": "PASS (all 7 steps, exit 0; real per-metric check active)",
         "maya_files_touched": false,
         "legacy_files_touched": false
-      }
+      },
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "1+2",
+      "merged_via_branch": "feature/feat-tenancy-auth-rls-hardening",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-connector-framework-cutover",
       "title": "Connector framework \u2014 per-connector single-owner cutover \u2014 Brain-native (Child 3)",
-      "status": "awaiting-founder-commit",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "founder",
       "parent_epic": "chore-migrate-legacy-to-brain",
@@ -1064,12 +1077,16 @@
         "CF-C3-FORCE-UNLOCK-SCOPE-1: Child-1 FORCE held until Shiprocket DECOMMISSION + bare-write grep ZERO + sign-off"
       ],
       "updated_at": "2026-05-25T02:42:00Z",
-      "updated_by": "cto-advisor (Rohan) \u2014 Stage 6 PASS (independent re-verification reproduced every reviewer gate) + delegated Stage 7 APPROVE; rule candidate proposed (human-gated); NO commit (autonomous-run policy \u2014 Founder commits at end-review); next Stage-8 readiness, live cutover HELD"
+      "updated_by": "cto-advisor (Rohan) \u2014 Stage 6 PASS (independent re-verification reproduced every reviewer gate) + delegated Stage 7 APPROVE; rule candidate proposed (human-gated); NO commit (autonomous-run policy \u2014 Founder commits at end-review); next Stage-8 readiness, live cutover HELD",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "1+2",
+      "merged_via_branch": "feature/feat-tenancy-auth-rls-hardening",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-money-minor-units-parity",
       "title": "Money / minor-units / numeric-type foundation \u2014 Brain-native (Child 2)",
-      "status": "committed-on-feature-branch",
+      "status": "merged-on-development",
       "committed_sha": "3c1134f",
       "committed_branch": "feature/feat-tenancy-auth-rls-hardening",
       "committed_at": "2026-05-24T19:20:00Z",
@@ -1262,12 +1279,16 @@
       },
       "stage8_class": "CI-parity-gate readiness artifact (no live deploy; mirrors Child-1 readiness-only) \u2014 runs after Founder commit authorization",
       "updated_at_stage6": "2026-05-24T19:05:00Z",
-      "updated_by_stage6": "cto-advisor (Rohan) \u2014 Stage 6 PASS + delegated Stage 7 APPROVE"
+      "updated_by_stage6": "cto-advisor (Rohan) \u2014 Stage 6 PASS + delegated Stage 7 APPROVE",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "1+2",
+      "merged_via_branch": "feature/feat-tenancy-auth-rls-hardening",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-tenancy-rls-brain-native",
       "title": "Tenant isolation / RLS / auth-claim \u2014 Brain-native (Child 1 rebuild)",
-      "status": "committed-on-feature-branch",
+      "status": "merged-on-development",
       "committed_sha": "860aeee",
       "committed_branch": "feature/feat-tenancy-auth-rls-hardening",
       "committed_at": "2026-05-24T19:20:00Z",
@@ -1546,12 +1567,16 @@
         "hold_at_force_status": "HELD \u2014 unlocks when: Child-3 residual-writer conversion complete + bare-write grep ZERO hits (R-O7) + FK-EXPLAIN per hot table + Founder+CTOA sign-off",
         "monitor_plan": "DEFINED-ARMED-AT-ROLLOUT \u2014 probe-RED alarm, cron ctxless gap, 0-rows outage canary; 48h re-probe at H+2/H+24/H+48",
         "reversibility": "CONFIRMED \u2014 no live DDL applied; down.sql idempotent (NO FORCE + DISABLE + DROP POLICY IF EXISTS); Brain code additive (git restore); legacy untouched"
-      }
+      },
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "1+2",
+      "merged_via_branch": "feature/feat-tenancy-auth-rls-hardening",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-tenancy-auth-rls-hardening",
       "title": "Tenancy / auth / RLS hardening (Child 1 of the legacy->Brain migration)",
-      "status": "awaiting-founder-commit",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "founder",
       "bounce_fix_status": "complete",
@@ -1874,7 +1899,11 @@
         "48h_monitor_plan": "\u00a76 of report \u2014 p95/error/cron-success/probe re-runs at H+2/H+24/H+48",
         "rollback": "psql DIRECT_URL --file down.sql (idempotent)"
       },
-      "last_journal_at": "2026-05-24T13:30:00Z"
+      "last_journal_at": "2026-05-24T13:30:00Z",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "1+2",
+      "merged_via_branch": "feature/feat-tenancy-auth-rls-hardening",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "spike-legacy-migration-architecture",
@@ -2386,7 +2415,9 @@
           ]
         }
       ],
-      "cto_review_artifact": "02-cto-advisor-review.md"
+      "cto_review_artifact": "02-cto-advisor-review.md",
+      "children_merged_summary": "Children 1-7 code-merged via PRs #1+#2; Phase 0-10 migration ETL merged via PRs #3+#4. LIVE prod cutover ceremonies remain HELD per existing Stage-8 gates (custody A/B, HOLD-AT-FORCE, HOLD-AT-CUTOVER, HOLD-AT-LIVE-RECON, CF-C7-CUSTODY-PROOF-1).",
+      "hygiene_sweep_note": "Hygiene sweep 2026-05-26T11:15:00Z: see children_merged_summary."
     },
     {
       "req_id": "chore-scaffold-monorepo",
@@ -2534,7 +2565,7 @@
     {
       "req_id": "feat-ai-engine-intelligence",
       "title": "AI engine \u2014 intelligence-service \u2014 Brain-native (Child 5)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops",
       "stage6_final_review": {
@@ -2823,7 +2854,11 @@
         "apps/intelligence-service/src/infrastructure/db/cache_purge.py",
         "apps/intelligence-service/migrations/postgres/up.sql",
         "apps/intelligence-service/migrations/postgres/down.sql"
-      ]
+      ],
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "1+2",
+      "merged_via_branch": "feature/feat-tenancy-auth-rls-hardening",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "epic-phase2-feature-parity",
@@ -3007,7 +3042,7 @@
     {
       "req_id": "feat-pnl-cm-waterfall",
       "parent_epic": "epic-phase2-feature-parity",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "feature_class": "high-stakes",
@@ -3026,14 +3061,18 @@
       "run_folder": ".engineering-os/runs/2026-05-25T14-06-44Z__b2f1c7__feat-pnl-cm-waterfall__rishabhporwal",
       "updated_at": "2026-05-25T14:30:00Z",
       "stage6": "PASS",
-      "founder_gate": "APPROVE (delegated; not committed)"
+      "founder_gate": "APPROVE (delegated; not committed)",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-rto-cod-economics",
       "parent_epic": "epic-phase2-feature-parity",
       "slice": 3,
       "title": "RTO + COD/prepaid economics + logistics + pincode",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "feature_class": "high-stakes",
@@ -3062,14 +3101,18 @@
       ],
       "ddr_signoff": "breakeven_cod_rto_rate_bp + pincode_reliability_score SIGNED (correctness-fixture); rto_cost_mu/rto_revenue_lost_mu UNSIGNED-PENDING child-3-shopify-connector",
       "commit": "pending-founder-commit.md (nothing committed)",
-      "updated_at": "2026-05-25T14:32:17Z"
+      "updated_at": "2026-05-25T14:32:17Z",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-marketing-acquisition",
       "parent_epic": "epic-phase2-feature-parity",
       "slice": 4,
       "title": "MER/aMER/CAC + acquisition + distributions (Phase 2 slice 4)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "feature_class": "high-stakes",
@@ -3092,14 +3135,18 @@
       "updated_at": "2026-05-25T15:22:00Z",
       "updated_by": "cto-advisor",
       "final_review": "PASS",
-      "founder_decision": "APPROVE (signed under standing delegation)"
+      "founder_decision": "APPROVE (signed under standing delegation)",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-cohorts-ltv",
       "parent_epic": "epic-phase2-feature-parity",
       "slice": 5,
       "title": "Cohorts + LTV (/cohorts, /lifetime-value)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "feature_class": "high-stakes",
@@ -3122,14 +3169,18 @@
       "updated_at": "2026-05-25T15:42:00Z",
       "updated_by": "cto-advisor",
       "final_review": "PASS",
-      "founder_decision": "delegated-auto-approve (standing delegation; no hard-rule deviation); Stage-8 readiness only \u2014 awaits Founder 'commit it'"
+      "founder_decision": "delegated-auto-approve (standing delegation; no hard-rule deviation); Stage-8 readiness only \u2014 awaits Founder 'commit it'",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-catalog-inventory",
       "parent_epic": "epic-phase2-feature-parity",
       "slice": 6,
       "title": "Catalog/products + inventory + first-product cascade (/products, /inventory, /first-product-cascade)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "blocks": [
         "feat-store-order-fact-layer"
@@ -3148,14 +3199,18 @@
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "run_folder": ".engineering-os/runs/2026-05-25T15-46-22Z__slice6__feat-catalog-inventory__rishabhporwal",
       "updated_at": "2026-05-25T16:02:00Z",
-      "updated_by": "cto-advisor"
+      "updated_by": "cto-advisor",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-finance-settings-goals",
       "parent_epic": "epic-phase2-feature-parity",
       "slice": 7,
       "title": "COGS/costs + goals + festivals + calendar (/costs, /settings/goals, /settings/festivals, /calendar)",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "blocks": [
         "feat-store-order-fact-layer",
@@ -3176,14 +3231,18 @@
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "run_folder": ".engineering-os/runs/2026-05-25T16-20-00Z__slice7__feat-finance-settings-goals",
       "updated_at": "2026-05-25T16:30:00Z",
-      "updated_by": "cto-advisor"
+      "updated_by": "cto-advisor",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-parity-cleanup-pages",
       "parent_epic": "epic-phase2-feature-parity",
       "slice": 10,
       "title": "Make 9 (shell) ScaffoldPage stubs real+runnable (honest-state) \u2014 /analytics, /meta-ads, /google-ads, /shiprocket, /team, /settings, /settings/integrations, /settings/ad-campaigns, /settings/backfill",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "blocks": [
         "feat-store-order-fact-layer",
@@ -3208,7 +3267,11 @@
       "current_owner": "platform-devops (Jatin) \u2014 Stage-8 readiness only (no live deploy, no commit); awaits Founder \"commit it\"",
       "run_folder": ".engineering-os/runs/2026-05-25T18-10-00Z__slice10__feat-parity-cleanup-pages",
       "updated_at": "2026-05-25T19:05:00Z",
-      "updated_by": "cto-advisor"
+      "updated_by": "cto-advisor",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3+4",
+      "merged_via_branch": "feature/local-realdata-readpath-sync",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "epic-real-auth-supabase",
@@ -3355,7 +3418,7 @@
     {
       "req_id": "feat-auth-supabase-identity",
       "title": "Slice A \u2014 real Supabase auth (identity): JWKS verify \u2192 BrainClaim, email/pw + Google, route protection",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "platform-devops",
       "feature_class": "high-stakes",
@@ -3377,14 +3440,18 @@
       "hold": "Stage 8 readiness HOLD \u2014 identity slice; live cutover (slice D) Founder-gated. Not deployed.",
       "delegation_basis": "Founder standing delegation to CTO Advisor (MEMORY: feedback_founder_delegates_to_cto_advisor).",
       "stage6_decision": "PASS",
-      "b2_amendment": "RS256\u2192{RS256,ES256} (live project signs ES256); HS256/none still rejected."
+      "b2_amendment": "RS256\u2192{RS256,ES256} (live project signs ES256); HS256/none still rejected.",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3",
+      "merged_via_branch": "feature/feat-store-order-fact-layer",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-onboarding-membership-db",
       "title": "Onboarding + membership + invitations (DB-backed, local dev Postgres)",
       "parent_epic": "epic-real-auth-supabase",
       "slice": "C",
-      "status": "awaiting-founder-commit",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "founder",
       "feature_class": "high-stakes",
@@ -3399,14 +3466,18 @@
       "stage6_decision": "PASS",
       "founder_gate": "signed-delegated",
       "updated_at": "2026-05-25T20-25-53Z",
-      "notes": "DB-backed onboarding/membership on LOCAL dev Postgres (docker brain_dev) with Brain-native FORCE RLS. DbMembershipResolver replaces LocalSeed on real-auth path. Deferred to slice D: Shopify/Woo live connect, invite email send. Nothing committed; sliceC-pending-founder-commit.md produced."
+      "notes": "DB-backed onboarding/membership on LOCAL dev Postgres (docker brain_dev) with Brain-native FORCE RLS. DbMembershipResolver replaces LocalSeed on real-auth path. Deferred to slice D: Shopify/Woo live connect, invite email send. Nothing committed; sliceC-pending-founder-commit.md produced.",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3",
+      "merged_via_branch": "feature/feat-store-order-fact-layer",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     },
     {
       "req_id": "feat-connector-data-ingestion",
       "title": "Connector data ingestion \u2014 Shopify/Meta/Google pull \u2192 real analytics (epic-real-auth-supabase slice E)",
       "parent_epic": "epic-real-auth-supabase",
       "slice": "E",
-      "status": "awaiting-founder-commit",
+      "status": "merged-on-development",
       "stage": 7,
       "current_owner": "founder",
       "run_folder": ".engineering-os/runs/2026-05-25T21-23-13Z__b6dd6d__feat-connector-data-ingestion__rishabhporwal",
@@ -3430,7 +3501,12 @@
       "hard_rule_deviation": "none",
       "delegation_basis": "Founder standing delegation to CTO Advisor (MEMORY: feedback_founder_delegates_to_cto_advisor).",
       "updated_at": "2026-05-25T21-37-00Z",
-      "notes": "Sync now pulls real orders/products + ad spend using slice-D custody token; ACL converts decimal-string/micros to BIGINT minor units WITHOUT float, per-SKU GST, COD/Prepaid, opaque customer_ref (DPDP); idempotent fact UPSERT (re-sync byte-identical at aggregate layer) under FORCE RLS; DispatchingDataPlane serves connected workspace its OWN facts, Sugandh keeps seed, non-fed surfaces honest-empty. READ-only (no outbound), zero LLM, token never logged. Verified by fixtures (real API shapes) + live local Postgres P-001..P-007. 21 unit + 6 integration + 225/245/89 suites; typecheck 0x3; ZERO new deps. LIVE pull needs Founder OAuth consent. Nothing committed; pending-founder-commit.md produced. epic-real-auth-supabase slices A-E COMPLETE."
+      "notes": "Sync now pulls real orders/products + ad spend using slice-D custody token; ACL converts decimal-string/micros to BIGINT minor units WITHOUT float, per-SKU GST, COD/Prepaid, opaque customer_ref (DPDP); idempotent fact UPSERT (re-sync byte-identical at aggregate layer) under FORCE RLS; DispatchingDataPlane serves connected workspace its OWN facts, Sugandh keeps seed, non-fed surfaces honest-empty. READ-only (no outbound), zero LLM, token never logged. Verified by fixtures (real API shapes) + live local Postgres P-001..P-007. 21 unit + 6 integration + 225/245/89 suites; typecheck 0x3; ZERO new deps. LIVE pull needs Founder OAuth consent. Nothing committed; pending-founder-commit.md produced. epic-real-auth-supabase slices A-E COMPLETE.",
+      "merged_at": "2026-05-26T11:15:00Z",
+      "merged_via_pr": "3",
+      "merged_via_branch": "feature/feat-store-order-fact-layer",
+      "hygiene_sweep_note": "Code merged to origin/development. Any LIVE-prod cutover gates (HOLD-AT-FORCE / HOLD-AT-CUTOVER / HOLD-AT-LIVE-RECON / custody A/B / CF-C7-CUSTODY-PROOF-1) remain held per the original Stage-8 readiness notes."
     }
-  ]
+  ],
+  "hygiene_sweep_note": "2026-05-26 sweep: reconciled active.json against actual git state on origin/development. Items whose code-work merged via PRs #1-#5 are now status=merged-on-development; LIVE-prod cutover gates remain held per the original Stage-8 notes; epic parents annotated; pending-founder-attention.md updated in companion edit."
 }
