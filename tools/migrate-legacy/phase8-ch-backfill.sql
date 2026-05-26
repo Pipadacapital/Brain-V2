@@ -22,12 +22,12 @@ SELECT
   toDate(synced_at), toUInt64(toUnixTimestamp(synced_at)), now()
 FROM postgresql('host.docker.internal:5432','brain_dev','connector_product_facts','postgres','postgres');
 
--- 2) connector_order_facts (83K)
+-- 2) connector_order_facts (83K) — reads connector_order_facts_hot (Phase-5 rename).
 INSERT INTO brain.connector_order_facts
   (workspace_id, vendor, vendor_order_id, order_date, placed_at, customer_ref,
    delivery_pincode, delivery_city, gross_sales_mu, discount_mu, tax_mu, shipping_mu,
    net_sales_mu, total_refund_mu, currency_code, payment_method, is_cod, order_type,
-   financial_status, fulfillment_status, tags, version, ingested_at)
+   financial_status, fulfillment_status, cancelled_at, tags, version, ingested_at)
 SELECT
   toString(workspace_id), toString(vendor), vendor_order_id,
   toDate(processed_at), toDateTime64(processed_at, 3, 'UTC'),
@@ -39,11 +39,12 @@ SELECT
   currency_code, coalesce(payment_method, ''),
   coalesce(toUInt8(is_cod), 0), coalesce(order_type, ''),
   coalesce(financial_status, ''), coalesce(fulfillment_status, ''),
+  cancelled_at,                                          -- PG-parity for realized filter
   [],
   toUInt64(toUnixTimestamp(synced_at)), now()
-FROM postgresql('host.docker.internal:5432','brain_dev','connector_order_facts','postgres','postgres');
+FROM postgresql('host.docker.internal:5432','brain_dev','connector_order_facts_hot','postgres','postgres');
 
--- 3) connector_line_item_facts (346K)
+-- 3) connector_line_item_facts (346K) — reads connector_line_item_facts_hot (Phase-5 rename).
 INSERT INTO brain.connector_line_item_facts
   (workspace_id, vendor, vendor_order_id, vendor_line_id, vendor_product_id, vendor_variant_id,
    sku, title, quantity, price_mu, line_total_mu, discount_mu, tax_mu, cogs_mu,
@@ -55,7 +56,7 @@ SELECT
   toInt32(quantity), unit_price_mu, quantity * unit_price_mu, 0, 0, 0,
   'INR', toDate(synced_at),
   toUInt64(toUnixTimestamp(synced_at)), now()
-FROM postgresql('host.docker.internal:5432','brain_dev','connector_line_item_facts','postgres','postgres');
+FROM postgresql('host.docker.internal:5432','brain_dev','connector_line_item_facts_hot','postgres','postgres');
 
 -- 4) connector_ad_spend_facts (10K)
 INSERT INTO brain.connector_ad_spend_facts

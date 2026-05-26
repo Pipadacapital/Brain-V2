@@ -17,7 +17,9 @@
 
 import type { PoolClient } from 'pg'
 import { withWorkspace, withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
-import { readStoreSummaryCH } from './fact-analytics-ch.js'
+import {
+  readStoreSummaryCH, readPnlCH, readMarketingCH, readCogsCH, readProductPerformanceCH,
+} from './fact-analytics-ch.js'
 
 // READ_FROM_CH=true routes specific read functions through brain.connector_*_facts
 // in ClickHouse instead of the PG hot-mirror (v2 §6, function-by-function cutover).
@@ -165,6 +167,9 @@ async function readAdSpend(tx: PoolClient): Promise<{ meta: bigint; google: bigi
 }
 
 export async function readPnl(workspaceId: string): Promise<FactPnl> {
+  if (READ_FROM_CH) {
+    try { return await readPnlCH(workspaceId) } catch { /* PG fallback */ }
+  }
   const store = await readStoreSummary(workspaceId)
   const spend = await withWorkspace(workspaceId, readAdSpend)
   return {
@@ -206,6 +211,9 @@ export async function readIntegrations(workspaceId: string): Promise<FactIntegra
 }
 
 export async function readMarketing(workspaceId: string): Promise<FactMarketing> {
+  if (READ_FROM_CH) {
+    try { return await readMarketingCH(workspaceId) } catch { /* PG fallback */ }
+  }
   const store = await readStoreSummary(workspaceId)
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const spend = await readAdSpend(tx)
@@ -247,6 +255,9 @@ export interface FactCogs {
   totalLines: bigint
 }
 export async function readCogs(workspaceId: string): Promise<FactCogs> {
+  if (READ_FROM_CH) {
+    try { return await readCogsCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<{ cogs: string | null; covered: string | null; total: string | null }>(
       `SELECT
@@ -282,6 +293,9 @@ export interface FactProductRow {
 export async function readProductPerformance(
   workspaceId: string,
 ): Promise<{ rows: FactProductRow[]; totalCm1Mu: bigint }> {
+  if (READ_FROM_CH) {
+    try { return await readProductPerformanceCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<{
       label: string | null

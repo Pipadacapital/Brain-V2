@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS brain.connector_order_facts (
     order_type          LowCardinality(String),
     financial_status    LowCardinality(String),
     fulfillment_status  LowCardinality(String),
+    cancelled_at        Nullable(DateTime),                  -- IS NULL == not cancelled (PG-parity)
     tags                Array(String)   DEFAULT [],
     version             UInt64          NOT NULL,
     ingested_at         DateTime        DEFAULT now()
