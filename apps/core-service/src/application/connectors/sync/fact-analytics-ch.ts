@@ -19,7 +19,21 @@
 import { chQuery } from '@brain/lib-clickhouse-ts'
 import type {
   FactStoreSummary, FactPnl, FactMarketing, FactCogs, FactProductRow,
+  FactCourierRow, FactShipmentAnalytics, FactPincodeRow, FactCodPrepaid,
+  FactCohortRow, FactLtv, FactLifecycleBucket, FactLifecycle, FactOrderTimings,
+  FactCascadeRow, FactDistRow, FactCalendarRow,
 } from './fact-analytics.js'
+
+// CH derives the same `status_bucket` PG materialized inline (PG's was a backfill
+// CASE; CH recomputes it from raw `status` via multiIf for byte-perfect parity).
+const STATUS_BUCKET = `multiIf(
+  positionCaseInsensitive(status, 'RTO')            > 0, 'RTO',
+  status = 'DELIVERED',                                 'DELIVERED',
+  positionCaseInsensitive(status, 'SELF FULFILLED') > 0, 'DELIVERED',
+  positionCaseInsensitive(status, 'CANCEL')         > 0, 'CANCELLED',
+  positionCaseInsensitive(status, 'UNDELIVER')      > 0
+    OR positionCaseInsensitive(status, 'QC FAILED') > 0, 'UNDELIVERED',
+  'IN_TRANSIT')`
 
 // PG-parity filter for "realized" / "non-cancelled" orders:
 //   cancelled_at IS NULL AND financial_status NOT IN ('voided','refunded')
@@ -292,8 +306,283 @@ export async function readProductPerformanceCH(
   const totalCm1Mu = rows.length ? BigInt(rows[0].total_cm1 ?? '0') : 0n
   return { rows: mapped, totalCm1Mu }
 }
-// readShipmentAnalyticsCH, readCohortsCH, readLtvCH, readPincodesCH, readCodPrepaidCH,
-// readLifecycleStatesCH, readOrderTimingsCH, readFirstProductCascadeCH,
-// readDistributionsCH, readCalendarReportCH, readDailyNetSalesCH, readDailyAcquisitionCH,
-// readDistributionsGraphPointsCH. Each one flag-routes via fact-analytics.ts and
-// must pass a per-function parity test before READ_FROM_CH=true is the default.
+// ---------------------------------------------------------------------------
+// readShipmentAnalyticsCH — RTO/delivered/courier counts. Charges + COD are 0
+// here (legacy never populated those in PG either → byte-perfect parity).
+// ---------------------------------------------------------------------------
+export async function readShipmentAnalyticsCH(workspaceId: string): Promise<FactShipmentAnalytics> {
+  const a = await chQuery<Record<string, string>>(
+    `SELECT
+       toString(count())                                  AS total,
+       toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))  AS delivered,
+       toString(countIf(${STATUS_BUCKET} = 'RTO'))        AS rto,
+       toString(0)                                        AS cod,
+       toString(count())                                  AS prepaid,
+       toString(0)                                        AS charges,
+       toString(0)                                        AS rto_charges,
+       toString(0)                                        AS cod_rto,
+       toString(0)                                        AS cod_total,
+       toString(countIf(${STATUS_BUCKET} = 'RTO'))        AS prepaid_rto,
+       toString(count())                                  AS prepaid_total
+     FROM brain.connector_shipment_facts
+     WHERE workspace_id = {workspace_id:String}`,
+    { workspaceId },
+  )
+  const c = await chQuery<Record<string, string>>(
+    `SELECT coalesce(nullIf(courier_name, ''), 'Unknown')                AS courier,
+            toString(count())                                            AS cnt,
+            toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))            AS delivered,
+            toString(countIf(${STATUS_BUCKET} = 'RTO'))                  AS rto,
+            toString(0)                                                  AS charges
+       FROM brain.connector_shipment_facts
+      WHERE workspace_id = {workspace_id:String}
+      GROUP BY courier ORDER BY count() DESC LIMIT 50`,
+    { workspaceId },
+  )
+  const r = a[0] ?? {}
+  return {
+    totalShipments: BigInt(r.total ?? '0'),
+    deliveredCount: BigInt(r.delivered ?? '0'),
+    rtoCount: BigInt(r.rto ?? '0'),
+    codCount: BigInt(r.cod ?? '0'),
+    prepaidCount: BigInt(r.prepaid ?? '0'),
+    totalChargesMu: BigInt(r.charges ?? '0'),
+    rtoChargesMu: BigInt(r.rto_charges ?? '0'),
+    codRtoCount: BigInt(r.cod_rto ?? '0'),
+    codTotal: BigInt(r.cod_total ?? '0'),
+    prepaidRtoCount: BigInt(r.prepaid_rto ?? '0'),
+    prepaidTotal: BigInt(r.prepaid_total ?? '0'),
+    byCourier: c.map((x): FactCourierRow => ({
+      courierName: x.courier ?? 'Unknown',
+      count: BigInt(x.cnt ?? '0'),
+      deliveredCount: BigInt(x.delivered ?? '0'),
+      rtoCount: BigInt(x.rto ?? '0'),
+      chargesMu: BigInt(x.charges ?? '0'),
+    })),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// readPincodesCH — per-pincode shipment reliability (top 200).
+// ---------------------------------------------------------------------------
+export async function readPincodesCH(workspaceId: string): Promise<FactPincodeRow[]> {
+  const rows = await chQuery<Record<string, string>>(
+    `SELECT delivery_pincode                                       AS pincode,
+            any(delivery_city)                                     AS city,
+            toString(count())                                      AS cnt,
+            toString(countIf(${STATUS_BUCKET} = 'RTO'))            AS rto,
+            toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))      AS delivered,
+            toString(0)                                            AS cod
+       FROM brain.connector_shipment_facts
+      WHERE workspace_id = {workspace_id:String}
+        AND delivery_pincode != ''
+      GROUP BY delivery_pincode
+      ORDER BY count() DESC
+      LIMIT 200`,
+    { workspaceId },
+  )
+  return rows.map((x) => ({
+    pincode: x.pincode,
+    city: x.city ?? '',
+    shipmentCount: BigInt(x.cnt ?? '0'),
+    rtoCount: BigInt(x.rto ?? '0'),
+    deliveredCount: BigInt(x.delivered ?? '0'),
+    codCount: BigInt(x.cod ?? '0'),
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// readCodPrepaidCH — order-side counts/revenue from order_facts.payment_method.
+// (Shipment-side cod/prepaid never populated in legacy — same PG behaviour.)
+// ---------------------------------------------------------------------------
+export async function readCodPrepaidCH(workspaceId: string): Promise<FactCodPrepaid> {
+  const rows = await chQuery<Record<string, string>>(
+    `SELECT
+       toString(countIf(payment_method = 'COD'))                                              AS cod_orders,
+       toString(countIf(payment_method = 'Prepaid'))                                          AS prepaid_orders,
+       toString(sumIf(gross_sales_mu, payment_method = 'COD'))                                AS cod_gross,
+       toString(sumIf(gross_sales_mu, payment_method = 'Prepaid'))                            AS prepaid_gross,
+       toString(sumIf(gross_sales_mu - discount_mu - tax_mu, ${CANCELLED_OK}))                AS net,
+       toString(countIf(${CANCELLED_OK}))                                                     AS orders
+     FROM brain.connector_order_facts
+     WHERE workspace_id = {workspace_id:String}`,
+    { workspaceId },
+  )
+  const r = rows[0] ?? {}
+  const orders = BigInt(r.orders ?? '0')
+  const net = BigInt(r.net ?? '0')
+  return {
+    codOrders: BigInt(r.cod_orders ?? '0'),
+    prepaidOrders: BigInt(r.prepaid_orders ?? '0'),
+    codGrossMu: BigInt(r.cod_gross ?? '0'),
+    prepaidGrossMu: BigInt(r.prepaid_gross ?? '0'),
+    aovMu: orders > 0n ? net / orders : null,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// readCohortsCH — acquisition-month cohorts + 90-day repeat + 12-mo cumulative.
+// CH equivalent of PG's set-based cohorts query (Phase-6 perf rewrite).
+// ---------------------------------------------------------------------------
+const COHORT_NET = `(gross_sales_mu - discount_mu - tax_mu)`
+const MONTH_OFFSET_CH = `LEAST(11, GREATEST(0, dateDiff('month', cohort_dt, toDate(placed_at))))`
+
+export async function readCohortsCH(workspaceId: string): Promise<FactCohortRow[]> {
+  // (1) Cohort sizes + rr90: rn=1 = first order, rn=2 = second order. rr90 is the
+  // count of rn=2 rows that fall within 90 days of the customer's acq date.
+  // (Bug-fixed from minIf — CH minIf returns the type default for no-match instead
+  // of NULL, which incorrectly admits customers with no 2nd order. countIf on rn=2
+  // is the direct equivalent of PG's `count(*) FILTER (WHERE rn=2 AND ...)`.)
+  const sizes = await chQuery<{ cohort: string; new_customers: string; rr90: string }>(
+    `WITH ranked AS (
+       SELECT customer_ref, placed_at,
+              row_number() OVER (PARTITION BY customer_ref ORDER BY placed_at, vendor_order_id) AS rn,
+              min(placed_at) OVER (PARTITION BY customer_ref)                                     AS acq
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND cancelled_at IS NULL
+          AND financial_status NOT IN ('voided','refunded')
+     )
+     SELECT formatDateTime(toStartOfMonth(toDate(acq)), '%Y-%m') AS cohort,
+            toString(countIf(rn = 1))                                                  AS new_customers,
+            toString(countIf(rn = 2 AND placed_at <= acq + INTERVAL 90 DAY))           AS rr90
+       FROM ranked
+      GROUP BY cohort
+      ORDER BY cohort`,
+    { workspaceId },
+  )
+
+  // (2) Revenue by cohort × month-offset (0..11).
+  const rev = await chQuery<{ cohort: string; off: string; net: string }>(
+    `WITH fo AS (
+       SELECT customer_ref, toDate(min(placed_at)) AS cohort_dt
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND cancelled_at IS NULL
+          AND financial_status NOT IN ('voided','refunded')
+        GROUP BY customer_ref
+     )
+     SELECT formatDateTime(toStartOfMonth(fo.cohort_dt), '%Y-%m')  AS cohort,
+            toString(${MONTH_OFFSET_CH})                            AS off,
+            toString(sum(${COHORT_NET}))                            AS net
+       FROM brain.connector_order_facts AS o
+       INNER JOIN fo USING (customer_ref)
+      WHERE o.workspace_id = {workspace_id:String}
+        AND o.customer_ref != ''
+        AND o.cancelled_at IS NULL
+        AND o.financial_status NOT IN ('voided','refunded')
+      GROUP BY 1, 2`,
+    { workspaceId },
+  )
+
+  const byCohort = new Map<string, bigint[]>()
+  for (const row of rev) {
+    const arr = byCohort.get(row.cohort) ?? new Array<bigint>(12).fill(0n)
+    const off = Math.max(0, Math.min(11, Number(row.off)))
+    arr[off] += BigInt(row.net ?? '0')
+    byCohort.set(row.cohort, arr)
+  }
+  return sizes.map((s) => {
+    const per = byCohort.get(s.cohort) ?? new Array<bigint>(12).fill(0n)
+    const cum: bigint[] = []
+    let running = 0n
+    for (let i = 0; i < 12; i++) {
+      running += per[i]
+      cum.push(running)
+    }
+    const newCustomers = BigInt(s.new_customers ?? '0')
+    const rr90 = BigInt(s.rr90 ?? '0')
+    return {
+      cohortMonth: s.cohort,
+      newCustomers,
+      rr90Bp: newCustomers > 0n ? Number((rr90 * 10000n) / newCustomers) : null,
+      m: cum,
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// readLtvCH — pure derivation from cohorts (matches PG behaviour exactly).
+// ---------------------------------------------------------------------------
+export async function readLtvCH(workspaceId: string): Promise<FactLtv> {
+  const cohorts = await readCohortsCH(workspaceId)
+  let totalCustomers = 0n, sumFirst = 0n, sumM1 = 0n, sumM3 = 0n, sumM6 = 0n, sumM12 = 0n
+  const rows = cohorts.map((c) => {
+    totalCustomers += c.newCustomers
+    sumFirst += c.m[0] ?? 0n
+    sumM1 += c.m[1] ?? 0n
+    sumM3 += c.m[3] ?? 0n
+    sumM6 += c.m[6] ?? 0n
+    sumM12 += c.m[11] ?? 0n
+    const per = c.newCustomers > 0n ? c.m.map((v) => v / c.newCustomers) : c.m
+    return {
+      cohortMonth: c.cohortMonth,
+      newCustomers: c.newCustomers,
+      firstOrderMu: c.newCustomers > 0n ? (c.m[0] ?? 0n) / c.newCustomers : 0n,
+      m: per,
+    }
+  })
+  const avg = (x: bigint) => (totalCustomers > 0n ? x / totalCustomers : 0n)
+  return {
+    newCustomers: totalCustomers,
+    firstOrderMu: avg(sumFirst),
+    month1Mu: avg(sumM1),
+    month3Mu: avg(sumM3),
+    month6Mu: avg(sumM6),
+    month12Mu: avg(sumM12),
+    rows,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// readLifecycleStatesCH — recency segmentation (new ≤30d, active ≤90, at_risk ≤180,
+// churned >180) from each customer's last order vs the workspace max.
+// ---------------------------------------------------------------------------
+export async function readLifecycleStatesCH(workspaceId: string): Promise<FactLifecycle> {
+  const rows = await chQuery<Record<string, string>>(
+    `WITH cust AS (
+       SELECT customer_ref,
+              max(placed_at)                          AS last_at,
+              count()                                 AS orders,
+              sum(${COHORT_NET})                      AS net
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND cancelled_at IS NULL
+          AND financial_status NOT IN ('voided','refunded')
+        GROUP BY customer_ref
+     ),
+     nowref AS (SELECT max(last_at) AS n FROM cust),
+     b AS (
+       SELECT multiIf(
+                 (nowref.n - last_at) <= INTERVAL 30  DAY, 'new',
+                 (nowref.n - last_at) <= INTERVAL 90  DAY, 'active',
+                 (nowref.n - last_at) <= INTERVAL 180 DAY, 'at_risk',
+                                                          'churned') AS bucket,
+              orders, net
+         FROM cust, nowref
+     )
+     SELECT bucket,
+            toString(count())                    AS cnt,
+            toString(sum(net))                   AS rev,
+            toString(sum(orders))                AS ord
+       FROM b GROUP BY bucket`,
+    { workspaceId },
+  )
+  const by = new Map(rows.map((r) => [r.bucket, r]))
+  const names = ['new', 'active', 'at_risk', 'churned'] as const
+  const buckets: FactLifecycleBucket[] = names.map((name) => {
+    const r = by.get(name)
+    return {
+      bucket: name,
+      customerCount: BigInt(r?.cnt ?? '0'),
+      revenueMu: BigInt(r?.rev ?? '0'),
+      orderCount: BigInt(r?.ord ?? '0'),
+    }
+  })
+  const total = buckets.reduce((a, b) => a + b.customerCount, 0n)
+  const netActive = buckets[0].customerCount + buckets[1].customerCount
+  return { buckets, totalCustomers: total, netActive }
+}

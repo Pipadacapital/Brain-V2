@@ -19,6 +19,8 @@ import type { PoolClient } from 'pg'
 import { withWorkspace, withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 import {
   readStoreSummaryCH, readPnlCH, readMarketingCH, readCogsCH, readProductPerformanceCH,
+  readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH,
+  readCohortsCH, readLtvCH, readLifecycleStatesCH,
 } from './fact-analytics-ch.js'
 
 // READ_FROM_CH=true routes specific read functions through brain.connector_*_facts
@@ -448,6 +450,9 @@ export interface FactShipmentAnalytics {
   byCourier: FactCourierRow[]
 }
 export async function readShipmentAnalytics(workspaceId: string): Promise<FactShipmentAnalytics> {
+  if (READ_FROM_CH) {
+    try { return await readShipmentAnalyticsCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const a = await tx.query<Record<string, string>>(
       `SELECT
@@ -507,6 +512,9 @@ export interface FactPincodeRow {
   codCount: bigint
 }
 export async function readPincodes(workspaceId: string): Promise<FactPincodeRow[]> {
+  if (READ_FROM_CH) {
+    try { return await readPincodesCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
       `SELECT delivery_pincode pincode,
@@ -539,6 +547,9 @@ export interface FactCodPrepaid {
   aovMu: bigint | null
 }
 export async function readCodPrepaid(workspaceId: string): Promise<FactCodPrepaid> {
+  if (READ_FROM_CH) {
+    try { return await readCodPrepaidCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
       `SELECT
@@ -580,6 +591,9 @@ export interface FactCohortRow {
   m: bigint[] // length 12, cumulative net revenue (minor units)
 }
 export async function readCohorts(workspaceId: string): Promise<FactCohortRow[]> {
+  if (READ_FROM_CH) {
+    try { return await readCohortsCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Set-based (no correlated subquery): one window pass to find each customer's
     // acquisition + 2nd-order date, then a 90-day-repeat flag. Uses the
@@ -661,6 +675,9 @@ export interface FactLtv {
   rows: { cohortMonth: string; newCustomers: bigint; firstOrderMu: bigint; m: bigint[] }[]
 }
 export async function readLtv(workspaceId: string): Promise<FactLtv> {
+  if (READ_FROM_CH) {
+    try { return await readLtvCH(workspaceId) } catch { /* PG fallback */ }
+  }
   const cohorts = await readCohorts(workspaceId)
   let totalCustomers = 0n
   let sumFirst = 0n
@@ -702,6 +719,9 @@ export async function readLtv(workspaceId: string): Promise<FactLtv> {
 export interface FactLifecycleBucket { bucket: string; customerCount: bigint; revenueMu: bigint; orderCount: bigint }
 export interface FactLifecycle { buckets: FactLifecycleBucket[]; totalCustomers: bigint; netActive: bigint }
 export async function readLifecycleStates(workspaceId: string): Promise<FactLifecycle> {
+  if (READ_FROM_CH) {
+    try { return await readLifecycleStatesCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
       `WITH cust AS (
