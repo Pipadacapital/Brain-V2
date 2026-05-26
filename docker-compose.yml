@@ -1,0 +1,193 @@
+# =============================================================================
+# Brain — full local production-shape Docker stack.
+#
+# `docker compose up -d --build` brings the entire app online:
+#   - brain-postgres-dev    : OLTP (Brain-native RLS, identity, config, PII)
+#   - brain-clickhouse-dev  : OLAP (facts, aggregates, time-series)
+#   - brain-api-gateway     : Fastify + tRPC BFF (Node 24 + tsx)
+#   - brain-web             : Next.js 16 App Router (next build → next start)
+#
+# Services talk over the `brain-net` Docker network using container names as
+# DNS (e.g. api-gateway → postgres-dev:5432 / clickhouse-dev:8123). The browser
+# stays on the host and reaches services via host port mappings.
+#
+# Env handoff: copy .env.docker.example → .env.docker, fill the values you
+# previously had in apps/api-gateway/.env (Supabase URL + anon, OAuth keys,
+# custody dev key). Compose reads .env.docker via the `env_file` directives
+# below — no value is hardcoded into this file.
+# =============================================================================
+
+services:
+  # -------------------------------------------------------------------------
+  # Postgres (OLTP) — re-uses the existing dev compose volume so migrated data
+  # persists across `docker compose up`/`down` cycles. Run the down with `-v`
+  # only when you want to wipe.
+  # -------------------------------------------------------------------------
+  postgres-dev:
+    image: postgres:16-alpine
+    container_name: brain-postgres-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: brain_dev
+    ports:
+      - "5432:5432"
+    command:
+      - postgres
+      - -c
+      - row_security=on
+    volumes:
+      - ./apps/core-service/docker/initdb-dev:/docker-entrypoint-initdb.d:ro
+      - brain-pgdata-dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d brain_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - brain-net
+
+  # -------------------------------------------------------------------------
+  # ClickHouse (OLAP)
+  # -------------------------------------------------------------------------
+  clickhouse-dev:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: brain-clickhouse-dev
+    environment:
+      CLICKHOUSE_DB: brain
+      CLICKHOUSE_USER: brain_app
+      CLICKHOUSE_PASSWORD: brain_app_pw
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - brain-chdata-dev:/var/lib/clickhouse
+    healthcheck:
+      # ClickHouse alpine includes wget. Use explicit IPv4 (CH only binds v4)
+      # and -O - to avoid --spider compatibility quirks. start_period gives the
+      # server its ~20-30s of first-boot DDL init time before the check counts.
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8123/ping | grep -q 'Ok' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    networks:
+      - brain-net
+
+  # -------------------------------------------------------------------------
+  # API Gateway (Fastify + tRPC) — Node 24, tsx runtime, shared pino logger.
+  # JSON logs to stdout (captured by compose's logging driver — `docker compose
+  # logs -f api-gateway`).
+  # -------------------------------------------------------------------------
+  api-gateway:
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    container_name: brain-api-gateway
+    environment:
+      NODE_ENV: production
+      GATEWAY_PORT: 3001
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Brain-native dev DB — service-name DNS over brain-net.
+      DATABASE_URL: postgresql://rls_app:rls_app_pw@postgres-dev:5432/brain_dev
+      # ClickHouse — service-name DNS over brain-net.
+      CLICKHOUSE_URL: http://clickhouse-dev:8123
+      CLICKHOUSE_USER: brain_app
+      CLICKHOUSE_PASSWORD: brain_app_pw
+      CLICKHOUSE_DATABASE: brain
+      # Browser-facing app URL stays on the host port.
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      # Read-from-CH flag — facts already migrated locally; reads go through CH.
+      READ_FROM_CH: "true"
+    env_file:
+      # All secret-bearing values (SUPABASE_*, OAuth client ids/secrets,
+      # CONNECTOR_CUSTODY_KEY, redirect URIs) come from .env.docker — never
+      # baked into the image, never committed.
+      - .env.docker
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres-dev:
+        condition: service_healthy
+      clickhouse-dev:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3001/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    networks:
+      - brain-net
+
+  # -------------------------------------------------------------------------
+  # Web (Next.js 16 App Router) — production build (next build → next start).
+  # NEXT_PUBLIC_* are BAKED at build time (must be in build.args, not env).
+  # -------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Browser reaches the api-gateway via the host port mapping; localhost
+        # works because compose maps api-gateway:3001 → host:3001.
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+        NEXT_PUBLIC_BRAIN_LOCAL_HARNESS: "false"
+        # Supabase identity values — required to build the auth UI. Read from
+        # .env.docker via shell expansion at build time.
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+    container_name: brain-web
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    env_file:
+      - .env.docker
+    ports:
+      - "3000:3000"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    networks:
+      - brain-net
+
+# ---------------------------------------------------------------------------
+# Volumes — bind to the EXISTING volumes from the per-service dev compose
+# files (`apps/core-service/docker-compose.dev.yml` and
+# `apps/analytics-service/docker-compose.dev.yml`). Those compose files
+# created `core-service_brain-pgdata-dev` and `analytics-service_brain-chdata-dev`
+# (Docker prefixes volume names with the compose project name = parent
+# directory). The migrated workspace data lives in those volumes; switching
+# to compose-scoped empty volumes would lose every migrated workspace +
+# every fact row (`workspace_members` missing → auth.session 500 loop).
+#
+# `external: true` tells compose to USE the existing volume rather than
+# create a new one — and to leave it alone on `down -v` (the bound volume
+# survives so the data is never accidentally wiped).
+# ---------------------------------------------------------------------------
+volumes:
+  brain-pgdata-dev:
+    external: true
+    name: core-service_brain-pgdata-dev
+  brain-chdata-dev:
+    external: true
+    name: analytics-service_brain-chdata-dev
+
+# ---------------------------------------------------------------------------
+# Network — services reach each other by container name on this single net.
+# ---------------------------------------------------------------------------
+networks:
+  brain-net:
+    driver: bridge

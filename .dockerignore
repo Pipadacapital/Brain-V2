@@ -1,0 +1,85 @@
+# =============================================================================
+# Root .dockerignore — shared across all Brain service images.
+# Excludes everything not needed inside a container; reduces context-send time
+# and avoids leaking dev/test/secret artifacts into images.
+# =============================================================================
+
+# --- VCS / IDE ---
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+*.iml
+.DS_Store
+
+# --- Node ---
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/build
+**/coverage
+**/.cache
+**/*.tsbuildinfo
+**/.npmrc.local
+
+# --- Python ---
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+
+# --- Tests / fixtures ---
+**/*.test.ts
+**/*.test.tsx
+**/*.test.js
+**/__tests__
+**/test
+**/tests
+**/playwright-report
+**/test-results
+
+# --- Local dev files we never want in a prod image ---
+**/.env
+**/.env.*.local
+**/.env.local
+**/*.log
+/tmp
+.engineering-os/state/*.bak.*
+.engineering-os/runs
+.engineering-os/memory
+
+# --- The legacy reference project (memory: never ship to prod) ---
+legacy project/
+
+# --- Mobile (Expo) is not part of the server stack ---
+# Allow apps/mobile/package.json through (pnpm --frozen-lockfile needs every
+# workspace member's manifest to verify the lock). Exclude the bulky source.
+apps/mobile/node_modules
+apps/mobile/.expo
+apps/mobile/ios
+apps/mobile/android
+apps/mobile/app
+apps/mobile/assets
+apps/mobile/src
+
+# --- Python services (uv-managed; not in pnpm image) ---
+apps/analytics-service
+apps/ingestion-service
+apps/intelligence-service
+pylibs
+
+# --- Tooling + docs we don't ship ---
+docs
+tools/migrate-legacy
+tools/clickhouse-bootstrap.sh
+README.md
+CLAUDE.md
+.engineering-os
+.claude
+.dockerignore
+docker-compose*.yml
+graphify-out

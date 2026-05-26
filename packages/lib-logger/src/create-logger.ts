@@ -16,7 +16,7 @@
 // Level via LOG_LEVEL env (default 'info'). Use 'debug' to enable per-query +
 // per-decision-step traces; use 'warn' in production-noisy hot paths.
 
-import { pino, type Logger, type LoggerOptions, type Bindings } from 'pino';
+import { pino, stdSerializers, stdTimeFunctions, type Logger, type LoggerOptions, type Bindings } from 'pino';
 
 import { PII_REDACT_PATHS } from './redact-paths.js';
 
@@ -46,18 +46,21 @@ export function createLogger(
   const base: LoggerOptions = {
     level,
     // ISO-8601 timestamps so downstream tooling parses without a format hint.
-    timestamp: pino.stdTimeFunctions.isoTime,
+    // Use the named export (stdTimeFunctions) — pino types don't expose them
+    // on the `pino` constructor directly, so the named import is the canonical
+    // access path under TypeScript strict.
+    timestamp: stdTimeFunctions.isoTime,
     // PII redact paths — canonical list (see redact-paths.ts).
     redact: {
       paths: [...PII_REDACT_PATHS],
       censor: '[Redacted]',
       remove: false,
     },
-    // Standard error serializer so thrown errors carry stack + cause.
+    // Standard error/req/res serializers via the named export.
     serializers: {
-      err: pino.stdSerializers.err,
-      req: pino.stdSerializers.req,
-      res: pino.stdSerializers.res,
+      err: stdSerializers.err,
+      req: stdSerializers.req,
+      res: stdSerializers.res,
     },
     // Bind service + any caller-supplied fields to every line.
     base: {

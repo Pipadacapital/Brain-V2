@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Brain's shared structured-logging primitive. One pino config used by every TS service (api-gateway, core-service, web). Enforces JSON-to-stdout, ISO timestamps, level-from-env, and the canonical PII-redact path list (DPDP minimization). Exports correlation-extract helpers so the request_id + trace_id + workspace_id + user_id 4-tuple flows end-to-end.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./correlation": "./src/correlation.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

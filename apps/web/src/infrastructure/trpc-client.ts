@@ -12,11 +12,15 @@ import { createTRPCReact } from '@trpc/react-query';
 import superjson from 'superjson';
 import type { BrainRouter } from '@brain/api-gateway';
 import { createSupabaseBrowserClient } from './supabase/client.js';
+// Browser-safe subpath — does NOT pull pino into the client bundle.
+// (The top-level '@brain/lib-logger' import pulls pino's stdSerializers
+// through; webpack production builds choke on it. The /correlation subpath
+// is the browser-safe surface.)
 import {
   newCorrelationId,
   REQUEST_ID_HEADER,
   TRACE_ID_HEADER,
-} from '@brain/lib-logger';
+} from '@brain/lib-logger/correlation';
 import { browserLog } from './browser-logger.js';
 
 // Slice A: when real auth is active (the default), every tRPC call carries the
