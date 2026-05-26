@@ -10,7 +10,8 @@
       "@brain/core-connectors": ["../../apps/core-service/src/application/connectors/index.ts"],
       "@brain/core-notifications": ["../../apps/core-service/src/application/notifications/index.ts"],
       "@brain/core-user-profile": ["../../apps/core-service/src/application/user-profile/index.ts"],
-      "@brain/core-product-cogs": ["../../apps/core-service/src/application/product-cogs/index.ts"]
+      "@brain/core-product-cogs": ["../../apps/core-service/src/application/product-cogs/index.ts"],
+      "@brain/core-store-browser": ["../../apps/core-service/src/application/store-browser/index.ts"]
     }
   },
   "include": ["src/**/*"],

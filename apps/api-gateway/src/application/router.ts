@@ -61,6 +61,11 @@ import {
   bulkUpdateProductCogs,
 } from '@brain/core-product-cogs';
 import {
+  listOrders,
+  listStoreProducts,
+  listStoreCustomers,
+} from '@brain/core-store-browser';
+import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
@@ -663,6 +668,89 @@ export function createBrainRouter(
           date_range: { start: input.date_start, end: input.date_end },
         });
         return { rows: result.rows, data_epoch: result.data_epoch, request_id: ctx.requestId };
+      }),
+
+    // -----------------------------------------------------------------
+    // Store-browser tabs (Slice 4 of the parity epic): Orders / Products
+    // / Customers data tables on the /store page. RLS-isolated through the
+    // store-browser use-case module; ANALYST+ to read.
+    // PII posture: Customers returns aggregates + has_email/has_name flags;
+    // decryption is a separate audited operation (deferred).
+    // -----------------------------------------------------------------
+    orders: workspaceProc
+      .input(
+        z.object({
+          search:    z.string().max(200).optional(),
+          status:    z.enum(['all', 'paid', 'pending', 'refunded', 'voided', 'partially_refunded']).optional(),
+          cod:       z.enum(['all', 'cod', 'prepaid']).optional(),
+          page:      z.number().int().min(1).optional(),
+          pageSize:  z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.orders requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listOrders(ctx.workspaceId, input);
+        return {
+          rows: r.rows.map((row) => ({ ...row, totalMu: row.totalMu.toString() })),
+          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    productsTable: workspaceProc
+      .input(
+        z.object({
+          search:    z.string().max(200).optional(),
+          status:    z.enum(['all', 'ACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
+          page:      z.number().int().min(1).optional(),
+          pageSize:  z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.productsTable requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listStoreProducts(ctx.workspaceId, input);
+        return {
+          rows: r.rows.map((row) => ({
+            ...row, costMu: row.costMu.toString(), mrpMu: row.mrpMu.toString(),
+          })),
+          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    customers: workspaceProc
+      .input(
+        z.object({
+          search:    z.string().max(200).optional(),
+          minOrders: z.number().int().min(0).optional(),
+          consent:   z.enum(['all', 'opted_in', 'opted_out', 'unknown']).optional(),
+          page:      z.number().int().min(1).optional(),
+          pageSize:  z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.customers requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listStoreCustomers(ctx.workspaceId, input);
+        return {
+          rows: r.rows.map((row) => ({ ...row, lifetimeSpentMu: row.lifetimeSpentMu.toString() })),
+          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
       }),
   });
 
