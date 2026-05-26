@@ -84,8 +84,10 @@ If rejected: the same false-GREEN class is likely to recur on Child-4 (metric re
 
 | Field | Value |
 |---|---|
-| **decided_at** | *(filled by /adopt-rule or /reject-rule)* |
-| **decided_by** | rishabh *(Founder; agents cannot decide their own rules)* |
-| **decision** | *(adopted / rejected / deferred)* |
-| **rationale** | |
-| **durable_rule_path** | |
+| **decided_at** | 2026-05-26T11:55:00Z |
+| **decided_by** | rishabhporwal (Founder) |
+| **decision** | **adopted** |
+| **rationale** | 9 occurrences across 8 consecutive high-stakes children/slices; per-child binding CFs proven insufficient (Child-4 #5 shipped vacuous despite CF-C4-VERIFY-THE-VERIFIER-1 being bound); the discipline DID hold at Child-5+ when paired with Stage-1 inverse-mutant binding + Stage-6 on-disk re-mutation. Cost of adoption: ~6-10 lines in 3 agent prompts + 2 templates; net-faster throughput across an epic. Cost of NOT adopting: ongoing RLS/PII/money false-GREEN risk = production incident risk. Founder ratified the rule statement + 5 sharpened sub-rules (from Children 5-7 + slices 2-3 evidence). |
+| **durable_rule_path** | `.engineering-os/durable-rules/2026-05-26__verify-the-verifier-mutation-on-gate.md` |
+| **plugin_diff_proposal_path** | `.engineering-os/durable-rules/2026-05-26__verify-the-verifier-mutation-on-gate__plugin-diff-proposal.md` |
+| **decision_log_entry** | `.engineering-os/decision-log/2026/05/2026-05-26.jsonl` (type: `rule-adoption`) |
