@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "req_id": "epic-phase2-feature-parity",
+  "decision_type": "epic-ratification",
+  "decided_by": "rishabhporwal (Founder)",
+  "decided_at": "2026-05-26T11:40:00Z",
+  "decided_via": "claude-code hygiene loop / AskUserQuestion confirmation",
+  "decision": "RATIFY",
+  "rationale": "All 10 slices merged to origin/development via PRs #3+#4. Founder walked the full E2E app on 2026-05-26 — 156 requests / 0 server-side errors / 0 5xx; one structural Fastify maxParamLength bug found + fixed mid-walk on branch fix/api-gateway-max-param-length. UI parity vs legacy intentionally deferred to a later pass per Founder (numbers comparison + visual diff). Ratification is the formal breadth-phase-complete act; no new build is triggered.",
+  "constituent_slices_merged": [
+    {"slice": 1,  "feature": "feat-store-order-fact-layer",    "commit_subject": "feat-store-order-fact-layer (foundation — revenue ladder fact layer)"},
+    {"slice": 2,  "feature": "feat-pnl-cm-waterfall",          "commit_subject": "feat(slice-2-pnl-cm-waterfall): honest P&L + CM waterfall on /pnl + /waterfall"},
+    {"slice": 3,  "feature": "feat-rto-cod-economics",         "commit_subject": "feat(slice-3-rto-cod-economics): RTO + COD/prepaid + logistics + pincode on 4 real pages"},
+    {"slice": 4,  "feature": "feat-marketing-acquisition",     "commit_subject": "feat(slice-4-marketing-acquisition): MER/aMER/CAC + acquisition + distributions"},
+    {"slice": 5,  "feature": "feat-cohorts-ltv",               "commit_subject": "feat(slice-5-cohorts-ltv): /cohorts + /lifetime-value Brain-native"},
+    {"slice": 6,  "feature": "feat-catalog-inventory",         "commit_subject": "feat(slice-6-catalog-inventory): /products /inventory /first-product-cascade"},
+    {"slice": 7,  "feature": "feat-finance-settings-goals",    "commit_subject": "feat(slice-7-finance-settings-goals): /costs /settings/goals /settings/festivals /calendar"},
+    {"slice": 8,  "feature": "(slice-8-lifecycle-timings-email, no separate req)", "commit_subject": "feat(slice-8-lifecycle-timings-email): customer lifecycle + order timings + email/SMS perf (READ-ONLY)"},
+    {"slice": 9,  "feature": "feat-ai-engine-intelligence",    "commit_subject": "feat(slice-9-ai-insight-narration): grounded small_llm narration on /pnl (READ-only, cost-gated)"},
+    {"slice": 10, "feature": "feat-parity-cleanup-pages",      "commit_subject": "feat(slice-10-parity-cleanup): make 9 (shell) scaffolds real + runnable (honest-state, READ-only)"}
+  ],
+  "what_stays_open_after_ratification": [
+    "UI/numbers parity walk vs legacy (deferred by Founder; to revisit later — not blocking).",
+    "Fastify maxParamLength fix waiting on PR merge (branch fix/api-gateway-max-param-length).",
+    "All LIVE-prod cutover gates on the underlying layer-children (HOLD-AT-FORCE on RLS, HOLD-AT-CUTOVER on connectors, HOLD-AT-READ-FLIP on CH) — orthogonal."
+  ],
+  "audit_trail": {
+    "active_json_status_before": "awaiting-founder-ratification",
+    "active_json_status_after": "epic-ratified",
+    "active_json_updated_at": "2026-05-26T11:40:00Z",
+    "active_json_updated_by": "claude-code-epic-ratification"
+  }
+}

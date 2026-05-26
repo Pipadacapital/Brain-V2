@@ -192,6 +192,11 @@ export async function buildRealAuthContext(
 async function buildServer(cfg: GatewayAuthConfig) {
   const fastify = Fastify({
     logger: { level: 'info' },
+    // tRPC catch-all captures the comma-joined procedure path. With Fastify's
+    // default (100), any 5+ procedure batch (>100 chars) silently 404s and the
+    // client falls back to smaller batches — extra RTT per page-load. 5000 matches
+    // the trpc-fastify adapter recommendation.
+    maxParamLength: 5000,
   });
 
   const jwtVerifier = createSupabaseJwtVerifier({ supabaseUrl: cfg.supabaseUrl });

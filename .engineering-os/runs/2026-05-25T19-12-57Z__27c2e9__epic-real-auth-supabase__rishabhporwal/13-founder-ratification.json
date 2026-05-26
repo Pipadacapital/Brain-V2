@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "req_id": "epic-real-auth-supabase",
+  "decision_type": "epic-ratification",
+  "decided_by": "rishabhporwal (Founder)",
+  "decided_at": "2026-05-26T11:40:00Z",
+  "decided_via": "claude-code hygiene loop / AskUserQuestion confirmation",
+  "decision": "RATIFY",
+  "rationale": "All 5 slices (A,B,C,D,E) merged to origin/development via PR #3. Stage-6 PASS signed under standing delegation by Rohan (CTO Advisor) per per-slice 12-founder-decision.json artifacts. No outstanding correctness/security findings. Ratification is the formal epic-completion act; no new build is triggered.",
+  "constituent_slices_merged": [
+    {"slice": "A", "feature": "feat-auth-supabase-identity",      "commit_subject": "feat(slice-A-auth): real Supabase identity — JWKS verify → BrainClaim, email/pw + Google, route protection"},
+    {"slice": "B", "feature": "(slice-B-auth, no separate req)",  "commit_subject": "feat(slice-B-auth): signup + email confirm + password recovery (/auth/*)"},
+    {"slice": "C", "feature": "feat-onboarding-membership-db",     "commit_subject": "feat(slice-C-auth): customer onboarding + DB-backed membership + invitations (local Postgres, RLS)"},
+    {"slice": "D", "feature": "(slice-D-integrations, no separate req)", "commit_subject": "feat(slice-D-integrations): Shopify/Meta/Google Ads OAuth connect + encrypted token custody (local)"},
+    {"slice": "E", "feature": "feat-connector-data-ingestion",     "commit_subject": "feat(slice-e): connector data ingestion — Shopify/Meta/Google pull -> real analytics"}
+  ],
+  "what_stays_open_after_ratification": [
+    "Real Supabase login/Google works LOCAL against the dev project; PROD-side provider-dashboard redirect-URI registration is a separate Founder action when prod is provisioned.",
+    "Connector OAuth token custody (Option A/B decision = CF-C3-SECRETS-INTERIM-1) — orthogonal escalation, separate gate."
+  ],
+  "audit_trail": {
+    "active_json_status_before": "awaiting-founder",
+    "active_json_status_after": "epic-ratified",
+    "active_json_updated_at": "2026-05-26T11:40:00Z",
+    "active_json_updated_by": "claude-code-epic-ratification"
+  }
+}
