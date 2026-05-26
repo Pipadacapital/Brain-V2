@@ -1,13 +1,14 @@
 // @paradigm: sql
-// DispatchingDataPlane (Slice E) — the ONE DataPlanePort the router talks to. It
-// routes per call by workspace_id:
-//   • Sugandh-Lok anchor  → the shared StubDataPlane (the DEMO seed — Founder: keep it).
-//   • any other workspace → a per-workspace LocalDbDataPlane reading its OWN ingested
-//     connector facts from local Postgres (persona P-001/P-003).
-// Both speak the SAME DataPlanePort contract (Single-Primitive Rule) — there is no
-// second code path in the router. The non-data methods (upsertGoal, push token,
-// insights submit, members/settings/integrations/backfill, morning brief) are
-// delegated to the routed plane unchanged.
+// DispatchingDataPlane — the ONE DataPlanePort the router talks to. Routes per
+// call by workspace_id to a per-workspace LocalDbDataPlane that reads the
+// workspace's OWN connector facts. There is no second code path; the canonical
+// "seed" / demo plane has been ripped (2026-05-26, Founder direction: production-
+// like behaviour — every read hits real data, fresh workspaces get honest empty
+// results from empty-results.ts, never fabricated numbers).
+//
+// One LocalDbDataPlane is cached per workspace_id so the inherited tenancy
+// guard (workspace_id === this.workspaceId) catches a cross-tenant call as
+// UnscopedQueryError instead of silently mixing data.
 
 import type {
   DataPlanePort,
@@ -15,17 +16,13 @@ import type {
   GoalUpsertInput,
   ResponseKind,
 } from '../domain/proto-types.js';
-import { StubDataPlane, SUGANDH_LOK_WORKSPACE_ID } from './loopback-data-plane.js';
 import { LocalDbDataPlane } from './local-db-data-plane.js';
 
 export class DispatchingDataPlane implements DataPlanePort {
   private readonly local = new Map<string, LocalDbDataPlane>();
 
-  constructor(private readonly sugandh: StubDataPlane) {}
-
-  /** Route to the seed plane for Sugandh, else a per-workspace local-DB plane. */
+  /** Per-workspace local-DB plane, memoized. */
   private plane(workspaceId: string): DataPlanePort {
-    if (workspaceId === SUGANDH_LOK_WORKSPACE_ID) return this.sugandh;
     let p = this.local.get(workspaceId);
     if (!p) {
       p = new LocalDbDataPlane(workspaceId);

@@ -8,6 +8,7 @@
 // second. CF-C6-RENDER-ONLY-1: zero arithmetic; values from trpc.catalog.firstProductCascade.
 // rates are bp (÷100 display); additional-order is centi (÷100); days-to-second is deci (÷10).
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString, parseAsInteger } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -29,8 +30,8 @@ function formatDeciDays(deci: bigint | null): string {
 export function FirstProductCascadeContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const [obs, setObs] = useQueryState('obs', parseAsInteger.withDefault(365));
 
   const enabled = Boolean(isAuthenticated && workspaceId);

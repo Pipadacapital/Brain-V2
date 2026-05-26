@@ -5,6 +5,7 @@
 // COD vs prepaid economics + the FULL break-even COD RTO rate (the moat).
 // CF-C6-RENDER-ONLY-1: zero arithmetic; all values from trpc.logistics.codPrepaid.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -15,8 +16,8 @@ import { formatBpPercent } from '@/interfaces/components/logistics/format-bp.js'
 export function CodPrepaidContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
 
   const { data, isLoading, error } = trpc.logistics.codPrepaid.useQuery(
     { date_start: dateStart, date_end: dateEnd },

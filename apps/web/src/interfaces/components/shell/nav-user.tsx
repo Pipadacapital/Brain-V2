@@ -27,24 +27,36 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/interfaces/components/ui/sidebar.js";
-import { useAppSelector } from "@/domain/store/hooks.js";
+import { useAppDispatch, useAppSelector } from "@/domain/store/hooks.js";
+import { clearSession } from "@/domain/store/session-slice.js";
 import { trpc } from "@/infrastructure/trpc-client.js";
+import { createSupabaseBrowserClient } from "@/infrastructure/supabase/client.js";
 
-function getUserInitials(name: string): string {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+function getUserInitials(name: string, fallbackEmail: string): string {
+  const n = name.trim();
+  if (n) {
+    return n
+      .split(" ")
+      .map((p) => p[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  }
+  return (fallbackEmail[0] ?? "U").toUpperCase();
 }
 
 export function NavUser() {
   const { isMobile } = useSidebar();
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const workspaceRole = useAppSelector((s) => s.session.workspaceRole);
-  const userId = useAppSelector((s) => s.session.userId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+
+  // Real profile drives the avatar + dropdown label (Slice 2 backend).
+  const { data: profile } = trpc.user.account.useQuery(undefined, {
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
 
   // Unread notifications badge — small, polled every 60s. Identity-tier proc:
   // works as soon as we have a session, no workspace context needed.
@@ -54,12 +66,27 @@ export function NavUser() {
   );
   const unreadCount = unreadData?.count ?? 0;
 
-  const displayName = "Brain User";
-  const displayEmail = userId ? `${userId.slice(0, 8)}@brain.app` : "user@brain.app";
-  const initials = getUserInitials(displayName);
+  const displayName = profile?.fullName?.trim() || profile?.email || "";
+  const displayEmail = profile?.email || "";
+  const initials = getUserInitials(profile?.fullName ?? "", displayEmail);
 
-  const handleLogout = () => {
-    router.push("/login");
+  // Real logout: kill the Supabase session, drop Redux state + the persisted
+  // workspace, then route to /login. Without auth.signOut() the cookie persists
+  // and the middleware bounces the user back into the protected shell.
+  const handleLogout = async () => {
+    try {
+      await createSupabaseBrowserClient().auth.signOut();
+    } catch {
+      /* best-effort — proceed to clear local state */
+    }
+    dispatch(clearSession());
+    try {
+      window.localStorage.removeItem("brain.activeWorkspace");
+    } catch {
+      /* ignore */
+    }
+    // Use a hard navigation so any in-flight queries + caches reset cleanly.
+    window.location.assign("/login");
   };
 
   return (

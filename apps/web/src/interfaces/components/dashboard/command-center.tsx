@@ -8,6 +8,7 @@
 // CF-C6-NEW-LAYER-1: nuqs for URL state (date range / filters); Redux for ui/session.
 // CF-C6-PERF-A11Y-1: semantic headings, landmarks.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { KpiStrip } from '@/interfaces/components/kpi/kpi-strip.js';
@@ -23,7 +24,7 @@ function currentMonthRange(): { start: string; end: string } {
   const startDate = `${year}-${month}-01`;
   // End = today for live; seed month = 2026-04.
   // For LOCAL harness, default to the Sugandh-Lok seed month.
-  const endDate = '2026-04-30';
+  const endDate = DEFAULT_DATE_END;
   return { start: startDate, end: endDate };
 }
 
@@ -34,11 +35,11 @@ export function CommandCenter() {
   // CF-C6-AS-OF-STAMP-1: date range in URL state (nuqs).
   const [dateStart, setDateStart] = useQueryState(
     'from',
-    parseAsString.withDefault('2026-04-01'),
+    parseAsString.withDefault(DEFAULT_DATE_START),
   );
   const [dateEnd, setDateEnd] = useQueryState(
     'to',
-    parseAsString.withDefault('2026-04-30'),
+    parseAsString.withDefault(DEFAULT_DATE_END),
   );
 
   if (!isAuthenticated || !workspaceId) {

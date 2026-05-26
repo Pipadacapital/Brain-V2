@@ -6,6 +6,7 @@
 // matching legacy (LineChart with mode + mean ReferenceLine). CF-C6-RENDER-ONLY-1: zero
 // arithmetic; all values from trpc.marketing.distributions. CF-C6-FORMATMONEY-CANONICAL-1.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -21,8 +22,8 @@ const DENSITY_CHART_CONFIG: ChartConfig = {
 export function DistributionsContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const [metric, setMetric] = useQueryState('metric', parseAsString.withDefault('cm1'));
   const [search, setSearch] = useQueryState('q', parseAsString.withDefault(''));
 

@@ -6,13 +6,20 @@ import React from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { MorningBriefScreen } from '../src/interfaces/screens/MorningBriefScreen.js';
 
-// Sugandh-Lok workspace ID (Phase 0-1 LOCAL harness).
-// In production: workspace ID comes from expo-secure-store (set at login).
-const WORKSPACE_ID = process.env.EXPO_PUBLIC_WORKSPACE_ID
-  ?? '00000000-0000-0000-0000-000000000001';
+// Workspace ID — REQUIRED env var. Production: set at login via expo-secure-store.
+// The Sugandh-Lok hardcoded fallback was removed on 2026-05-26 (Founder destub
+// Rip C); the app fails loudly rather than silently routing to a wrong workspace.
+
+const WORKSPACE_ID = process.env.EXPO_PUBLIC_WORKSPACE_ID;
 
 export default function MorningBriefRoute() {
   const { date } = useLocalSearchParams<{ date?: string }>();
+
+  if (!WORKSPACE_ID) {
+    throw new Error(
+      'EXPO_PUBLIC_WORKSPACE_ID is required. Set it in apps/mobile/.env or via EAS.',
+    );
+  }
 
   return (
     <MorningBriefScreen

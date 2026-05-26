@@ -1,26 +1,23 @@
 "use client";
 
 // @paradigm: sql
-// SessionBootstrap — hydrates the Redux session slice on app load for the REAL-auth
-// path. The middleware authenticates the request (valid Supabase cookie) and lets it
+// SessionBootstrap — hydrates the Redux session slice on app load.
+// The middleware authenticates the request (valid Supabase cookie) and lets it
 // reach a (shell) page, but Redux is in-memory and resets on every full navigation —
 // so without this, isAuthenticated stays false and every page renders "Not signed in".
 //
 // Flow: call auth.session (verified JWT claim → userId/workspaceId/workspaceRole),
-// dispatch setSession, THEN render children. While resolving → a spinner (never the
-// dead-end "Not signed in" panel). On failure → redirect to /auth/login?error=session
-// (the page is protected; a session we cannot resolve means re-authenticate).
+// dispatch setSession, THEN render children. While resolving → a spinner. On failure
+// → redirect to /login?error=session.
 //
-// Offline harness: the stub login sets the session itself and there is no real JWT,
-// so this bootstrap is a no-op there (render children directly).
+// The offline LOCAL-harness fallback was removed on 2026-05-26 (Founder destub
+// Rip B); the only auth path is real Supabase JWT.
 
 import { useEffect } from "react";
 import { trpc } from "@/infrastructure/trpc-client.js";
 import { useAppDispatch, useAppSelector } from "@/domain/store/hooks.js";
 import { setSession } from "@/domain/store/session-slice.js";
 import { createSupabaseBrowserClient } from "@/infrastructure/supabase/client.js";
-
-const IS_LOCAL_HARNESS = process.env.NEXT_PUBLIC_BRAIN_LOCAL_HARNESS === "true";
 
 function LoadingScreen() {
   return (
@@ -37,9 +34,8 @@ export function SessionBootstrap({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
 
-  // Harness: offline stub owns the session; do not bootstrap against a real JWT.
   const query = trpc.auth.session.useQuery(undefined, {
-    enabled: !IS_LOCAL_HARNESS && !isAuthenticated,
+    enabled: !isAuthenticated,
     retry: false,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
@@ -66,24 +62,20 @@ export function SessionBootstrap({ children }: { children: React.ReactNode }) {
   }, [query.data, dispatch]);
 
   useEffect(() => {
-    // Protected route + unresolvable session → re-authenticate (your directive:
-    // never sit on a dashboard while "not signed in"). We sign OUT first: the
-    // middleware bounces an authenticated user off /auth/login straight back to
-    // /dashboard, so leaving the (now-invalid) cookie in place would loop. Clearing
-    // it means the user lands on the login page and stays there with the error.
-    if (!IS_LOCAL_HARNESS && query.isError) {
+    // Protected route + unresolvable session → re-authenticate. Sign out first
+    // so the middleware doesn't bounce the (now-invalid) cookie straight back.
+    if (query.isError) {
       void (async () => {
         try {
           await createSupabaseBrowserClient().auth.signOut();
         } catch {
           /* best-effort — redirect regardless */
         }
-        window.location.assign("/auth/login?error=session");
+        window.location.assign("/login?error=session");
       })();
     }
   }, [query.isError]);
 
-  if (IS_LOCAL_HARNESS) return <>{children}</>;
   if (query.isError) return <LoadingScreen />; // redirecting
   if (!isAuthenticated) return <LoadingScreen />; // resolving / not yet hydrated
   return <>{children}</>;
