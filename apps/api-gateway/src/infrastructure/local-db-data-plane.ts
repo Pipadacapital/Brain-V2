@@ -13,7 +13,13 @@
 // later (RTO/COD/pincode need Shiprocket; cohorts/LTV/products need deeper facts) are
 // honestly empty until those connectors land — stated in the slice-E deferrals.
 
-import { readStoreSummary, readPnl, readMarketing } from '@brain/core-connectors';
+import {
+  readStoreSummary, readPnl, readMarketing, readIntegrations, readCogs,
+  readProductPerformance, readWorkspaceMembers, readWorkspaceSettings,
+  readShipmentAnalytics, readPincodes, readCodPrepaid, readCohorts, readLtv,
+  readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
+  readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints, readPnlPeriodGrid,
+} from '@brain/core-connectors';
 import type {
   DataPlanePort,
   KpiSummaryRow,
@@ -25,6 +31,29 @@ import type {
   MarketingEfficiencyResult,
   AcquisitionSummaryResult,
   MetricRow,
+  IntegrationsResult,
+  ConnectorStatus,
+  ProductPerformanceResult,
+  PageInsightResult,
+  MorningBrief,
+  BackfillStatusResult,
+  WorkspaceMembersResult,
+  WorkspaceSettingsResult,
+  WorkspaceMemberRole,
+  RtoAnalyticsResult,
+  CodPrepaidResult,
+  LogisticsResult,
+  PincodeIntelligenceResult,
+  CohortMatrixResult,
+  LtvSummaryResult,
+  DistributionsResult,
+  OrderTimingsResult,
+  LifecycleStatesResult,
+  FirstProductCascadeResult,
+  CalendarReportResult,
+  DailySalesRow,
+  DailyAcquisitionRow,
+  PnlPeriodRow,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -111,9 +140,10 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     this.assertWs(params.workspace_id);
     const store = await readStoreSummary(this.ws);
     const mk = await readMarketing(this.ws);
-    // CM2 = realized revenue − ad spend (COGS/variable not yet connector-fed → honest 0).
+    // CM2 = realized revenue − COGS − ad spend (COGS from migrated product cost).
     const totalSpend = mk.metaSpendMu + mk.googleSpendMu;
-    const cm2 = store.realizedRevenueMu - totalSpend;
+    const cogs = (await readCogs(this.ws)).cogsMu;
+    const cm2 = store.realizedRevenueMu - cogs - totalSpend;
     const summary: KpiSummaryRow = {
       workspace_id: this.ws,
       period: 'synced',
@@ -137,10 +167,10 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }> {
     this.assertWs(params.workspace_id);
     const f = await readPnl(this.ws);
-    // COGS / variable costs are not yet ingested by a connector → 0 (honest); the P&L
-    // therefore shows realized revenue − ad spend = CM2. Stated as a slice-E deferral.
+    // COGS now comes from migrated product cost (quantity × cost_mu). Variable costs
+    // (shipping/packaging) are not yet connector-fed → 0 (honest).
     const netRevenue = f.netRevenueMu;
-    const cogs = 0n;
+    const cogs = (await readCogs(this.ws)).cogsMu;
     const variable = 0n;
     const cm1 = netRevenue - cogs - variable;
     const cm2 = cm1 - f.totalAdSpendMu;
@@ -171,12 +201,14 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     this.assertWs(params.workspace_id);
     const f = await readPnl(this.ws);
     const head = f.netRevenueMu;
-    const cm1 = head; // no COGS/variable ingested
+    const cogs = (await readCogs(this.ws)).cogsMu;
+    const cm1 = head - cogs;
     const cm2 = cm1 - f.totalAdSpendMu;
     const epoch = DATA_EPOCH;
     const c = f.currencyCode;
     const steps: PnlWaterfallRow[] = [
       { definition_id: 'net_revenue_mu', label: 'Realized Revenue', value_mu: head, cumulative_mu: head, currency_code: c, data_epoch: epoch },
+      { definition_id: 'cogs_mu', label: 'COGS', value_mu: -cogs, cumulative_mu: cm1, currency_code: c, data_epoch: epoch },
       { definition_id: 'cm1_mu', label: 'CM1 (Gross Contribution)', value_mu: cm1, cumulative_mu: cm1, currency_code: c, data_epoch: epoch },
       { definition_id: 'total_ad_spend_mu', label: 'Ad Spend', value_mu: -f.totalAdSpendMu, cumulative_mu: cm2, currency_code: c, data_epoch: epoch },
       { definition_id: 'cm2_mu', label: 'CM2 (After Ads)', value_mu: cm2, cumulative_mu: cm2, currency_code: c, data_epoch: epoch },
@@ -258,47 +290,321 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     return { rows: [], data_epoch: DATA_EPOCH, next_cursor: '' };
   }
 
+  // Integrations page — REAL connection state from connector_connections (not the
+  // Sugandh seed). Lets a real workspace show its actual connected vendors.
+  override async getIntegrations(p: { workspace_id: string }): Promise<{ result: IntegrationsResult; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const rows = await readIntegrations(this.ws);
+    const toStatus = (s: string): ConnectorStatus =>
+      s === 'CONNECTED' ? 'CONNECTED'
+      : s === 'DISCONNECTED' || s === 'NOT_CONNECTED' ? 'DISCONNECTED'
+      : 'ERROR'; // TOKEN_EXPIRED | ERROR
+    const result: IntegrationsResult = {
+      workspace_id: this.ws,
+      rows: rows.map((r) => ({
+        connector: r.connector,
+        status: toStatus(r.status),
+        last_sync_at: r.lastSyncAt,
+        last_sync_error: r.lastSyncError,
+      })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
+  }
+
+  // Workspace members — REAL members + roles from the local DB (de-stubbed).
+  override async getWorkspaceMembers(p: { workspace_id: string }): Promise<{ result: WorkspaceMembersResult; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const { members, pendingInvitations } = await readWorkspaceMembers(this.ws);
+    const result: WorkspaceMembersResult = {
+      workspace_id: this.ws,
+      members: members.map((m) => ({
+        user_id: m.userId,
+        full_name: m.fullName,
+        email: m.email,
+        role: m.role as WorkspaceMemberRole,
+        joined_at: m.joinedAt,
+      })),
+      pending_invitations: pendingInvitations,
+    };
+    return { result, data_epoch: DATA_EPOCH };
+  }
+
+  // Workspace settings — REAL workspace row (de-stubbed). plan/timezone/region are
+  // honest India defaults (not stored in the local-dev schema).
+  override async getWorkspaceSettings(p: { workspace_id: string }): Promise<{ result: WorkspaceSettingsResult; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const s = await readWorkspaceSettings(this.ws);
+    const result: WorkspaceSettingsResult = {
+      workspace_id: this.ws,
+      name: s?.name ?? '',
+      plan: 'Growth',
+      timezone: 'Asia/Kolkata',
+      region: 'IN',
+      currency_code: 'INR',
+      created_at: s?.createdAt ?? '',
+    };
+    return { result, data_epoch: DATA_EPOCH };
+  }
+
+  // De-stubbed: no AI narration/brief/backfill source for a real workspace yet →
+  // honest empty (NEVER the Sugandh seed). Wired when the intelligence service lands.
+  override async getPageInsights(p: { workspace_id: string; page: string; date_range: DateRange }): Promise<{ result: PageInsightResult; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const result: PageInsightResult = {
+      workspace_id: this.ws,
+      page: p.page,
+      period: 'synced',
+      data_epoch: DATA_EPOCH,
+      signals: [],
+      narrations: [],
+      faithfulness_ok: true,
+      model_used: 'none',
+      cached: false,
+      paradigm: 'small_llm',
+    };
+    return { result, data_epoch: DATA_EPOCH };
+  }
+
+  override async getMorningBrief(_p: { workspace_id: string; date: string }): Promise<MorningBrief> {
+    this.assertWs(_p.workspace_id);
+    return { items: [], data_epoch: DATA_EPOCH, freshness_label: 'No brief generated yet' };
+  }
+
+  override async getBackfillStatus(p: { workspace_id: string }): Promise<{ result: BackfillStatusResult; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    return { result: { workspace_id: this.ws, jobs: [], note: 'No backfill jobs for this workspace.' }, data_epoch: DATA_EPOCH };
+  }
+
   // ---- NOT YET FED BY CONNECTORS → HONEST EMPTY (never the Sugandh seed) ------
 
+  // RTO analytics from Shiprocket shipment facts. revenue_lost_to_rto = 0 (legacy
+  // never persisted the shipment→order key — documented in connector-pipeline-gaps).
   override async getRtoAnalytics(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyRtoAnalytics(this.ws), data_epoch: DATA_EPOCH };
+    const s = await readShipmentAnalytics(this.ws);
+    const result: RtoAnalyticsResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      total_shipments: s.totalShipments,
+      rto_count: s.rtoCount,
+      rto_rate_bp: bp(s.rtoCount, s.totalShipments),
+      total_rto_cost_mu: s.rtoChargesMu,
+      revenue_lost_to_rto_mu: 0n,
+      by_payment_method: [
+        { payment_method: 'COD', rto_count: s.codRtoCount, rto_cost_mu: 0n, revenue_lost_mu: 0n },
+        { payment_method: 'Prepaid', rto_count: s.prepaidRtoCount, rto_cost_mu: 0n, revenue_lost_mu: 0n },
+      ],
+      by_courier: s.byCourier.map((c) => ({ courier_name: c.courierName, rto_count: c.rtoCount, rto_cost_mu: 0n, revenue_lost_mu: 0n })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
+  // COD vs Prepaid: order counts/revenue from order facts; RTO rates from shipments.
   override async getCodPrepaid(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyCodPrepaid(this.ws), data_epoch: DATA_EPOCH };
+    const cp = await readCodPrepaid(this.ws);
+    const s = await readShipmentAnalytics(this.ws);
+    const codRto = bp(s.codRtoCount, s.codTotal);
+    const prepaidRto = bp(s.prepaidRtoCount, s.prepaidTotal);
+    const result: CodPrepaidResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      cod_orders: cp.codOrders,
+      prepaid_orders: cp.prepaidOrders,
+      cod_realization_rate_bp: codRto === null ? null : 10000 - codRto,
+      cod_rto_rate_bp: codRto,
+      prepaid_rto_rate_bp: prepaidRto,
+      effective_revenue_cod_mu: cp.codGrossMu,
+      effective_revenue_prepaid_mu: cp.prepaidGrossMu,
+      prepaid_premium_mu: 0n,
+      average_order_value_mu: cp.aovMu,
+      breakeven_cod_rto_rate_bp: null,
+      breakeven_note: null,
+      comparison: [
+        { payment_method: 'COD', orders: cp.codOrders, gross_revenue_mu: cp.codGrossMu, rto_rate_bp: codRto, effective_revenue_mu: cp.codGrossMu, fee_total_mu: 0n, net_revenue_per_order_mu: cp.codOrders > 0n ? cp.codGrossMu / cp.codOrders : null },
+        { payment_method: 'Prepaid', orders: cp.prepaidOrders, gross_revenue_mu: cp.prepaidGrossMu, rto_rate_bp: prepaidRto, effective_revenue_mu: cp.prepaidGrossMu, fee_total_mu: 0n, net_revenue_per_order_mu: cp.prepaidOrders > 0n ? cp.prepaidGrossMu / cp.prepaidOrders : null },
+      ],
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
   override async getLogistics(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyLogistics(this.ws), data_epoch: DATA_EPOCH };
+    const s = await readShipmentAnalytics(this.ws);
+    const result: LogisticsResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      total_shipments: s.totalShipments,
+      delivered_count: s.deliveredCount,
+      delivered_rate_bp: bp(s.deliveredCount, s.totalShipments),
+      rto_count: s.rtoCount,
+      rto_rate_bp: bp(s.rtoCount, s.totalShipments),
+      cod_count: s.codCount,
+      prepaid_count: s.prepaidCount,
+      forward_charges_mu: 0n,
+      cod_charges_mu: 0n,
+      rto_charges_mu: s.rtoChargesMu,
+      total_shiprocket_charges_mu: s.totalChargesMu,
+      average_shipping_charge_per_shipment_mu: s.totalShipments > 0n ? s.totalChargesMu / s.totalShipments : null,
+      by_courier: s.byCourier.map((c) => ({ courier_name: c.courierName, count: c.count, delivered_count: c.deliveredCount, rto_count: c.rtoCount, total_charges_mu: c.chargesMu })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
   override async getPincodeIntelligence(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyPincode(this.ws), data_epoch: DATA_EPOCH };
+    const rows = await readPincodes(this.ws);
+    const total = rows.reduce((a, r) => a + r.shipmentCount, 0n);
+    const result: PincodeIntelligenceResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      total_shipments: total,
+      rows: rows.map((r) => ({
+        pincode: r.pincode, city: r.city, state: '', tier: null,
+        shipment_count: r.shipmentCount,
+        rto_count: r.rtoCount, rto_rate_bp: bp(r.rtoCount, r.shipmentCount),
+        cod_count: r.codCount, cod_rate_bp: bp(r.codCount, r.shipmentCount),
+        delivered_count: r.deliveredCount, delivered_rate_bp: bp(r.deliveredCount, r.shipmentCount),
+        revenue_mu: 0n, aov_mu: null, unique_customers: 0n, repeat_rate_bp: null,
+        reliability_score: r.shipmentCount > 0n ? Number((r.deliveredCount * 10000n) / r.shipmentCount) : 0,
+        top_courier: '',
+      })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
-  override async getDistributions(p: { workspace_id: string; date_range: DateRange }) {
+  override async getDistributions(p: Parameters<DataPlanePort['getDistributions']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyDistributions(this.ws), data_epoch: DATA_EPOCH };
+    const metric = (p.filters?.metric ?? 'sales') as 'sales' | 'cm1';
+    const [d, graphRaw] = await Promise.all([
+      readDistributions(this.ws),
+      readDistributionsGraphPoints(this.ws, metric),
+    ]);
+    const result: DistributionsResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      metric,
+      rows: d.rows.map((r) => ({ product: r.product, orders: r.orders, mode_mu: r.modeMu, mean_mu: r.meanMu, diff_mu: r.meanMu - r.modeMu })),
+      total_rows: BigInt(d.rows.length),
+      graph_points: graphRaw.map((g) => ({ value_mu: g.valueMu, density_bp: g.densityBp })),
+      global_mode_mu: d.globalMode,
+      global_mean_mu: d.globalMean,
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
-  override async getCohortMatrix(p: { workspace_id: string; date_range: DateRange }) {
+  // Cohorts — acquisition-month cohorts; m[] = cumulative net revenue. CAC/payback
+  // are null (ad spend is not cohort-attributed in the connector facts — honest).
+  override async getCohortMatrix(p: Parameters<DataPlanePort['getCohortMatrix']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyCohortMatrix(this.ws), data_epoch: DATA_EPOCH };
+    const cohorts = await readCohorts(this.ws);
+    const totalNew = cohorts.reduce((a, c) => a + c.newCustomers, 0n);
+    let rrWeighted = 0n;
+    for (const c of cohorts) if (c.rr90Bp !== null) rrWeighted += BigInt(c.rr90Bp) * c.newCustomers;
+    const result: CohortMatrixResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      metric: 'revenue', mode: 'cumulative',
+      average_cac_mu: null,
+      avg_90day_repeat_bp: totalNew > 0n ? Number(rrWeighted / totalNew) : null,
+      average_payback_centimonths: null,
+      new_customers: totalNew,
+      rows: cohorts.map((c) => ({
+        cohort_month: c.cohortMonth,
+        new_customers: c.newCustomers,
+        cac_mu: null,
+        rr90_bp: c.rr90Bp,
+        payback_centimonths: null,
+        first_order_cm3_mu: c.m[0] ?? 0n,
+        first_order_realized_cm3_mu: c.m[0] ?? 0n,
+        cohort_ltv_mu: c.m[11] ?? 0n,
+        ltv_cac_bp: null,
+        m: c.m,
+      })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
-  override async getLtvSummary(p: { workspace_id: string; date_range: DateRange }) {
+  // LTV — average cumulative net revenue per acquired customer; rows per cohort month.
+  override async getLtvSummary(p: Parameters<DataPlanePort['getLtvSummary']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyLtvSummary(this.ws), data_epoch: DATA_EPOCH };
+    const l = await readLtv(this.ws);
+    const result: LtvSummaryResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      metric: 'revenue', mode: 'cumulative', dimension: 'customer_id',
+      first_order_mu: l.firstOrderMu,
+      first_order_realized_mu: l.firstOrderMu,
+      month1_mu: l.month1Mu,
+      month3_mu: l.month3Mu,
+      month6_mu: l.month6Mu,
+      month12_mu: l.month12Mu,
+      new_customers: l.newCustomers,
+      total_rows: BigInt(l.rows.length),
+      rows: l.rows.map((r) => ({
+        dimension_value: r.cohortMonth,
+        dimension_label: r.cohortMonth,
+        orders_count: 0n,
+        new_customers: r.newCustomers,
+        first_order_realized_mu: r.firstOrderMu,
+        first_order_mu: r.firstOrderMu,
+        m: r.m,
+      })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
-  override async getProductPerformance(p: { workspace_id: string; date_range: DateRange }) {
+  override async getProductPerformance(p: Parameters<DataPlanePort['getProductPerformance']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyProductPerformance(this.ws), data_epoch: DATA_EPOCH };
+    const { rows, totalCm1Mu } = await readProductPerformance(this.ws);
+    const result: ProductPerformanceResult = {
+      workspace_id: this.ws,
+      period: 'synced',
+      data_epoch: DATA_EPOCH,
+      currency_code: 'INR',
+      group_by: 'product',
+      sort: 'cm1',
+      direction: 'desc',
+      total_cm1_mu: totalCm1Mu,
+      total_rows: BigInt(rows.length),
+      rows: rows.map((r) => ({
+        label: r.label,
+        pareto_grade: r.paretoGrade,
+        cm1_mu: r.cm1Mu,
+        cm1_pct_bp: r.revenueMu > 0n ? Number((r.cm1Mu * 10000n) / r.revenueMu) : null,
+        cm1_total_share_bp: totalCm1Mu > 0n ? Number((r.cm1Mu * 10000n) / totalCm1Mu) : null,
+        revenue_mu: r.revenueMu,
+        sales_mu: r.revenueMu,
+        refunds_mu: 0n,
+        sold: r.soldQty,
+        refunded: 0n,
+        net_quantity: r.soldQty,
+        return_rate_bp: null,
+        nc_return_rate_bp: null,
+        ec_return_rate_bp: null,
+        orders: r.orders,
+        nc_orders: 0n,
+        ec_orders: 0n,
+        aov_mu: r.aovMu,
+        nc_aov_mu: null,
+        ec_aov_mu: null,
+      })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
   override async getInventoryLevels(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
     return { result: emptyInventoryLevels(this.ws), data_epoch: DATA_EPOCH };
   }
-  override async getFirstProductCascade(p: { workspace_id: string; date_range: DateRange }) {
+  override async getFirstProductCascade(p: Parameters<DataPlanePort['getFirstProductCascade']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyFirstProductCascade(this.ws), data_epoch: DATA_EPOCH };
+    const { rows, totalCohort } = await readFirstProductCascade(this.ws);
+    const result: FirstProductCascadeResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      observation_days: 90,
+      total_cohort_customers: totalCohort,
+      rows: rows.map((r) => ({
+        product_key: r.productKey,
+        product_title: r.productTitle,
+        first_order_customers: r.firstOrderCustomers,
+        customers_with_2nd_order: r.with2nd,
+        customers_with_3rd_order: r.with3rd,
+        customers_with_4th_plus_order: r.with4thPlus,
+        second_order_rate_bp: bp(r.with2nd, r.firstOrderCustomers),
+        third_order_rate_bp: bp(r.with3rd, r.firstOrderCustomers),
+        fourth_plus_rate_bp: bp(r.with4thPlus, r.firstOrderCustomers),
+        additional_order_rate_centi: 0n,
+        average_ltv_revenue_mu: r.avgLtvMu,
+        average_days_to_second_deci: null,
+      })),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
   override async getGoalAttainment(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
@@ -312,20 +618,148 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     this.assertWs(p.workspace_id);
     return { result: emptyFestivalCalendar(this.ws), data_epoch: DATA_EPOCH };
   }
-  override async getCalendarReport(p: { workspace_id: string; date_range: DateRange }) {
+  override async getCalendarReport(p: Parameters<DataPlanePort['getCalendarReport']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyCalendarReport(this.ws), data_epoch: DATA_EPOCH };
+    const grain = (p.filters?.grain ?? 'month') as 'day' | 'week' | 'month';
+    const rows = await readCalendarReport(this.ws, grain);
+    const cell = (v: bigint | null) => ({ actual: v, goal: null, rag: null });
+    const result: CalendarReportResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      grain,
+      rows: rows.map((r) => ({
+        period_key: r.periodKey,
+        label: r.periodKey,
+        actions: [],
+        revenue: cell(r.revenueMu),
+        cm3: cell(null),
+        total_spend_mu: r.spendMu,
+        mer: cell(r.spendMu > 0n ? (r.revenueMu * 10000n) / r.spendMu : null),
+        amer: cell(null),
+        new_customers: cell(r.newCustomers),
+        cac: cell(r.newCustomers > 0n ? r.spendMu / r.newCustomers : null),
+        aov: cell(r.orders > 0n ? r.revenueMu / r.orders : null),
+      })),
+      total_rows: BigInt(rows.length),
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
   override async getLifecycleStates(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyLifecycleStates(this.ws), data_epoch: DATA_EPOCH };
+    const l = await readLifecycleStates(this.ws);
+    const result: LifecycleStatesResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      p40_days: 90, p80_days: 180, used_fallback: true,
+      buckets: l.buckets.map((b) => ({ bucket: b.bucket as 'new' | 'active' | 'at_risk' | 'churned', customer_count: b.customerCount, revenue_mu: b.revenueMu, order_count: b.orderCount })),
+      net_active: l.netActive,
+      total_customers: l.totalCustomers,
+      unattributed_revenue_mu: 0n,
+      unattributed_order_count: 0n,
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
-  override async getOrderTimings(p: { workspace_id: string; date_range: DateRange }) {
+  override async getOrderTimings(p: Parameters<DataPlanePort['getOrderTimings']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyOrderTimings(this.ws), data_epoch: DATA_EPOCH };
+    const t = await readOrderTimings(this.ws);
+    const summaryRow = {
+      group_id: 'all', label: 'All', group_by: 'all',
+      first_orders: t.firstOrders,
+      second_orders_bp: t.secondBp,
+      third_orders_bp: t.thirdBp,
+      fourth_orders_bp: t.fourthBp,
+      days_1to2: t.days12,
+      days_2to3: t.days23,
+      days_3to4: t.days34,
+      reactivation_window_days: t.days12 !== null ? Math.round(t.days12 * 0.8) : null,
+    };
+    const result: OrderTimingsResult = {
+      workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      metric: 'median',
+      summary: summaryRow,
+      groups: [],
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
   override async getEmailSmsPerformance(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
     return { result: emptyEmailSmsPerformance(this.ws), data_epoch: DATA_EPOCH };
+  }
+
+  // Chart-parity: daily net-sales series (feeds analytics AreaChart).
+  override async getDailySales(p: { workspace_id: string; date_range: DateRange }): Promise<{ rows: DailySalesRow[]; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const raw = await readDailyNetSales(this.ws, p.date_range.start, p.date_range.end);
+    return {
+      rows: raw.map((r) => ({ date: r.date, net_sales_mu: r.netSalesMu, orders: r.orders })),
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  // Chart-parity: daily acquisition series (feeds acquisition ComposedChart).
+  override async getDailyAcquisition(p: { workspace_id: string; date_range: DateRange }): Promise<{ rows: DailyAcquisitionRow[]; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const raw = await readDailyAcquisition(this.ws, p.date_range.start, p.date_range.end);
+    return {
+      rows: raw.map((r) => ({
+        date: r.date,
+        new_customers: r.newCustomers,
+        nc_revenue_mu: r.ncRevenueMu,
+        ad_spend_mu: r.adSpendMu,
+        nc_cm2_mu: r.ncCm2Mu,
+        cac_mu: r.cacMu,
+        cm2_per_nc_mu: r.cm2PerNcMu,
+        meta_spend_mu: r.metaSpendMu,
+        google_spend_mu: r.googleSpendMu,
+      })),
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  // P&L period grid — per-period (day/week/month/quarter) full P&L row set.
+  // Legacy-parity: ~34 column grid. Columns with no migrated source → honest 0n.
+  override async getPnlPeriodGrid(p: Parameters<DataPlanePort['getPnlPeriodGrid']>[0]): Promise<{ rows: PnlPeriodRow[]; currency_code: string; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const raw = await readPnlPeriodGrid(this.ws, p.date_range.start, p.date_range.end, p.granularity);
+    const currency_code = raw.length > 0 ? (raw[0].currencyCode ?? 'INR') : 'INR';
+    const rows: PnlPeriodRow[] = raw.map((r) => ({
+      bucketKey: r.bucketKey,
+      label: r.label,
+      grossSales: r.grossSales,
+      productGross: r.productGross,
+      shippingGross: r.shippingGross,
+      discounts: r.discounts,
+      productDiscount: r.productDiscount,
+      shippingDiscount: r.shippingDiscount,
+      sales: r.sales,
+      netSales: r.netSales,
+      productNet: r.productNet,
+      shippingNet: r.shippingNet,
+      refunds: r.refunds,
+      productRefunds: r.productRefunds,
+      shippingRefunds: r.shippingRefunds,
+      returnFees: r.returnFees,
+      revenue: r.revenue,
+      ncNetRevenue: r.ncNetRevenue,
+      ecNetRevenue: r.ecNetRevenue,
+      netRevenue: r.netRevenue,
+      cogs: r.cogs,
+      variableCosts: r.variableCosts,
+      shippingCosts: r.shippingCosts,
+      returnsCosts: r.returnsCosts,
+      paymentCosts: r.paymentCosts,
+      customsCosts: r.customsCosts,
+      otherVariable: r.otherVariable,
+      adSpend: r.adSpend,
+      metaAdSpend: r.metaAdSpend,
+      googleAdSpend: r.googleAdSpend,
+      contributionMargin1: r.contributionMargin1,
+      contributionMargin2: r.contributionMargin2,
+      contributionMargin3: r.contributionMargin3,
+      fixedCosts: r.fixedCosts,
+      founderSalaryAllocated: r.founderSalaryAllocated,
+      netProfit: r.netProfit,
+      orders: r.orders,
+      currencyCode: r.currencyCode,
+    }));
+    return { rows, currency_code, data_epoch: DATA_EPOCH };
   }
 }

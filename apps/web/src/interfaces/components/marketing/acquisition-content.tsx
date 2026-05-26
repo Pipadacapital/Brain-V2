@@ -2,11 +2,12 @@
 
 // @paradigm: sql
 // AcquisitionContent — the /acquisition page (Phase-2 slice-4, feat-marketing-acquisition).
-// Renders MER/aMER/ACOS efficiency + blended CAC + CM2-per-NC + meta/google spend split + a
-// daily table for the anchor brand. aMER uses ACQUISITION-classified spend (privileges
-// CM2/CAC; ROAS/ACOS are labelled display-only). CF-C6-RENDER-ONLY-1: zero arithmetic; all
-// values from trpc.marketing.{efficiency,acquisition}. CF-C6-FORMATMONEY-CANONICAL-1.
+// Renders MER/aMER/ACOS efficiency + blended CAC + CM2-per-NC + meta/google spend split +
+// a daily ComposedChart (Bar ncCm2 + Lines adSpend/cm2PerNc) matching legacy.
+// CF-C6-RENDER-ONLY-1: zero arithmetic; all values from trpc.marketing.{efficiency,acquisition,dailyAcquisition}.
+// CF-C6-FORMATMONEY-CANONICAL-1: formatMoney is the only money formatter.
 
+import { useMemo } from 'react';
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -17,6 +18,67 @@ import {
   formatX100Multiple,
   formatBpPercent,
 } from '@/interfaces/components/marketing/format-ratio.js';
+import { ChartContainer, type ChartConfig } from '@/interfaces/components/ui/chart.js';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Cell, Tooltip } from 'recharts';
+
+const CHART_CONFIG: ChartConfig = {
+  ncCm2: { label: 'NC CM2', color: 'hsl(var(--chart-1))' },
+  adSpend: { label: 'Ad Spend', color: 'hsl(24 95% 53%)' },
+  cm2PerNc: { label: 'CM2 per NC', color: 'hsl(0 0% 9%)' },
+};
+
+const TOOLTIP_LABELS: Record<string, string> = {
+  ncCm2: 'NC CM2',
+  adSpend: 'Ad Spend',
+  cm2PerNc: 'CM2 per NC',
+};
+
+const TOOLTIP_COLORS: Record<string, string> = {
+  ncCm2: '#22c55e',
+  adSpend: 'hsl(24 95% 53%)',
+  cm2PerNc: 'hsl(0 0% 9%)',
+};
+
+function AcquisitionChartTooltip({
+  active,
+  payload,
+  label,
+  currency,
+}: {
+  active?: boolean;
+  payload?: Array<{ name: string; dataKey: string; value: number; color: string }>;
+  label?: string;
+  currency: string;
+}) {
+  if (!active || !payload?.length || !label) return null;
+  const dateLabel = new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }).format(
+    new Date(String(label) + 'T00:00:00'),
+  );
+  return (
+    <div className="border-border/50 bg-background grid min-w-[8rem] items-start gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs shadow-xl">
+      <div className="font-medium">{dateLabel}</div>
+      <div className="grid gap-1.5">
+        {payload
+          .filter((item) => item.dataKey && item.value !== undefined)
+          .map((item) => (
+            <div key={item.dataKey} className="flex w-full items-center gap-2">
+              <div
+                className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                style={{ backgroundColor: TOOLTIP_COLORS[item.dataKey] ?? item.color }}
+              />
+              <span className="text-muted-foreground min-w-[4.5rem]">
+                {TOOLTIP_LABELS[item.dataKey] ?? item.name}
+              </span>
+              <span className="font-mono font-medium tabular-nums">
+                {/* Values stored as rupees (÷100 in buildChartRow) — format back */}
+                {formatMoney(BigInt(Math.round(item.value * 100)), currency)}
+              </span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
 
 export function AcquisitionContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
@@ -30,6 +92,10 @@ export function AcquisitionContent() {
     { enabled },
   );
   const acq = trpc.marketing.acquisition.useQuery(
+    { date_start: dateStart, date_end: dateEnd },
+    { enabled },
+  );
+  const dailyAcq = trpc.marketing.dailyAcquisition.useQuery(
     { date_start: dateStart, date_end: dateEnd },
     { enabled },
   );
@@ -48,12 +114,26 @@ export function AcquisitionContent() {
   const isLoading = eff.isLoading || acq.isLoading;
   const error = eff.error || acq.error;
 
+  // Build chart rows: bigint → number ÷100 for Recharts pixel math (rupees).
+  // The tooltip receives the raw row and re-multiplies ×100 → formatMoney.
+  const chartRows = useMemo(() => {
+    return (dailyAcq.data?.rows ?? []).map((r) => ({
+      date: r.date,
+      // Pixel-math numbers (÷100 paise→rupees) — never displayed as money directly.
+      ncCm2: Number(r.nc_cm2_mu) / 100,
+      adSpend: Number(r.ad_spend_mu) / 100,
+      cm2PerNc: r.cm2_per_nc_mu === null ? 0 : Number(r.cm2_per_nc_mu) / 100,
+    }));
+  }, [dailyAcq.data]);
+
+  const cc = eff.data?.result.currency_code ?? 'INR';
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Acquisition</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — marketing efficiency &amp; new-customer economics (CM2-first)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">marketing efficiency &amp; new-customer economics (CM2-first)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="acq-from" className="sr-only">From date</label>
@@ -77,7 +157,6 @@ export function AcquisitionContent() {
       {eff.data && acq.data && (() => {
         const e = eff.data.result;
         const s = acq.data.summary;
-        const cc = e.currency_code;
         return (
           <>
             <div className="sr-only">Data as of {new Date(eff.data.data_epoch).toISOString()}. Request ID: {eff.data.request_id}</div>
@@ -106,8 +185,86 @@ export function AcquisitionContent() {
               </div>
             </Section>
 
-            {/* Daily table. */}
-            <Section title="Daily new-customer economics">
+            {/* Daily ComposedChart — Bar ncCm2 + Lines adSpend/cm2PerNc (legacy parity) */}
+            {chartRows.length > 0 && (
+              <Section title="Daily new-customer economics">
+                <div className="mb-3 flex flex-wrap items-center gap-4">
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className="h-2.5 w-2.5 rounded-[2px] bg-[#22c55e]" />
+                    NC CM2
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className="h-2.5 w-2.5 rounded-[2px] bg-[hsl(24_95%_53%)]" />
+                    Ad Spend
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span className="h-2.5 w-2.5 rounded-[2px] bg-[hsl(0_0%_9%)]" />
+                    CM2 per NC
+                  </span>
+                </div>
+                <ChartContainer config={CHART_CONFIG} className="h-[360px] w-full">
+                  <ComposedChart
+                    data={chartRows}
+                    margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={(v) =>
+                        new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric' }).format(
+                          new Date(String(v) + 'T00:00:00'),
+                        )
+                      }
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis
+                      tickFormatter={(v) => formatMoney(BigInt(Math.round(Number(v) * 100)), cc)}
+                      tick={{ fontSize: 11 }}
+                      width={60}
+                    />
+                    <Tooltip
+                      content={<AcquisitionChartTooltip currency={cc} />}
+                    />
+                    <Bar
+                      dataKey="ncCm2"
+                      name="NC CM2"
+                      radius={[2, 2, 0, 0]}
+                      maxBarSize={32}
+                    >
+                      {chartRows.map((entry, index) => (
+                        <Cell
+                          key={index}
+                          fill={entry.ncCm2 >= 0 ? '#22c55e' : '#ef4444'}
+                        />
+                      ))}
+                    </Bar>
+                    <Line
+                      type="monotone"
+                      dataKey="adSpend"
+                      name="Ad Spend"
+                      stroke="hsl(24 95% 53%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="cm2PerNc"
+                      name="CM2 per NC"
+                      stroke="hsl(0 0% 9%)"
+                      strokeWidth={2}
+                      dot={false}
+                    />
+                  </ComposedChart>
+                </ChartContainer>
+              </Section>
+            )}
+
+            {dailyAcq.isLoading && !chartRows.length && (
+              <div className="h-[360px] bg-gray-100 animate-pulse rounded-lg" aria-busy="true" aria-label="Loading daily acquisition chart" />
+            )}
+
+            {/* Daily table — existing tabular data */}
+            <Section title="Daily new-customer economics (table)">
               <Table head={['Date', 'New', 'NC CM2', 'CAC', 'aMER']}>
                 {acq.data.daily.map((d) => (
                   <tr key={d.date} className="border-t border-gray-100">

@@ -40,7 +40,7 @@ export function BackfillContent() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">Ads Backfill</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — historical data backfill status</p>
+        <p className="text-sm text-muted-foreground mt-0.5">historical data backfill status</p>
       </div>
 
       {q.isLoading && (

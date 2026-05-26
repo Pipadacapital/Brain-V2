@@ -2,16 +2,21 @@
 
 // @paradigm: sql
 // DistributionsContent — the /distributions page (Phase-2 slice-4, feat-marketing-acquisition).
-// Renders the per-product value distribution (mode / mean / diff) + a density histogram for the
-// anchor brand, with a sales/CM1 toggle + search. This is a STATISTICAL distribution surface,
-// NOT an attribution ladder. CF-C6-RENDER-ONLY-1: zero arithmetic; all values from
-// trpc.marketing.distributions. CF-C6-FORMATMONEY-CANONICAL-1.
+// Renders the per-product value distribution (mode / mean / diff) + a density LineChart
+// matching legacy (LineChart with mode + mean ReferenceLine). CF-C6-RENDER-ONLY-1: zero
+// arithmetic; all values from trpc.marketing.distributions. CF-C6-FORMATMONEY-CANONICAL-1.
 
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/interfaces/components/ui/chart.js';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
+
+const DENSITY_CHART_CONFIG: ChartConfig = {
+  density: { label: 'Density', color: 'hsl(0 0% 9%)' },
+};
 
 export function DistributionsContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
@@ -48,7 +53,7 @@ export function DistributionsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Distributions</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — per-product per-order value distribution (mode vs mean)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">per-product per-order value distribution (mode vs mean)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="dist-from" className="sr-only">From date</label>
@@ -65,7 +70,7 @@ export function DistributionsContent() {
           <button type="button" onClick={() => setMetric('sales')} className={`px-3 py-1.5 text-sm ${metric === 'sales' ? 'bg-primary text-primary-foreground' : 'bg-background text-foreground'}`}>Sales</button>
         </div>
         <label htmlFor="dist-search" className="sr-only">Search product</label>
-        <input id="dist-search" type="search" placeholder="Search product…" value={search} onChange={(e) => setSearch(e.target.value)} className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground" />
+        <input id="dist-search" type="search" placeholder="Search product..." value={search} onChange={(e) => setSearch(e.target.value)} className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground" />
       </div>
 
       {isLoading && (
@@ -79,9 +84,18 @@ export function DistributionsContent() {
       )}
 
       {data && (() => {
-        // The distributions wire response omits currency_code; the anchor brand is INR (India-first).
         const cc = 'INR';
-        const maxDensity = data.graph_points.reduce((m, p) => (p.density_bp > m ? p.density_bp : m), 1);
+        // Build chart-ready graph_points: convert bigint value_mu to number for Recharts.
+        // density_bp is already a number. formatMoney uses the original bigint in tooltip.
+        const graphPoints = data.graph_points.map((p) => ({
+          // Number() coercion of value_mu is for axis pixel positioning only.
+          value: Number(p.value_mu) / 100,   // paise → rupees for axis labels
+          value_mu: p.value_mu,              // kept for tooltip / reference lines
+          density: p.density_bp / 100,       // bp → percent (0..100 scale)
+        }));
+        const globalModePx = Number(data.global_mode_mu) / 100;
+        const globalMeanPx = Number(data.global_mean_mu) / 100;
+
         return (
           <>
             <div className="sr-only">Data as of {new Date(data.data_epoch).toISOString()}. Request ID: {data.request_id}</div>
@@ -92,21 +106,66 @@ export function DistributionsContent() {
               <Stat label="Products" value={String(data.total_rows)} />
             </div>
 
-            <Section title={`Density (${data.metric === 'sales' ? 'per-order sales' : 'per-order CM1'})`}>
-              <div className="flex items-end gap-px h-32" aria-hidden="true">
-                {data.graph_points.map((p, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 bg-primary/60 rounded-t"
-                    style={{ height: `${Math.max(2, Math.round((p.density_bp / maxDensity) * 100))}%` }}
-                    title={`${formatMoney(p.value_mu, cc)} — ${(p.density_bp / 100).toFixed(2)}%`}
-                  />
-                ))}
-              </div>
-            </Section>
+            {/* Density LineChart — matches legacy distributions-content.tsx LineChart */}
+            {graphPoints.length > 0 ? (
+              <Section title={`Density (${data.metric === 'sales' ? 'per-order sales' : 'per-order CM1'})`}>
+                <ChartContainer config={DENSITY_CHART_CONFIG} className="h-[280px] w-full">
+                  <LineChart
+                    data={graphPoints}
+                    margin={{ top: 12, right: 12, left: 8, bottom: 24 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                    <XAxis
+                      dataKey="value"
+                      tickFormatter={(v) =>
+                        formatMoney(BigInt(Math.round(Number(v) * 100)), cc)
+                      }
+                      tick={{ fontSize: 11 }}
+                    />
+                    <YAxis hide />
+                    <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+                    <Line
+                      type="monotone"
+                      dataKey="density"
+                      stroke="hsl(0 0% 9%)"
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                    <ReferenceLine
+                      x={globalModePx}
+                      stroke="hsl(0 0% 9%)"
+                      strokeWidth={2}
+                      label={{
+                        value: `Mode: ${formatMoney(data.global_mode_mu, cc)}`,
+                        position: 'top',
+                        fontSize: 11,
+                      }}
+                    />
+                    <ReferenceLine
+                      x={globalMeanPx}
+                      stroke="hsl(0 0% 9%)"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      label={{
+                        value: `Mean: ${formatMoney(data.global_mean_mu, cc)}`,
+                        position: 'top',
+                        fontSize: 11,
+                      }}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              </Section>
+            ) : (
+              <Section title="Density">
+                <div className="flex items-center justify-center h-24 text-sm text-muted-foreground">
+                  No distribution data for the selected range.
+                </div>
+              </Section>
+            )}
 
             <Section title="Per-product distribution">
-              <Table head={['Product', 'Orders', 'Mode', 'Mean', 'Diff (mode − mean)']}>
+              <Table head={['Product', 'Orders', 'Mode', 'Mean', 'Diff (mode - mean)']}>
                 {data.rows.map((r) => (
                   <tr key={r.product} className="border-t border-gray-100">
                     <td className="py-2 text-sm">{r.product}</td>

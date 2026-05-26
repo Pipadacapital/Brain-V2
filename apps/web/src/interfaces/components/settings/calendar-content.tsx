@@ -53,7 +53,7 @@ export function CalendarContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Calendar</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — daily performance, goal RAG &amp; marketing-action overlays</p>
+          <p className="text-sm text-muted-foreground mt-0.5">daily performance, goal RAG &amp; marketing-action overlays</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <label htmlFor="cal-grain" className="sr-only">Granularity</label>

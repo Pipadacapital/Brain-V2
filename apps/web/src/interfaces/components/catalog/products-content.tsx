@@ -61,7 +61,7 @@ export function ProductsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Products</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — per-product contribution margin (CM1), Pareto grade &amp; returns</p>
+          <p className="text-sm text-muted-foreground mt-0.5">per-product contribution margin (CM1), Pareto grade &amp; returns</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)} aria-label="Group by" className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground">

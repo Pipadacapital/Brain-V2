@@ -1,0 +1,46 @@
+# LOCAL DEV ClickHouse for the analytics-service (OLAP plane).
+#
+# Founder-binding decision (2026-05-26, v2 redo at docs/data-architecture-plan-v2.md):
+# facts live in ClickHouse per canon (technical-context.md §99–§103). This compose stands
+# up a single-node clickhouse-server on :8123 (HTTP) / :9000 (native) so the
+# analytics-service + ETL can land facts locally.
+#
+# Usage:
+#   docker compose -f apps/analytics-service/docker-compose.dev.yml up -d
+#   # wait until healthy (~10s), then bootstrap DDL:
+#   bash tools/clickhouse-bootstrap.sh
+#
+# The analytics-service connects via:
+#   CLICKHOUSE_URL=http://localhost:8123
+#   CLICKHOUSE_DATABASE=brain
+#   CLICKHOUSE_USER=brain_app
+#   CLICKHOUSE_PASSWORD=brain_app_pw
+#
+# Teardown:
+#   docker compose -f apps/analytics-service/docker-compose.dev.yml down -v
+services:
+  clickhouse-dev:
+    image: clickhouse/clickhouse-server:24.8-alpine     # LTS pin — verify-and-update at build time
+    container_name: brain-clickhouse-dev
+    environment:
+      CLICKHOUSE_DB: brain
+      CLICKHOUSE_USER: brain_app
+      CLICKHOUSE_PASSWORD: brain_app_pw
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "8123:8123"     # HTTP
+      - "9000:9000"     # native TCP
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - brain-chdata-dev:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  brain-chdata-dev:

@@ -364,6 +364,32 @@ export interface DistributionsFilterInput {
 }
 
 // ---------------------------------------------------------------------------
+// Daily sales series — feeds AreaChart on analytics page.
+// Phase-2 chart-parity (feat-store-order-fact-layer chart addition).
+// ---------------------------------------------------------------------------
+export interface DailySalesRow {
+  date: string;         // 'YYYY-MM-DD'
+  net_sales_mu: bigint;
+  orders: bigint;
+}
+
+// ---------------------------------------------------------------------------
+// Daily acquisition series — feeds ComposedChart on acquisition page.
+// Phase-2 chart-parity (feat-marketing-acquisition chart addition).
+// ---------------------------------------------------------------------------
+export interface DailyAcquisitionRow {
+  date: string;
+  new_customers: bigint;
+  nc_revenue_mu: bigint;
+  ad_spend_mu: bigint;
+  nc_cm2_mu: bigint;
+  cac_mu: bigint | null;
+  cm2_per_nc_mu: bigint | null;
+  meta_spend_mu: bigint;
+  google_spend_mu: bigint;
+}
+
+// ---------------------------------------------------------------------------
 // Cohorts + LTV proto types (Phase-2 slice-5: feat-cohorts-ltv)
 // Cohorts use CM3 (Finding 1); LTV uses CM2 (Finding 2); payback is the cumulative
 // bucket-walk (Finding 3); cohort_ltv feeds ltv_cac_bp (Finding 4).
@@ -1027,6 +1053,53 @@ export interface BackfillStatusResult {
   note: string;             // page-level honest note.
 }
 
+/**
+ * PnlPeriodRow — one period row of the P&L grid table (legacy-parity).
+ * All _mu fields are bigint (int64 paise). Columns with no migrated source
+ * (productGross, shippingGross, etc.) are always 0n — honest.
+ * Phase-2 P0 parity task: feat-store-order-fact-layer branch.
+ */
+export interface PnlPeriodRow {
+  bucketKey: string;            // ISO date of period start (YYYY-MM-DD)
+  label: string;                // display label
+  grossSales: bigint;
+  productGross: bigint;         // honest 0n
+  shippingGross: bigint;        // honest 0n
+  discounts: bigint;
+  productDiscount: bigint;      // honest 0n
+  shippingDiscount: bigint;     // honest 0n
+  sales: bigint;
+  netSales: bigint;
+  productNet: bigint;           // honest 0n
+  shippingNet: bigint;          // honest 0n
+  refunds: bigint;
+  productRefunds: bigint;
+  shippingRefunds: bigint;      // honest 0n
+  returnFees: bigint;           // honest 0n
+  revenue: bigint;
+  ncNetRevenue: bigint;         // honest 0n
+  ecNetRevenue: bigint;         // honest 0n
+  netRevenue: bigint;
+  cogs: bigint;
+  variableCosts: bigint;        // honest 0n
+  shippingCosts: bigint;        // honest 0n
+  returnsCosts: bigint;         // honest 0n
+  paymentCosts: bigint;         // honest 0n
+  customsCosts: bigint;         // honest 0n
+  otherVariable: bigint;        // honest 0n
+  adSpend: bigint;
+  metaAdSpend: bigint;
+  googleAdSpend: bigint;
+  contributionMargin1: bigint;
+  contributionMargin2: bigint;
+  contributionMargin3: bigint;
+  fixedCosts: bigint;           // honest 0n
+  founderSalaryAllocated: bigint; // honest 0n
+  netProfit: bigint;
+  orders: bigint;
+  currencyCode: string;
+}
+
 export interface DataPlanePort {
   queryMetrics(params: {
     workspace_id: string;
@@ -1254,4 +1327,33 @@ export interface DataPlanePort {
   getBackfillStatus(params: {
     workspace_id: string;
   }): Promise<{ result: BackfillStatusResult; data_epoch: Date }>;
+
+  /**
+   * P&L period grid — per-period (day/week/month/quarter) full P&L row set.
+   * Legacy-parity: ~34 column grid matching the legacy pnl-content COLUMN_CONFIG.
+   * Columns with no migrated source return 0n (honest). All _mu are bigint.
+   */
+  getPnlPeriodGrid(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    granularity: 'day' | 'week' | 'month' | 'quarter';
+  }): Promise<{ rows: PnlPeriodRow[]; currency_code: string; data_epoch: Date }>;
+
+  /**
+   * Chart-parity: daily net-sales series for the analytics AreaChart.
+   * Aggregates connector_order_facts by day for the requested date range.
+   */
+  getDailySales(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ rows: DailySalesRow[]; data_epoch: Date }>;
+
+  /**
+   * Chart-parity: daily acquisition series for the acquisition ComposedChart.
+   * Per-day: new customers, NC CM2, ad spend, CAC, CM2-per-NC.
+   */
+  getDailyAcquisition(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ rows: DailyAcquisitionRow[]; data_epoch: Date }>;
 }

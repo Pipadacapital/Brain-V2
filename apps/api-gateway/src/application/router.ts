@@ -44,6 +44,34 @@ import {
   ConnectorError,
 } from '@brain/core-connectors';
 import {
+  listNotifications,
+  getUnreadCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from '@brain/core-notifications';
+import {
+  getProfile,
+  updateProfile,
+  deleteAccount,
+  UserProfileError,
+} from '@brain/core-user-profile';
+import {
+  listProductsForCogs,
+  updateProductCogs,
+  bulkUpdateProductCogs,
+} from '@brain/core-product-cogs';
+import {
+  listOrders,
+  listStoreProducts,
+  listStoreCustomers,
+} from '@brain/core-store-browser';
+import {
+  listCampaigns,
+  listAdAccounts,
+  spendByIntent,
+  type AdVendor,
+} from '@brain/core-platform-ads';
+import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
@@ -254,6 +282,67 @@ export function createBrainRouter(
       });
       return { userId, created, requestId: ctx.requestId };
     }),
+
+    /** Return the caller's account profile (full_name, job_role, avatar_url, …). */
+    account: identityProc.query(async ({ ctx }) => {
+      try {
+        const profile = await getProfile(ctx.identity.sub);
+        return { ...profile, requestId: ctx.requestId };
+      } catch (err) {
+        if (err instanceof UserProfileError && err.code === 'NOT_FOUND') {
+          // Lazy upsert: if a Supabase user has never touched core, ensureUser
+          // creates the row. Then re-read so the page renders on first visit.
+          await ensureUser({ sub: ctx.identity.sub, email: ctx.identity.email });
+          const profile = await getProfile(ctx.identity.sub);
+          return { ...profile, requestId: ctx.requestId };
+        }
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (err as Error).message });
+      }
+    }),
+
+    /** Update the caller's profile (name / role / avatar). */
+    updateProfile: identityProc
+      .input(
+        z.object({
+          fullName:  z.string().trim().min(1).max(200).optional(),
+          jobRole:   z.string().trim().max(200).optional(),
+          avatarUrl: z.string().url().max(2000).nullable().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const profile = await updateProfile(ctx.identity.sub, input);
+          return { ...profile, requestId: ctx.requestId };
+        } catch (err) {
+          if (err instanceof UserProfileError) {
+            throw new TRPCError({
+              code: err.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'BAD_REQUEST',
+              message: err.message,
+            });
+          }
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (err as Error).message });
+        }
+      }),
+
+    /**
+     * Delete the caller's account. Blocked if they're sole owner of a non-empty
+     * workspace. Solo-owned empty workspaces are deleted too. Auth row (Supabase
+     * auth.users) is left for ops cleanup; the client signs out after.
+     */
+    deleteAccount: identityProc.mutation(async ({ ctx }) => {
+      try {
+        const result = await deleteAccount(ctx.identity.sub);
+        return { ...result, requestId: ctx.requestId };
+      } catch (err) {
+        if (err instanceof UserProfileError && err.code === 'OWNER_CONFLICT') {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message });
+        }
+        if (err instanceof UserProfileError && err.code === 'NOT_FOUND') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
+        }
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (err as Error).message });
+      }
+    }),
   });
 
   // -------------------------------------------------------------------
@@ -319,6 +408,58 @@ export function createBrainRouter(
         } catch (err) {
           throw mapOnboardingError(err, ctx.requestId);
         }
+      }),
+  });
+
+  // -------------------------------------------------------------------
+  // notifications router — identity tier (user-scoped, workspace-optional).
+  // Notifications belong to a USER and may target a workspace OR be global.
+  // RLS-safe: every query in core-notifications filters by user_id = ctx.sub.
+  // -------------------------------------------------------------------
+  const notificationsRouter = router({
+    /** List the caller's notifications, newest first. Optional unread filter + ws scope. */
+    list: identityProc
+      .input(
+        z.object({
+          filter:      z.enum(['all', 'unread']).optional().default('all'),
+          workspaceId: z.string().uuid().optional().nullable(),
+          limit:       z.number().int().min(1).max(200).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const items = await listNotifications(ctx.identity.sub, {
+          filter:      input.filter,
+          workspaceId: input.workspaceId ?? null,
+          limit:       input.limit,
+        });
+        return { items, requestId: ctx.requestId };
+      }),
+
+    /** Unread count for the shell badge — separate proc keeps it cheap to poll. */
+    unreadCount: identityProc
+      .input(z.object({ workspaceId: z.string().uuid().optional().nullable() }).optional())
+      .query(async ({ ctx, input }) => {
+        const count = await getUnreadCount(ctx.identity.sub, input?.workspaceId ?? null);
+        return { count, requestId: ctx.requestId };
+      }),
+
+    /** Mark a single notification read (no-op if already read or not yours). */
+    markRead: identityProc
+      .input(z.object({ id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        const changed = await markNotificationRead(ctx.identity.sub, input.id);
+        return { changed, requestId: ctx.requestId };
+      }),
+
+    /** Mark every unread notification (optionally scoped to a workspace) read. */
+    markAllRead: identityProc
+      .input(z.object({ workspaceId: z.string().uuid().optional().nullable() }).optional())
+      .mutation(async ({ ctx, input }) => {
+        const updated = await markAllNotificationsRead(
+          ctx.identity.sub,
+          input?.workspaceId ?? null,
+        );
+        return { updated, requestId: ctx.requestId };
       }),
   });
 
@@ -508,6 +649,115 @@ export function createBrainRouter(
           request_id: ctx.requestId,
         };
       }),
+
+    /**
+     * Chart-parity: daily net-sales series for the analytics AreaChart.
+     * Aggregates connector_order_facts by day for the requested date range.
+     * requireRole(ANALYST).
+     */
+    dailySales: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.dailySales requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getDailySales({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+        return { rows: result.rows, data_epoch: result.data_epoch, request_id: ctx.requestId };
+      }),
+
+    // -----------------------------------------------------------------
+    // Store-browser tabs (Slice 4 of the parity epic): Orders / Products
+    // / Customers data tables on the /store page. RLS-isolated through the
+    // store-browser use-case module; ANALYST+ to read.
+    // PII posture: Customers returns aggregates + has_email/has_name flags;
+    // decryption is a separate audited operation (deferred).
+    // -----------------------------------------------------------------
+    orders: workspaceProc
+      .input(
+        z.object({
+          search:    z.string().max(200).optional(),
+          status:    z.enum(['all', 'paid', 'pending', 'refunded', 'voided', 'partially_refunded']).optional(),
+          cod:       z.enum(['all', 'cod', 'prepaid']).optional(),
+          page:      z.number().int().min(1).optional(),
+          pageSize:  z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.orders requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listOrders(ctx.workspaceId, input);
+        return {
+          rows: r.rows.map((row) => ({ ...row, totalMu: row.totalMu.toString() })),
+          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    productsTable: workspaceProc
+      .input(
+        z.object({
+          search:    z.string().max(200).optional(),
+          status:    z.enum(['all', 'ACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
+          page:      z.number().int().min(1).optional(),
+          pageSize:  z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.productsTable requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listStoreProducts(ctx.workspaceId, input);
+        return {
+          rows: r.rows.map((row) => ({
+            ...row, costMu: row.costMu.toString(), mrpMu: row.mrpMu.toString(),
+          })),
+          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    customers: workspaceProc
+      .input(
+        z.object({
+          search:    z.string().max(200).optional(),
+          minOrders: z.number().int().min(0).optional(),
+          consent:   z.enum(['all', 'opted_in', 'opted_out', 'unknown']).optional(),
+          page:      z.number().int().min(1).optional(),
+          pageSize:  z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.customers requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listStoreCustomers(ctx.workspaceId, input);
+        return {
+          rows: r.rows.map((row) => ({ ...row, lifetimeSpentMu: row.lifetimeSpentMu.toString() })),
+          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
+      }),
   });
 
   // -------------------------------------------------------------------
@@ -576,6 +826,42 @@ export function createBrainRouter(
 
         return {
           steps: result.steps,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    /**
+     * P&L period grid — per-period (day/week/month/quarter) full P&L row set.
+     * Legacy-parity: ~34 column grid matching COLUMN_CONFIG. requireRole(ANALYST).
+     * CF-C6-RENDER-ONLY-1: zero arithmetic here — all values from the data plane.
+     * CF-C6-BIGINT-JSON-1: every _mu field is bigint over superjson.
+     */
+    periodGrid: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          granularity: z.enum(['day', 'week', 'month', 'quarter']).default('day'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `pnl.periodGrid requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        const result = await dataPlane.getPnlPeriodGrid({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          granularity: input.granularity,
+        });
+
+        return {
+          rows: result.rows,
+          currency_code: result.currency_code,
           data_epoch: result.data_epoch,
           request_id: ctx.requestId,
         };
@@ -741,6 +1027,27 @@ export function createBrainRouter(
       };
     }),
 
+    /**
+     * Chart-parity: daily acquisition series for the ComposedChart.
+     * Per-day: new customers, NC CM2, ad spend, CAC, CM2-per-NC, meta/google split.
+     * requireRole(ANALYST).
+     */
+    dailyAcquisition: workspaceProc
+      .input(dateInput)
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.dailyAcquisition requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getDailyAcquisition({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+        return { rows: result.rows, data_epoch: result.data_epoch, request_id: ctx.requestId };
+      }),
+
     /** Per-product distributions (mode/mean/diff + histogram). requireRole(ANALYST). */
     distributions: workspaceProc
       .input(
@@ -782,6 +1089,87 @@ export function createBrainRouter(
           metric: result.result.metric,
           data_epoch: result.data_epoch,
           request_id: ctx.requestId,
+        };
+      }),
+
+    // -----------------------------------------------------------------
+    // Platform-ads breakdown (Slice 5 of the parity epic): campaign-level
+    // table + intent breakdown for /meta-ads & /google-ads. Funnel / Creative
+    // tabs render ConnectorPending stubs (ad-level + creative facts not
+    // ingested yet — honest affordance per CF-S10-HONEST-STATE-1).
+    // -----------------------------------------------------------------
+    platformCampaigns: workspaceProc
+      .input(
+        z.object({
+          vendor:      z.enum(['META', 'GOOGLE']),
+          date_start:  z.string(),
+          date_end:    z.string(),
+          adAccountId: z.string().optional().nullable(),
+          intent:      z.string().optional().nullable(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.platformCampaigns requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listCampaigns(ctx.workspaceId, input.vendor as AdVendor, input.date_start, input.date_end, {
+          adAccountId: input.adAccountId ?? null,
+          intent: input.intent ?? null,
+        });
+        return {
+          rows: r.rows.map((row) => ({
+            ...row,
+            spendMu:   row.spendMu.toString(),
+            revenueMu: row.revenueMu.toString(),
+            cpcMu:     row.cpcMu.toString(),
+            cpmMu:     row.cpmMu.toString(),
+          })),
+          totalSpendMu:       r.totalSpendMu.toString(),
+          totalRevenueMu:     r.totalRevenueMu.toString(),
+          totalImpressions:   r.totalImpressions,
+          totalClicks:        r.totalClicks,
+          totalConversions:   r.totalConversions,
+          currencyCode:       r.currencyCode,
+          request_id:         ctx.requestId,
+        };
+      }),
+
+    platformAccounts: workspaceProc
+      .input(z.object({ vendor: z.enum(['META', 'GOOGLE']) }))
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.platformAccounts requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const rows = await listAdAccounts(ctx.workspaceId, input.vendor as AdVendor);
+        return { rows, request_id: ctx.requestId };
+      }),
+
+    spendByIntent: workspaceProc
+      .input(
+        z.object({
+          vendor:     z.enum(['META', 'GOOGLE']),
+          date_start: z.string(),
+          date_end:   z.string(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.spendByIntent requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await spendByIntent(ctx.workspaceId, input.vendor as AdVendor, input.date_start, input.date_end);
+        return {
+          rows: r.rows.map((row) => ({ ...row, spendMu: row.spendMu.toString() })),
+          totalSpendMu: r.totalSpendMu.toString(),
+          request_id:   ctx.requestId,
         };
       }),
   });
@@ -1004,6 +1392,100 @@ export function createBrainRouter(
           data_epoch: result.data_epoch,
           request_id: ctx.requestId,
         };
+      }),
+
+    // -----------------------------------------------------------------
+    // Per-product COGS editor — Slice 3 of the parity epic. UI lets
+    // operators set cost_mu per product (paise). Shopify never sends COGS,
+    // so this field is user-owned; connector syncs leave it untouched.
+    // requireRole(EDITOR) because it mutates a metric input (CM1 changes).
+    // -----------------------------------------------------------------
+
+    /** List products for the COGS editor, paginated + filterable. */
+    cogsList: workspaceProc
+      .input(
+        z.object({
+          search:     z.string().max(200).optional(),
+          status:     z.enum(['all', 'ACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
+          cogsFilter: z.enum(['all', 'set', 'not_set']).optional(),
+          page:       z.number().int().min(1).optional(),
+          pageSize:   z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.cogsList requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listProductsForCogs(ctx.workspaceId, input);
+        // BigInt → string at the seam so superjson serializes safely on every
+        // client (superjson handles bigint, but we type the wire as string for
+        // older RN clients per CF-C6-BIGINT-JSON-1).
+        return {
+          rows: r.rows.map((row) => ({
+            ...row,
+            costMu: row.costMu.toString(),
+            mrpMu:  row.mrpMu.toString(),
+          })),
+          total: r.total,
+          page: r.page,
+          pageSize: r.pageSize,
+          totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    /** Update one product's COGS (paise minor units). */
+    updateCogs: workspaceProc
+      .input(
+        z.object({
+          productId: z.string().uuid(),
+          costMu:    z.string().regex(/^\d+$/, 'cost_mu must be non-negative integer (paise)'),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.updateCogs requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await updateProductCogs(ctx.workspaceId, input.productId, BigInt(input.costMu));
+        if (!r.updated) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: `product not found in workspace. request_id=${ctx.requestId}`,
+          });
+        }
+        return { updated: true, costMu: r.costMu.toString(), request_id: ctx.requestId };
+      }),
+
+    /** Bulk-update COGS for many products in one transaction. */
+    bulkUpdateCogs: workspaceProc
+      .input(
+        z.object({
+          updates: z.array(
+            z.object({
+              productId: z.string().uuid(),
+              costMu:    z.string().regex(/^\d+$/),
+            }),
+          ).max(500),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.bulkUpdateCogs requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await bulkUpdateProductCogs(
+          ctx.workspaceId,
+          input.updates.map((u) => ({ productId: u.productId, costMu: BigInt(u.costMu) })),
+        );
+        return { ...r, request_id: ctx.requestId };
       }),
   });
 
@@ -1724,6 +2206,7 @@ export function createBrainRouter(
     user: userRouter,
     onboarding: onboardingRouter,
     invitation: invitationRouter,
+    notifications: notificationsRouter,
     metrics: metricsRouter,
     store: storeRouter,
     pnl: pnlRouter,

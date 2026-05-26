@@ -40,7 +40,7 @@ export function RtoAnalyticsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">RTO Analytics</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — the RTO leak, by payment method and courier</p>
+          <p className="text-sm text-muted-foreground mt-0.5">the RTO leak, by payment method and courier</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="rto-from" className="sr-only">From date</label>

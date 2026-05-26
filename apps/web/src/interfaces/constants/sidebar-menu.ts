@@ -75,6 +75,7 @@ export const sidebarNavSections: SidebarNavSection[] = [
       { title: "Distributions", path: "/distributions", icon: BarChart3 },
       { title: "Timing", path: "/timings", icon: Clock },
       { title: "Inventory", path: "/inventory", icon: Package },
+      { title: "Product COGS", path: "/product-cogs", icon: DollarSign },
       { title: "Costs", path: "/costs", icon: FileText },
       { title: "Team", path: "/team", icon: Users },
     ],

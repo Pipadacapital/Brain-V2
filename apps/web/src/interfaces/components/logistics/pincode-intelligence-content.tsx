@@ -48,7 +48,7 @@ export function PincodeIntelligenceContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Pincode Intelligence</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — destination reliability by pincode (RTO risk, COD load, repeat rate)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">destination reliability by pincode (RTO risk, COD load, repeat rate)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="pin-from" className="sr-only">From date</label>

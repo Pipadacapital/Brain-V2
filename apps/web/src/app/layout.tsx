@@ -20,7 +20,11 @@ export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en" dir="ltr">
       <head />
-      <body>
+      {/* suppressHydrationWarning: browser extensions (e.g. ColorZilla's
+          cz-shortcut-listen) inject attributes onto <body> before React
+          hydrates. Scoped to this element's own attrs — does NOT mask
+          mismatches in the component tree below. */}
+      <body suppressHydrationWarning>
         {/* CF-C6-PERF-A11Y-1: skip-to-content for keyboard users */}
         <a
           href="#main-content"

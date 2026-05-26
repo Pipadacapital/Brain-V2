@@ -45,10 +45,10 @@ export function WorkspaceSwitcher() {
     },
   });
 
-  // Derive a display name — use workspace name if available, otherwise truncate ID.
-  const currentName = currentWorkspaceId
-    ? "Sugandh Lok"
-    : "Brain";
+  // Display the REAL workspace name from the membership list (never a hardcoded brand).
+  const currentName =
+    workspaceList?.workspaces?.find((w) => w.workspaceId === currentWorkspaceId)?.name ??
+    "Workspace";
 
   const initials = currentName
     .split(" ")
@@ -92,16 +92,25 @@ export function WorkspaceSwitcher() {
                 key={ws.workspaceId}
                 onClick={() => {
                   if (ws.workspaceId !== currentWorkspaceId) {
+                    // Persist the selection (the tRPC client sends it as x-brain-workspace;
+                    // the gateway validates it against real membership) then hard-reload so
+                    // every query refetches against the newly-active workspace.
+                    try {
+                      window.localStorage.setItem('brain.activeWorkspace', ws.workspaceId);
+                    } catch {
+                      /* ignore */
+                    }
                     switchMutation.mutate({ workspaceId: ws.workspaceId });
+                    window.location.assign('/dashboard');
                   }
                 }}
                 className="gap-2 p-2"
               >
                 <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-bold">
-                  {ws.workspaceId.slice(0, 2).toUpperCase()}
+                  {ws.name.slice(0, 2).toUpperCase()}
                 </div>
                 <span className="flex-1 truncate text-sm">
-                  {ws.workspaceId.slice(0, 16)}
+                  {ws.name}
                 </span>
                 {ws.workspaceId === currentWorkspaceId && (
                   <Check className="size-4 text-primary" />

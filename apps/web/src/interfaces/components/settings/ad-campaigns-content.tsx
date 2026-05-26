@@ -53,7 +53,7 @@ export function AdCampaignsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Ad Campaigns</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — spend by acquisition classification</p>
+          <p className="text-sm text-muted-foreground mt-0.5">spend by acquisition classification</p>
         </div>
         <button type="button" disabled title="Editing classifications is available after connector cutover" className="cursor-not-allowed rounded-md border border-border bg-muted px-3 py-1.5 text-sm font-medium text-muted-foreground opacity-60">Edit classifications (coming soon)</button>
       </div>

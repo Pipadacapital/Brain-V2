@@ -3,8 +3,10 @@
 // @paradigm: sql
 // AnalyticsContent — the /analytics (Store Analytics) page (Phase-2 slice-10).
 // REUSE-only: renders the REAL store-level deep analytics by combining slice-1
-// store.summary (revenue ladder) + slice-2 pnl.statement (CM ladder + True-CM2).
+// store.summary (revenue ladder) + slice-2 pnl.statement (CM ladder + True-CM2)
+// + daily net-sales AreaChart (chart-parity with legacy).
 // CF-C6-RENDER-ONLY-1: zero arithmetic; all values from the BFF.
+// CF-C6-FORMATMONEY-CANONICAL-1: formatMoney is the only money formatter.
 //
 // CF-S10-HONEST-STATE-1 (persona C1): storefront SESSIONS + CONVERSION are Shopify-
 // sync fields, NULL in legacy when unsynced and NOT seeded locally. We render an
@@ -17,6 +19,12 @@ import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 import { StalenessLabel } from '@/interfaces/components/shared/staleness-label.js';
 import { ConnectorPending } from '@/interfaces/components/shared/connector-pending.js';
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/interfaces/components/ui/chart.js';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid } from 'recharts';
+
+const DAILY_CHART_CONFIG: ChartConfig = {
+  netSales: { label: 'Net sales', color: '#96bf48' },
+};
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -36,6 +44,7 @@ export function AnalyticsContent() {
 
   const summary = trpc.store.summary.useQuery({ date_start: dateStart, date_end: dateEnd }, { enabled });
   const pnl = trpc.pnl.statement.useQuery({ date_start: dateStart, date_end: dateEnd }, { enabled });
+  const daily = trpc.store.dailySales.useQuery({ date_start: dateStart, date_end: dateEnd }, { enabled });
 
   if (!isAuthenticated || !workspaceId) {
     return (
@@ -52,12 +61,29 @@ export function AnalyticsContent() {
   const p = pnl.data?.statement;
   const cc = s?.currency_code ?? 'INR';
 
+  // Build chart-ready daily rows: convert bigint _mu to number for Recharts pixel math.
+  // formatMoney uses the original bigint in the tooltip — never the coerced number.
+  const dailyRows = (daily.data?.rows ?? []).map((r) => {
+    // Inline date format: 'YYYY-MM-DD' → 'MMM D' using Intl (no date-fns dep needed).
+    const dateLabel = new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric' }).format(
+      new Date(r.date + 'T00:00:00'),
+    );
+    return {
+      date: r.date,
+      dateLabel,
+      // Number() coercion here is for Recharts pixel positioning only (SVG math),
+      // NOT for display. Display uses formatMoney in ChartTooltipContent formatter.
+      netSales: Number(r.net_sales_mu) / 100,   // ÷100: paise → rupees for axis scale
+      net_sales_mu: r.net_sales_mu,             // kept for tooltip formatMoney
+    };
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Store Analytics</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — store-level revenue quality &amp; contribution margin</p>
+          <p className="text-sm text-muted-foreground mt-0.5">store-level revenue quality &amp; contribution margin</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <label htmlFor="an-from" className="sr-only">From date</label>
@@ -90,6 +116,71 @@ export function AnalyticsContent() {
             <Stat label="AOV" value={s.aov_mu == null ? '—' : formatMoney(s.aov_mu, cc)} />
           </div>
         </section>
+      )}
+
+      {/* Daily net-sales AreaChart — chart parity with legacy analytics page */}
+      {dailyRows.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900">Net sales over time</h2>
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <ChartContainer config={DAILY_CHART_CONFIG} className="h-[280px] w-full">
+              <AreaChart
+                data={dailyRows}
+                margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis
+                  dataKey="dateLabel"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tick={{ fontSize: 11 }}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(v) =>
+                    formatMoney(BigInt(Math.round(Number(v) * 100)), cc)
+                  }
+                />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      formatter={(_v, _name, props) => [
+                        formatMoney(
+                          (props.payload as { net_sales_mu?: bigint }).net_sales_mu ?? 0n,
+                          cc,
+                        ),
+                        'Net sales',
+                      ]}
+                      labelFormatter={(_label, payload) => {
+                        const d = (payload?.[0]?.payload as { date?: string } | undefined)?.date;
+                        if (!d) return '';
+                        return new Intl.DateTimeFormat('en-IN', { month: 'short', day: 'numeric', year: 'numeric' }).format(
+                          new Date(d + 'T00:00:00'),
+                        );
+                      }}
+                    />
+                  }
+                />
+                <Area
+                  type="monotone"
+                  dataKey="netSales"
+                  stroke="var(--color-netSales)"
+                  fill="var(--color-netSales)"
+                  fillOpacity={0.3}
+                  strokeWidth={2}
+                />
+              </AreaChart>
+            </ChartContainer>
+          </div>
+        </section>
+      )}
+
+      {daily.isLoading && !dailyRows.length && (
+        <div className="h-[280px] bg-gray-100 animate-pulse rounded-lg" aria-busy="true" aria-label="Loading daily chart" />
       )}
 
       {p && (

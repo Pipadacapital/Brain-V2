@@ -56,7 +56,7 @@ export function EmailSmsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Email &amp; SMS Performance</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — reporting on past campaign &amp; flow performance (read-only)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">reporting on past campaign &amp; flow performance (read-only)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <label htmlFor="es-group" className="sr-only">Group by</label>

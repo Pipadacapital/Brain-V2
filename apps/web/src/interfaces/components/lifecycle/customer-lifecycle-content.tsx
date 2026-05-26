@@ -53,7 +53,7 @@ export function CustomerLifecycleContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Customer Lifecycle</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — recency-based segments (new / active / at-risk / churned)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">recency-based segments (new / active / at-risk / churned)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <label htmlFor="lc-from" className="sr-only">From date</label>

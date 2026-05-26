@@ -43,7 +43,7 @@ export function WorkspaceSettingsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — general workspace settings</p>
+          <p className="text-sm text-muted-foreground mt-0.5">general workspace settings</p>
         </div>
         <button
           type="button"

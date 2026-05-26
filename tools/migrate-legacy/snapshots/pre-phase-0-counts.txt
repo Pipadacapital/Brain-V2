@@ -1,0 +1,13 @@
+connector_ad_spend_facts|10051
+connector_connections|12
+connector_credentials|4
+connector_line_item_facts|346918
+connector_oauth_states|1
+connector_order_facts|83609
+connector_product_facts|957
+connector_refund_facts|1373
+connector_shipment_facts|2516
+invitations|1
+users|24
+workspace_members|12
+workspaces|3

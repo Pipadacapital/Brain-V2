@@ -37,7 +37,7 @@ import { TRPCError } from '@trpc/server';
 import { randomUUID } from 'node:crypto';
 
 import { assembleClaim } from '@brain/core-auth';
-import { resolveMembership } from '@brain/core-onboarding';
+import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
 import { createBrainRouter } from '../application/router.js';
 import {
   StubDataPlane,
@@ -202,6 +202,9 @@ export function buildLocalStubContext(
 export interface RealAuthDeps {
   verifier: { verify(bearer: string): Promise<{ sub: string; email: string }> };
   resolver: MembershipResolver;
+  // Lists ALL of the verified user's memberships — used to validate a client-selected
+  // active workspace (workspace switching) against real membership (never blind trust).
+  listMemberships?: (sub: string) => Promise<Array<{ workspaceId: string; role: string }>>;
   log: Pick<FastifyRequest['server']['log'], 'warn'>;
 }
 
@@ -230,6 +233,7 @@ export async function buildRealAuthContext(
   requestId: string,
   traceId: string,
   deps: RealAuthDeps,
+  requestedWorkspaceId?: string,
 ): Promise<IdentityContext> {
   let sub: string;
   let email: string;
@@ -262,10 +266,31 @@ export async function buildRealAuthContext(
     return { identity, requestId, traceId };
   }
 
+  // Active workspace = the resolver default (earliest membership), UNLESS the client
+  // selected a different one (workspace switch). A selection is honored ONLY if the
+  // verified user is actually a member of it (validated via listMemberships) — this is
+  // the secure switch path: the choice is checked against real membership, not trusted.
+  let activeWorkspaceId = membership.workspaceId;
+  let activeRole = membership.workspaceRole;
+  if (
+    requestedWorkspaceId &&
+    requestedWorkspaceId !== membership.workspaceId &&
+    deps.listMemberships
+  ) {
+    const all = await deps.listMemberships(sub);
+    const match = all.find((m) => m.workspaceId === requestedWorkspaceId);
+    if (match) {
+      activeWorkspaceId = match.workspaceId;
+      activeRole = match.role as typeof membership.workspaceRole;
+    } else {
+      deps.log.warn({ requestId, sub }, 'requested workspace not a membership — ignored');
+    }
+  }
+
   const claim = assembleClaim({
     userId: sub, // S2: sub only, never email
-    workspaceId: membership.workspaceId, // B3: from resolver, NOT the header
-    workspaceRole: membership.workspaceRole,
+    workspaceId: activeWorkspaceId, // resolver default OR a membership-validated selection
+    workspaceRole: activeRole,
     systemRole: membership.systemRole,
     requestId,
     traceId,
@@ -274,7 +299,7 @@ export async function buildRealAuthContext(
   return {
     identity,
     claim,
-    workspaceId: membership.workspaceId, // === claim.workspaceId (middleware asserts)
+    workspaceId: activeWorkspaceId, // === claim.workspaceId (middleware asserts)
     requestId,
     traceId,
   };
@@ -358,11 +383,20 @@ async function buildServer(cfg: GatewayAuthConfig) {
             });
           }
           req.server.log.info({ requestId, traceId, url: req.url }, 'api-gateway request (real-auth)');
+          // Client-selected active workspace (workspace switch) — validated against the
+          // user's real memberships inside buildRealAuthContext. NOT blindly trusted.
+          const requestedWorkspaceId = (req.headers['x-brain-workspace'] as string | undefined)?.trim() || undefined;
           return buildRealAuthContext(
             req.headers['authorization'] as string | undefined,
             requestId,
             traceId,
-            { verifier: jwtVerifier, resolver: membershipResolver, log: req.server.log },
+            {
+              verifier: jwtVerifier,
+              resolver: membershipResolver,
+              listMemberships: (sub: string) => listWorkspaces(sub),
+              log: req.server.log,
+            },
+            requestedWorkspaceId,
           );
         }
 

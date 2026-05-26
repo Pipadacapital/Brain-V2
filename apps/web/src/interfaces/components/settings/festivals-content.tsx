@@ -45,7 +45,7 @@ export function FestivalsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Festivals</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — India festival calendar &amp; expected demand multipliers</p>
+          <p className="text-sm text-muted-foreground mt-0.5">India festival calendar &amp; expected demand multipliers</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="fest-year" className="sr-only">Year</label>
