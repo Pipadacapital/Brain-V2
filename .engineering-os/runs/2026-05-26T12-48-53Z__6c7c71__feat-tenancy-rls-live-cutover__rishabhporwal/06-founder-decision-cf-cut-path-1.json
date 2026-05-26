@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "req_id": "feat-tenancy-rls-live-cutover",
+  "decision_type": "escalation-ratification",
+  "escalation_id": "CF-CUT-PATH-1",
+  "decided_by": "rishabhporwal (Founder)",
+  "decided_at": "2026-05-26T16:00:00Z",
+  "decided_via": "claude-code path-choice loop / AskUserQuestion confirmation",
+  "decision": "Path C with hard exit deadline = Path B completion date",
+  "ratified_options": {
+    "chosen": "C",
+    "label": "Path C — quiesce + FORCE + service-role bypass for legacy connection identity (bounded by exit deadline)",
+    "rejected": {
+      "A1": "INADMISSIBLE per feedback_legacy_is_reference_only.md — would write new code into legacy project/",
+      "A2": "REJECTED at this gate — weeks of new pgbouncer infra would keep the OPEN P0 open longer than acceptable under §8(6) notice timeline (P0 open since 2026-05-24)",
+      "B_immediate":  "INADMISSIBLE — wait-for-Path-B compounds §8(6) exposure"
+    }
+  },
+  "rationale": "Founder accepted Rohan's Stage-1 synthesis recommendation. Path C closes the storage-layer leak in one cutover window; residual surface is ONE explicitly-named legacy connection identity, bypass usage audited per CF-CUT-BYPASS-AUDIT-1, lifetime bounded by the Founder-ratified Path-B (legacy retirement) completion date. Consistent with the established 'merge code, HOLD irreversibles for Founder-at-console' discipline used on Children 1-7. Defensible under DPDP §7 transitional continuity for the bounded interval.",
+  "binding_obligations_now_live": [
+    "Aryan Stage-2 plan binds the runbook to Path C shape (no further deliberation needed)",
+    "STEP 3 shim shape = ALTER ROLE <legacy_connection_identity> BYPASSRLS (per CF-CUT-IDEMPOTENT-1)",
+    "Bypass lifetime is bounded — exit = Path B (legacy retirement) completion date; written into runbook header per CF-CUT-CALENDAR-1",
+    "Bypass audit per CF-CUT-BYPASS-AUDIT-1 (per-create/remove Brain Decision-Log + structured Postgres log_statement → bypass_query_log keyed by workspace_id, §12-scopable)",
+    "DPDP §7 continuity addendum per CF-CUT-DPDP-ADDENDUM-1 (Aryan drafts at Stage 2; Founder signs before Stage-8 STEP-5)",
+    "STEP-5 verify-the-verifier per CF-CUT-VERIFY-THE-VERIFIER-1 — real legacy HTTP path + kill-test + inverse-mutant on staging clone pre-ceremony"
+  ],
+  "what_stays_open_after_ratification": [
+    "Path B (legacy app retirement) — a separate Stage-8 slice on its own timeline; sets the exit deadline for the Path-C bypass",
+    "CF-CUT-* armed tripwires (CF-CUT-SHIPROCKET-RECONCILE-1, CF-CUT-RESIDENCY-1) — resolve at Stage 2/3 by Aryan",
+    "DPDP §7 addendum signature — Aryan drafts at Stage 2, Founder signs at Stage 7/8 before Stage-8 STEP-5 executes",
+    "Founder-at-console Stage-8 ceremony — execution of the runbook on live prod DB stays held under HOLD-AT-FORCE until ceremony is scheduled"
+  ],
+  "next_agent": "architect (Aryan) — Stage 2 unblocked; produces binding plan with Path C shape + the High-stakes Gate Inventory per the durable-rule follow-on guidance",
+  "audit_trail": {
+    "intake_run_folder": ".engineering-os/runs/2026-05-26T12-48-53Z__6c7c71__feat-tenancy-rls-live-cutover__rishabhporwal/",
+    "synthesis_artifact": "05-stage1-synthesis.md §4",
+    "escalation_mirror": ".engineering-os/pending-founder-attention.md (CF-CUT-PATH-1 entry, now RESOLVED-RATIFIED)",
+    "active_json_status_before": "stage-1-complete (path-undecided)",
+    "active_json_status_after": "stage-1-complete (path=C-with-deadline; stage-2-ready)",
+    "decision_log_entry": ".engineering-os/decision-log/2026/05/2026-05-26.jsonl (type: escalation-ratification)"
+  }
+}

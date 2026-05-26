@@ -204,7 +204,7 @@ recalled the lineage, which is not a repeatable control.
 
 ---
 
-## 2026-05-26T12:55:00Z — 🚨 ESCALATION (Rohan, CTO Advisor) — FIRED at synthesis — `feat-tenancy-rls-live-cutover`: Founder picks the path BEFORE Stage-3 build (default Stage-2 design = Path C with exit deadline)
+## 2026-05-26T12:55:00Z — ~~🚨 ESCALATION (Rohan, CTO Advisor) — FIRED at synthesis — `feat-tenancy-rls-live-cutover`: Founder picks the path BEFORE Stage-3 build~~ ✅ **RESOLVED 2026-05-26T16:00:00Z — Founder ratified Path C with hard exit deadline = Path B completion date.** Aryan Stage-2 unblocked; STEP-3 shim shape = `ALTER ROLE … BYPASSRLS` on the one named legacy connection identity; bypass audit per CF-CUT-BYPASS-AUDIT-1 binding. Artifact: `.engineering-os/runs/2026-05-26T12-48-53Z__6c7c71__feat-tenancy-rls-live-cutover__rishabhporwal/06-founder-decision-cf-cut-path-1.json`. Original escalation text preserved below for audit trail.
 
 **Subject:** This is the slice that finally closes the OPEN P0 logged at the top of this file. Founder-priced trade-off between path choices needs ratification now so Stage-2 plan is written to ONE path; Stage 2 proceeds on the default in parallel.
 
