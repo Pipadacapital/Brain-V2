@@ -8,6 +8,7 @@
 // classification EDITING (saving intents — a WRITE) is DEFERRED. Per-campaign rows are
 // OAuth-fetched live and not seeded → honest affordance. CF-C6-RENDER-ONLY-1.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -27,8 +28,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function AdCampaignsContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const enabled = Boolean(isAuthenticated && workspaceId);
 
   const q = trpc.marketing.acquisition.useQuery({ date_start: dateStart, date_end: dateEnd }, { enabled });

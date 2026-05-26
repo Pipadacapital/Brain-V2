@@ -6,6 +6,7 @@
 // concepts), summary cards (month 1/3/6/12), and a paginated/searchable dimension table.
 // CF-C6-RENDER-ONLY-1: zero arithmetic; all values from trpc.ltv.summary.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString, parseAsInteger } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -28,8 +29,8 @@ function formatLtvValue(value: bigint, metric: string, currency: string): string
 export function LtvContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const [metric, setMetric] = useQueryState('metric', parseAsString.withDefault('cm2'));
   const [mode, setMode] = useQueryState('mode', parseAsString.withDefault('cumulative'));
   const [dimension, setDimension] = useQueryState('dimension', parseAsString.withDefault('product'));

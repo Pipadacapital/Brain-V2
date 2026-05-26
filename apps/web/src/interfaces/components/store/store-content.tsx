@@ -9,6 +9,7 @@
 // Tabs: Revenue / Orders / Products / Customers / Product COGS (link).
 // URL-synced via `tab` query param; default = Revenue (existing behaviour).
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsStringEnum, parseAsString } from 'nuqs';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
@@ -41,8 +42,8 @@ export function StoreContent() {
     'tab',
     parseAsStringEnum<TabValue>([...TAB_VALUES]).withDefault('revenue'),
   );
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd,   setDateEnd]   = useQueryState('to',   parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd,   setDateEnd]   = useQueryState('to',   parseAsString.withDefault(DEFAULT_DATE_END));
 
   const { data: summary } = trpc.store.summary.useQuery(
     { date_start: dateStart, date_end: dateEnd },

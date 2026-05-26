@@ -7,6 +7,7 @@
 // CF-C6-BIGINT-JSON-1: value_mu / cumulative_mu arrive as bigint via superjson.
 // CF-C6-FORMATMONEY-CANONICAL-1: formatMoney is the only money formatter.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
@@ -146,8 +147,8 @@ export function WaterfallContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
 
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
 
   const enabled = Boolean(isAuthenticated && workspaceId);
   const { data, isLoading, error } = trpc.metrics.pnlWaterfall.useQuery(

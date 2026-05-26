@@ -12,6 +12,7 @@
 // per-campaign breakdown" — NEVER a fabricated campaign. This mirrors legacy, which
 // returns this state at HTTP 200 when the platform is unconnected.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString, parseAsStringEnum } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -44,8 +45,8 @@ type TabValue = (typeof TAB_VALUES)[number];
 export function PlatformAdsView({ platform }: { platform: Platform }) {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const [tab, setTab] = useQueryState(
     'tab',
     parseAsStringEnum<TabValue>([...TAB_VALUES]).withDefault('performance'),

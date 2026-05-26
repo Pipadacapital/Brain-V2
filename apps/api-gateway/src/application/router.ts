@@ -91,7 +91,6 @@ import {
 } from '../domain/idempotency.js';
 import { assertPageInsightGates } from '../domain/insight-gates.js';
 import type { DataPlanePort } from '../domain/proto-types.js';
-import { SUGANDH_LOK_WORKSPACE_ID } from '../infrastructure/loopback-data-plane.js';
 
 // ---------------------------------------------------------------------------
 // Router factory — accepts the DataPlanePort and IdempotencyStore as deps.
@@ -197,17 +196,25 @@ export function createBrainRouter(
     }),
 
     /**
-     * Data-reconciliation signal (Slice C). The StubDataPlane analytics are keyed
-     * to the seeded Sugandh-Lok workspace (the demo). A freshly-onboarded workspace
-     * has a brand-new UUID and NO analytics data — and the LIVE data plane is slice
-     * D. Rather than fabricate numbers or crash, the dashboard asks here whether the
-     * active workspace has seed data; if not it renders the honest
-     * "no data yet — connect a store (coming in integrations)" empty-state.
-     * Workspace tier: workspaceId === claim.workspaceId is already asserted.
+     * Data-reconciliation signal. The dashboard asks: does this workspace have
+     * ANY analytics data yet? If not, it renders the honest
+     * "no data yet — connect a store" empty-state instead of empty rows.
+     *
+     * Production behaviour: probes the store summary on a wide date range and
+     * returns hasSeedData=true iff at least one order has been ingested. The
+     * old `workspaceId === SUGANDH_LOK_WORKSPACE_ID` shortcut was the seed-plane
+     * marker; it is gone (Founder destub 2026-05-26). The field name stays
+     * for backward-compat with the dashboard component.
      */
-    dataAvailability: workspaceProc.query(({ ctx }) => {
+    dataAvailability: workspaceProc.query(async ({ ctx }) => {
+      // A wide window: any orders since the start of Brain time. We don't need
+      // to count them — getStoreSummary surfaces hasData based on order count.
+      const result = await dataPlane.getStoreSummary({
+        workspace_id: ctx.workspaceId,
+        date_range: { start: '2020-01-01', end: '2099-12-31' },
+      });
       return {
-        hasSeedData: ctx.workspaceId === SUGANDH_LOK_WORKSPACE_ID,
+        hasSeedData: (result?.summary?.order_count ?? 0n) > 0n,
         workspaceId: ctx.workspaceId,
         requestId: ctx.requestId,
       };

@@ -15,7 +15,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   buildRealAuthContext,
-  buildLocalStubContext,
   readAuthConfig,
   assertBootableAuthConfig,
 } from './server.js';
@@ -120,38 +119,14 @@ describe('buildRealAuthContext (B1/B3/S2/S5)', () => {
   });
 });
 
-describe('buildLocalStubContext (harness path)', () => {
-  it('produces a consistent stub context (workspaceId === claim.workspaceId)', () => {
-    const ctx = buildLocalStubContext('req1', 'trace1', SEED_WS, 'user-local');
-    expect(ctx.workspaceId).toBe(SEED_WS);
-    expect(ctx.claim.workspaceId).toBe(SEED_WS);
-    expect(ctx.claim.workspaceRole).toBe('OWNER');
-  });
-});
-
-describe('boot config assertions (B1/B2/S5)', () => {
-  it('readAuthConfig: defaults to real-auth (harness false) when flag absent', () => {
-    const cfg = readAuthConfig({ SUPABASE_URL: 'https://x.supabase.co' });
-    expect(cfg.localHarness).toBe(false);
-  });
-
-  it('B2: real-auth without SUPABASE_URL is NOT bootable', () => {
+describe('boot config assertions', () => {
+  it('B2: missing SUPABASE_URL is NOT bootable', () => {
     const cfg = readAuthConfig({});
     expect(assertBootableAuthConfig(cfg)).toMatch(/SUPABASE_URL is required/);
   });
 
-  it('B1/S5: harness under NODE_ENV=production is NOT bootable', () => {
-    const cfg = readAuthConfig({ BRAIN_GATEWAY_LOCAL_HARNESS: 'true', NODE_ENV: 'production' });
-    expect(assertBootableAuthConfig(cfg)).toMatch(/production/);
-  });
-
   it('real-auth with SUPABASE_URL IS bootable (null = ok)', () => {
     const cfg = readAuthConfig({ SUPABASE_URL: 'https://x.supabase.co' });
-    expect(assertBootableAuthConfig(cfg)).toBeNull();
-  });
-
-  it('harness in dev IS bootable', () => {
-    const cfg = readAuthConfig({ BRAIN_GATEWAY_LOCAL_HARNESS: 'true' });
     expect(assertBootableAuthConfig(cfg)).toBeNull();
   });
 });

@@ -7,6 +7,7 @@
 // CF-C6-RENDER-ONLY-1: zero arithmetic; all values from trpc.marketing.{efficiency,acquisition,dailyAcquisition}.
 // CF-C6-FORMATMONEY-CANONICAL-1: formatMoney is the only money formatter.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useMemo } from 'react';
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
@@ -83,8 +84,8 @@ function AcquisitionChartTooltip({
 export function AcquisitionContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
 
   const enabled = Boolean(isAuthenticated && workspaceId);
   const eff = trpc.marketing.efficiency.useQuery(

@@ -12,6 +12,7 @@
 // sync fields, NULL in legacy when unsynced and NOT seeded locally. We render an
 // HONEST "pending connector cutover" panel for them — NEVER a fabricated number.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -38,8 +39,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 export function AnalyticsContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const enabled = Boolean(isAuthenticated && workspaceId);
 
   const summary = trpc.store.summary.useQuery({ date_start: dateStart, date_end: dateEnd }, { enabled });

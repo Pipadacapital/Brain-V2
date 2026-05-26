@@ -1,13 +1,14 @@
 'use client';
 
 // @paradigm: sql
-// LoginForm — Client Component (Slice A — feat-auth-supabase-identity).
+// LoginForm — Client Component (real Supabase auth only).
 //
-// Real auth (default): Supabase signInWithPassword (email/pw) + signInWithOAuth
-//   ('google') against the real Supabase project. On success the @supabase/ssr
-//   browser client sets the session cookies; we navigate to /dashboard.
-// LOCAL harness (NEXT_PUBLIC_BRAIN_LOCAL_HARNESS === 'true' ONLY): the offline
-//   stub path is kept as a fallback so the app boots without network.
+// Supabase signInWithPassword (email/pw) + signInWithOAuth('google') against
+// the real Supabase project. On success the @supabase/ssr browser client sets
+// the session cookies; we navigate to /dashboard.
+//
+// The offline LOCAL-harness fallback was removed on 2026-05-26 (Founder
+// destub Rip B). Production and dev now take the same path.
 //
 // CF-C6-PII-CLIENT-1: email/password/token NEVER logged.
 // CF-C6-PERF-A11Y-1: WCAG AA labels, error roles, keyboard nav.
@@ -15,15 +16,7 @@
 import { useState, useId, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAppDispatch } from '@/domain/store/hooks.js';
-import { setSession } from '@/domain/store/session-slice.js';
 import { createSupabaseBrowserClient } from '@/infrastructure/supabase/client.js';
-
-// LOCAL harness flag — when true, the offline stub login is available as a fallback.
-const IS_LOCAL_HARNESS = process.env.NEXT_PUBLIC_BRAIN_LOCAL_HARNESS === 'true';
-const STUB_EMAIL = 'founder@sugandhlok.com';
-const STUB_PASSWORD = 'brain-local-dev';
-const STUB_WORKSPACE_ID = '00000000-0000-0000-0000-000000000001';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -34,16 +27,14 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const passwordId = useId();
   const errorId = useId();
 
-  const dispatch = useAppDispatch();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Surface a reason when the app bounced us back here (e.g. SessionBootstrap could
-  // not resolve a session on a protected route). Read from the URL client-side to
-  // avoid a useSearchParams Suspense boundary.
+  // Surface a reason when the app bounced us back here (e.g. SessionBootstrap
+  // could not resolve a session on a protected route).
   useEffect(() => {
     const reason = new URLSearchParams(window.location.search).get('error');
     if (reason === 'session') {
@@ -51,10 +42,11 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     }
   }, []);
 
-  const goToDashboard = () => {
+  const _goToDashboard = () => {
     if (onSuccess) onSuccess();
     else router.push('/dashboard');
   };
+  void _goToDashboard; // kept for the onSuccess prop contract callers can plug
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -62,21 +54,6 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     setIsLoading(true);
 
     try {
-      // LOCAL harness fallback (flag-gated): accept stub credentials offline.
-      // CF-C6-PII-CLIENT-1: never log email or password.
-      if (IS_LOCAL_HARNESS && email === STUB_EMAIL && password === STUB_PASSWORD) {
-        dispatch(
-          setSession({
-            userId: '00000000-0000-0000-0000-000000000099',
-            workspaceId: STUB_WORKSPACE_ID,
-            workspaceRole: 'OWNER',
-          }),
-        );
-        goToDashboard();
-        return;
-      }
-
-      // REAL auth: Supabase email/password.
       const supabase = createSupabaseBrowserClient();
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
@@ -202,12 +179,6 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         </Link>
       </p>
 
-      {/* The stub credential hint is ONLY shown under the local harness flag. */}
-      {IS_LOCAL_HARNESS && (
-        <p className="text-xs text-center text-gray-400">
-          LOCAL harness: {STUB_EMAIL} / brain-local-dev
-        </p>
-      )}
     </div>
   );
 }

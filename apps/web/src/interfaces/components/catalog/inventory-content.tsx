@@ -6,6 +6,7 @@
 // sell-through, and status badge. CF-C6-RENDER-ONLY-1: zero arithmetic; all values from
 // trpc.catalog.inventory. days_left 999999 = "no recent sales" (the INFINITE sentinel).
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
@@ -34,8 +35,8 @@ function formatDays(days: bigint): string {
 export function InventoryContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const [sort, setSort] = useQueryState('sort', parseAsString.withDefault('days_left'));
   const [statusFilter, setStatusFilter] = useQueryState('status', parseAsString.withDefault(''));
 

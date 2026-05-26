@@ -12,6 +12,7 @@
 // CF-C6-BIGINT-JSON-1: all bigint _mu fields arrive via superjson.
 // CF-SEC-5: request_id surfaced on error UI for traceability.
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useState, useMemo } from 'react';
 import { useQueryState, parseAsString, parseAsStringEnum } from 'nuqs';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -130,8 +131,8 @@ export function PnlContent() {
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
 
   // URL state — date range + granularity persist in URL.
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const [granularity, setGranularity] = useQueryState(
     'gran',
     parseAsStringEnum<Granularity>(['day', 'week', 'month', 'quarter']).withDefault('day'),

@@ -6,6 +6,7 @@
 // cm1%, cm1 share, pareto grade, return-rate, AOV. CF-C6-RENDER-ONLY-1: zero arithmetic; all
 // values from trpc.catalog.products. cm1% / return-rate are bp (÷100 for display only).
 
+import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -26,8 +27,8 @@ const PARETO_TONE: Record<string, string> = {
 export function ProductsContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
-  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
-  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(DEFAULT_DATE_START));
+  const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
   const [groupBy, setGroupBy] = useQueryState('groupBy', parseAsString.withDefault('product'));
   const [sort, setSort] = useQueryState('sort', parseAsString.withDefault('cm1'));
   const [search, setSearch] = useQueryState('q', parseAsString.withDefault(''));
