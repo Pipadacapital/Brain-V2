@@ -56,6 +56,11 @@ import {
   UserProfileError,
 } from '@brain/core-user-profile';
 import {
+  listProductsForCogs,
+  updateProductCogs,
+  bulkUpdateProductCogs,
+} from '@brain/core-product-cogs';
+import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
@@ -1212,6 +1217,100 @@ export function createBrainRouter(
           data_epoch: result.data_epoch,
           request_id: ctx.requestId,
         };
+      }),
+
+    // -----------------------------------------------------------------
+    // Per-product COGS editor — Slice 3 of the parity epic. UI lets
+    // operators set cost_mu per product (paise). Shopify never sends COGS,
+    // so this field is user-owned; connector syncs leave it untouched.
+    // requireRole(EDITOR) because it mutates a metric input (CM1 changes).
+    // -----------------------------------------------------------------
+
+    /** List products for the COGS editor, paginated + filterable. */
+    cogsList: workspaceProc
+      .input(
+        z.object({
+          search:     z.string().max(200).optional(),
+          status:     z.enum(['all', 'ACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
+          cogsFilter: z.enum(['all', 'set', 'not_set']).optional(),
+          page:       z.number().int().min(1).optional(),
+          pageSize:   z.number().int().min(10).max(100).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.cogsList requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listProductsForCogs(ctx.workspaceId, input);
+        // BigInt → string at the seam so superjson serializes safely on every
+        // client (superjson handles bigint, but we type the wire as string for
+        // older RN clients per CF-C6-BIGINT-JSON-1).
+        return {
+          rows: r.rows.map((row) => ({
+            ...row,
+            costMu: row.costMu.toString(),
+            mrpMu:  row.mrpMu.toString(),
+          })),
+          total: r.total,
+          page: r.page,
+          pageSize: r.pageSize,
+          totalPages: r.totalPages,
+          request_id: ctx.requestId,
+        };
+      }),
+
+    /** Update one product's COGS (paise minor units). */
+    updateCogs: workspaceProc
+      .input(
+        z.object({
+          productId: z.string().uuid(),
+          costMu:    z.string().regex(/^\d+$/, 'cost_mu must be non-negative integer (paise)'),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.updateCogs requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await updateProductCogs(ctx.workspaceId, input.productId, BigInt(input.costMu));
+        if (!r.updated) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: `product not found in workspace. request_id=${ctx.requestId}`,
+          });
+        }
+        return { updated: true, costMu: r.costMu.toString(), request_id: ctx.requestId };
+      }),
+
+    /** Bulk-update COGS for many products in one transaction. */
+    bulkUpdateCogs: workspaceProc
+      .input(
+        z.object({
+          updates: z.array(
+            z.object({
+              productId: z.string().uuid(),
+              costMu:    z.string().regex(/^\d+$/),
+            }),
+          ).max(500),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `catalog.bulkUpdateCogs requires MANAGER role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await bulkUpdateProductCogs(
+          ctx.workspaceId,
+          input.updates.map((u) => ({ productId: u.productId, costMu: BigInt(u.costMu) })),
+        );
+        return { ...r, request_id: ctx.requestId };
       }),
   });
 
