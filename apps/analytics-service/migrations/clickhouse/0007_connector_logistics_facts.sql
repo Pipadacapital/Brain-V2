@@ -21,21 +21,27 @@ ENGINE = ReplacingMergeTree(version)
 PARTITION BY toYYYYMM(date)
 ORDER BY (workspace_id, vendor, vendor_shipment_id);
 
+-- Refund grain is per LINE (matches legacy shopify_refund_line_items + PG connector_refund_facts).
+-- ORDER BY includes vendor_refund_line_id so multiple lines per refund don't dedupe.
 CREATE TABLE IF NOT EXISTS brain.connector_refund_facts (
-    workspace_id        String          NOT NULL,
-    vendor              LowCardinality(String) NOT NULL,
-    vendor_refund_id    String          NOT NULL,
-    vendor_order_id     String,
-    vendor_product_id   String,
-    refund_amount_mu    Int64           DEFAULT 0,
-    currency_code       LowCardinality(String) NOT NULL,
-    date                Date            NOT NULL,
-    version             UInt64          NOT NULL,
-    ingested_at         DateTime        DEFAULT now()
+    workspace_id          String          NOT NULL,
+    vendor                LowCardinality(String) NOT NULL,
+    vendor_refund_id      String          NOT NULL,
+    vendor_refund_line_id String          NOT NULL,
+    vendor_order_id       String,
+    vendor_product_id     String,
+    sku                   String,
+    quantity              Int32           DEFAULT 0,
+    refund_amount_mu      Int64           DEFAULT 0,
+    tax_mu                Int64           DEFAULT 0,
+    currency_code         LowCardinality(String) NOT NULL,
+    date                  Date            NOT NULL,
+    version               UInt64          NOT NULL,
+    ingested_at           DateTime        DEFAULT now()
 )
 ENGINE = ReplacingMergeTree(version)
 PARTITION BY toYYYYMM(date)
-ORDER BY (workspace_id, vendor, vendor_refund_id);
+ORDER BY (workspace_id, vendor, vendor_refund_id, vendor_refund_line_id);
 
 CREATE TABLE IF NOT EXISTS brain.connector_logistics_order_facts (
     workspace_id                String          NOT NULL,
