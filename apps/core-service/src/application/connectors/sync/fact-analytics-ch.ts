@@ -23,6 +23,9 @@ import type {
   FactCohortRow, FactLtv, FactLifecycleBucket, FactLifecycle, FactOrderTimings,
   FactCascadeRow, FactDistRow, FactCalendarRow,
 } from './fact-analytics.js'
+import type {
+  FactDailySalesRow, FactDailyAcquisitionRow, FactDistGraphPoint,
+} from './fact-analytics.js'
 
 // CH derives the same `status_bucket` PG materialized inline (PG's was a backfill
 // CASE; CH recomputes it from raw `status` via multiIf for byte-perfect parity).
@@ -585,4 +588,394 @@ export async function readLifecycleStatesCH(workspaceId: string): Promise<FactLi
   const total = buckets.reduce((a, b) => a + b.customerCount, 0n)
   const netActive = buckets[0].customerCount + buckets[1].customerCount
   return { buckets, totalCustomers: total, netActive }
+}
+
+// ---------------------------------------------------------------------------
+// readOrderTimingsCH — repeat-rate ladder (1st→2nd→3rd→4th) and median days
+// between consecutive orders. PG used `percentile_cont(0.5) FILTER (WHERE rn=N)`;
+// CH equivalent is `quantileExactIf(0.5)(gap_days, rn = N)`. The "first" cohort
+// is `count(DISTINCT customer_ref) FILTER (WHERE rn=1)` — in CH, every customer
+// has exactly one rn=1 row in the ranked CTE, so countIf(rn=1) gives the same.
+// ---------------------------------------------------------------------------
+export async function readOrderTimingsCH(workspaceId: string): Promise<FactOrderTimings> {
+  const res = await chQuery<Record<string, string | null>>(
+    `WITH ranked AS (
+       SELECT customer_ref,
+              placed_at,
+              row_number() OVER (PARTITION BY customer_ref ORDER BY placed_at, vendor_order_id) AS rn,
+              dateDiff('second',
+                       lagInFrame(placed_at) OVER (PARTITION BY customer_ref ORDER BY placed_at, vendor_order_id),
+                       placed_at) / 86400.0 AS gap_days
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND ${CANCELLED_OK}
+     )
+     SELECT toString(countIf(rn = 1))                          AS first_orders,
+            toString(countIf(rn >= 2))                         AS c2,
+            toString(countIf(rn >= 3))                         AS c3,
+            toString(countIf(rn >= 4))                         AS c4,
+            toString(quantileExactIf(0.5)(gap_days, rn = 2))   AS d12,
+            toString(quantileExactIf(0.5)(gap_days, rn = 3))   AS d23,
+            toString(quantileExactIf(0.5)(gap_days, rn = 4))   AS d34
+       FROM ranked`,
+    { workspaceId },
+  )
+  const r = res[0] ?? {}
+  const first = BigInt(r.first_orders ?? '0')
+  const rate = (c: string | null | undefined) =>
+    first > 0n ? Number((BigInt(c ?? '0') * 10000n) / first) : 0
+  // CH `quantileExactIf` on no-match returns 0 (numeric default), PG returns NULL.
+  // We map "no rn=N rows" → null to match PG semantics; check via cN.
+  const median = (x: string | null | undefined, hasRows: bigint): number | null => {
+    if (!hasRows) return null
+    if (x === null || x === undefined || x === '0' || x === '') return null
+    const n = Number(x)
+    return Number.isFinite(n) ? Math.round(n) : null
+  }
+  return {
+    firstOrders: first,
+    secondBp: rate(r.c2),
+    thirdBp: rate(r.c3),
+    fourthBp: rate(r.c4),
+    days12: median(r.d12, BigInt(r.c2 ?? '0')),
+    days23: median(r.d23, BigInt(r.c3 ?? '0')),
+    days34: median(r.d34, BigInt(r.c4 ?? '0')),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// readFirstProductCascadeCH — the product of each customer's FIRST order →
+// repeat behaviour cascade. PG used DISTINCT ON; CH uses argMin window-equivalent:
+//   first_order:  argMin(vendor_order_id, (placed_at, vendor_order_id)) per customer
+//   first_prod:   argMin(vendor_product_id, vendor_line_id) per (customer, first_order)
+// Identical sort tiebreaks to PG.
+// ---------------------------------------------------------------------------
+export async function readFirstProductCascadeCH(
+  workspaceId: string,
+): Promise<{ rows: FactCascadeRow[]; totalCohort: bigint }> {
+  const rows = await chQuery<Record<string, string>>(
+    `WITH first_order AS (
+       SELECT customer_ref,
+              argMin(vendor_order_id, tuple(placed_at, vendor_order_id)) AS vendor_order_id
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND ${CANCELLED_OK}
+        GROUP BY customer_ref
+     ),
+     first_prod AS (
+       SELECT fo.customer_ref                                                  AS customer_ref,
+              argMin(li.vendor_product_id, li.vendor_line_id)                  AS pid
+         FROM first_order fo
+         JOIN brain.connector_line_item_facts li
+              ON li.workspace_id = {workspace_id:String}
+              AND li.vendor = 'SHOPIFY'
+              AND li.vendor_order_id = fo.vendor_order_id
+        WHERE li.vendor_product_id != ''
+        GROUP BY fo.customer_ref
+     ),
+     prod_titles AS (
+       SELECT vendor_product_id AS pid, any(title) AS title
+         FROM brain.connector_product_facts
+        WHERE workspace_id = {workspace_id:String}
+        GROUP BY vendor_product_id
+     ),
+     li_titles AS (
+       SELECT vendor_product_id AS pid, any(title) AS title
+         FROM brain.connector_line_item_facts
+        WHERE workspace_id = {workspace_id:String}
+        GROUP BY vendor_product_id
+     ),
+     cust AS (
+       SELECT customer_ref,
+              count()                  AS orders,
+              sum(${COHORT_NET})       AS ltv
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND ${CANCELLED_OK}
+        GROUP BY customer_ref
+     )
+     SELECT fp.pid                                                AS pid,
+            coalesce(nullIf(pt.title, ''), nullIf(lt.title, ''), '(unknown)') AS title,
+            toString(count())                                     AS first_customers,
+            toString(countIf(c.orders >= 2))                      AS w2,
+            toString(countIf(c.orders >= 3))                      AS w3,
+            toString(countIf(c.orders >= 4))                      AS w4,
+            toString(toInt64(round(avgOrNull(c.ltv))))            AS avg_ltv
+       FROM first_prod fp
+       JOIN cust c ON c.customer_ref = fp.customer_ref
+       LEFT JOIN prod_titles pt ON pt.pid = fp.pid
+       LEFT JOIN li_titles   lt ON lt.pid = fp.pid
+      GROUP BY fp.pid, pt.title, lt.title
+      ORDER BY count() DESC
+      LIMIT 100`,
+    { workspaceId },
+  )
+  const out: FactCascadeRow[] = rows.map((r) => ({
+    productKey: r.pid,
+    productTitle: r.title || '(unknown)',
+    firstOrderCustomers: BigInt(r.first_customers ?? '0'),
+    with2nd: BigInt(r.w2 ?? '0'),
+    with3rd: BigInt(r.w3 ?? '0'),
+    with4thPlus: BigInt(r.w4 ?? '0'),
+    avgLtvMu: BigInt(r.avg_ltv ?? '0'),
+  }))
+  const totalCohort = out.reduce((a, r) => a + r.firstOrderCustomers, 0n)
+  return { rows: out, totalCohort }
+}
+
+// ---------------------------------------------------------------------------
+// readDistributionsCH — per-product line-value mode vs mean (line value =
+// quantity × unit_price_mu). PG `mode() WITHIN GROUP (ORDER BY v)` → CH
+// `topK(1)(v)[1]` (most-frequent value). Lengths/joins mirror PG.
+// ---------------------------------------------------------------------------
+export async function readDistributionsCH(
+  workspaceId: string,
+): Promise<{ rows: FactDistRow[]; globalMode: bigint; globalMean: bigint }> {
+  const rows = await chQuery<Record<string, string>>(
+    `WITH prod_titles AS (
+       SELECT vendor_product_id AS pid, any(title) AS title
+         FROM brain.connector_product_facts
+        WHERE workspace_id = {workspace_id:String}
+        GROUP BY vendor_product_id
+     )
+     SELECT coalesce(nullIf(any(pt.title), ''), any(nullIf(li.title, '')), '(unknown)') AS product,
+            toString(count())                                                AS orders,
+            toString(arrayElement(topK(1)(li.quantity * li.price_mu), 1))    AS mode_mu,
+            toString(toInt64(round(avg(li.quantity * li.price_mu))))         AS mean_mu
+       FROM brain.connector_line_item_facts li
+       LEFT JOIN prod_titles pt ON pt.pid = li.vendor_product_id
+      WHERE li.workspace_id = {workspace_id:String}
+        AND li.vendor_product_id != ''
+      GROUP BY li.vendor_product_id, li.title
+      ORDER BY count() DESC
+      LIMIT 100`,
+    { workspaceId },
+  )
+  const globals = await chQuery<Record<string, string>>(
+    `SELECT toString(arrayElement(topK(1)(quantity * price_mu), 1))    AS mode_mu,
+            toString(toInt64(round(avg(quantity * price_mu))))         AS mean_mu
+       FROM brain.connector_line_item_facts
+      WHERE workspace_id = {workspace_id:String}`,
+    { workspaceId },
+  )
+  return {
+    rows: rows.map((r) => ({
+      product: r.product || '(unknown)',
+      orders: BigInt(r.orders ?? '0'),
+      modeMu: BigInt(r.mode_mu ?? '0'),
+      meanMu: BigInt(r.mean_mu ?? '0'),
+    })),
+    globalMode: BigInt(globals[0]?.mode_mu ?? '0'),
+    globalMean: BigInt(globals[0]?.mean_mu ?? '0'),
+  }
+}
+
+// ---------------------------------------------------------------------------
+// readDailyNetSalesCH — per-day series for the AreaChart on the analytics page.
+// Direct port: group by toDate(placed_at). net_sales = gross − discount (PG
+// definition is the same — see fact-analytics.ts:917).
+// ---------------------------------------------------------------------------
+export async function readDailyNetSalesCH(
+  workspaceId: string,
+  from: string,
+  to: string,
+): Promise<FactDailySalesRow[]> {
+  const rows = await chQuery<{ day: string; net: string; orders: string }>(
+    `SELECT formatDateTime(toDate(placed_at), '%Y-%m-%d')                   AS day,
+            toString(sum(gross_sales_mu - discount_mu))                     AS net,
+            toString(count())                                               AS orders
+       FROM brain.connector_order_facts
+      WHERE workspace_id = {workspace_id:String}
+        AND ${CANCELLED_OK}
+        AND placed_at >= {from:Date}
+        AND placed_at <  addDays({to:Date}, 1)
+      GROUP BY day
+      ORDER BY day`,
+    { workspaceId, params: { from, to } },
+  )
+  return rows.map((r) => ({
+    date: r.day,
+    netSalesMu: BigInt(r.net ?? '0'),
+    orders: BigInt(r.orders ?? '0'),
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// readDailyAcquisitionCH — per-day NC count, NC revenue, ad spend (split by
+// META / GOOGLE), NC-CM2, CAC, CM2 per NC. PG's `firsts` CTE picks each
+// customer's first order date and the self-join sums only the orders placed
+// on that day. CH replicates it 1:1.
+// ---------------------------------------------------------------------------
+export async function readDailyAcquisitionCH(
+  workspaceId: string,
+  from: string,
+  to: string,
+): Promise<FactDailyAcquisitionRow[]> {
+  const ncRows = await chQuery<{ day: string; nc: string; nc_rev: string }>(
+    `WITH firsts AS (
+       SELECT customer_ref, toDate(min(placed_at)) AS acq_date
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND ${CANCELLED_OK}
+        GROUP BY customer_ref
+     )
+     SELECT formatDateTime(f.acq_date, '%Y-%m-%d')                                       AS day,
+            toString(count())                                                            AS nc,
+            toString(sum(o.gross_sales_mu - o.discount_mu - o.tax_mu))                   AS nc_rev
+       FROM firsts f
+       JOIN brain.connector_order_facts o
+            ON o.workspace_id = {workspace_id:String}
+            AND o.customer_ref = f.customer_ref
+            AND toDate(o.placed_at) = f.acq_date
+      WHERE o.cancelled_at IS NULL
+        AND o.financial_status NOT IN ('voided','refunded')
+        AND f.acq_date >= {from:Date}
+        AND f.acq_date <= {to:Date}
+      GROUP BY day
+      ORDER BY day`,
+    { workspaceId, params: { from, to } },
+  )
+  const spendRows = await chQuery<{ day: string; vendor: string; spend: string }>(
+    `SELECT formatDateTime(date, '%Y-%m-%d')   AS day,
+            vendor                              AS vendor,
+            toString(sum(spend_mu))             AS spend
+       FROM brain.connector_ad_spend_facts
+      WHERE workspace_id = {workspace_id:String}
+        AND date >= {from:Date}
+        AND date <= {to:Date}
+      GROUP BY day, vendor`,
+    { workspaceId, params: { from, to } },
+  )
+  const spendMap = new Map<string, { meta: bigint; google: bigint }>()
+  for (const row of spendRows) {
+    const entry = spendMap.get(row.day) ?? { meta: 0n, google: 0n }
+    const v = BigInt(row.spend ?? '0')
+    if (row.vendor === 'META') entry.meta = v
+    else if (row.vendor === 'GOOGLE') entry.google = v
+    spendMap.set(row.day, entry)
+  }
+  return ncRows.map((r) => {
+    const nc = BigInt(r.nc ?? '0')
+    const ncRev = BigInt(r.nc_rev ?? '0')
+    const spend = spendMap.get(r.day) ?? { meta: 0n, google: 0n }
+    const totalSpend = spend.meta + spend.google
+    const ncCm2 = ncRev - totalSpend
+    return {
+      date: r.day,
+      newCustomers: nc,
+      ncRevenueMu: ncRev,
+      adSpendMu: totalSpend,
+      ncCm2Mu: ncCm2,
+      cacMu: nc > 0n ? totalSpend / nc : null,
+      cm2PerNcMu: nc > 0n ? ncCm2 / nc : null,
+      metaSpendMu: spend.meta,
+      googleSpendMu: spend.google,
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// readDistributionsGraphPointsCH — pulls raw per-line values for the density
+// curve; bucketing is identical TS logic (40 even buckets across the range).
+// ---------------------------------------------------------------------------
+export async function readDistributionsGraphPointsCH(
+  workspaceId: string,
+  metric: 'sales' | 'cm1',
+): Promise<FactDistGraphPoint[]> {
+  // sales: qty × unit_price_mu. cm1: qty × unit_price_mu − qty × cost_mu (per-product cost).
+  // PG uses `LEFT JOIN connector_product_facts ON workspace_id + vendor_product_id`.
+  const sql =
+    metric === 'cm1'
+      ? `SELECT toString(li.quantity * li.price_mu
+                         - li.quantity * coalesce(pf.cost_mu, 0)) AS v
+           FROM brain.connector_line_item_facts li
+           LEFT JOIN brain.connector_product_facts pf
+                  ON pf.workspace_id = li.workspace_id
+                 AND pf.vendor_product_id = li.vendor_product_id
+          WHERE li.workspace_id = {workspace_id:String}
+            AND li.vendor_product_id != ''
+          LIMIT 2000`
+      : `SELECT toString(quantity * price_mu) AS v
+           FROM brain.connector_line_item_facts
+          WHERE workspace_id = {workspace_id:String}
+            AND vendor_product_id != ''
+          LIMIT 2000`
+  const res = await chQuery<{ v: string }>(sql, { workspaceId })
+  if (!res.length) return []
+  const values = res.map((r) => BigInt(r.v ?? '0'))
+  const positive = values.filter((v) => v > 0n)
+  if (!positive.length) return []
+  const sorted = [...positive].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const minVal = sorted[0]
+  const maxVal = sorted[sorted.length - 1]
+  if (minVal === maxVal) return [{ valueMu: minVal, densityBp: 10000 }]
+  const BUCKETS = 40
+  const range = maxVal - minVal
+  const bucketSize = range / BigInt(BUCKETS) || 1n
+  const counts = new Array<number>(BUCKETS).fill(0)
+  for (const v of positive) {
+    const idx = Math.min(BUCKETS - 1, Number((v - minVal) / bucketSize))
+    counts[idx]++
+  }
+  const total = positive.length
+  return counts.map((c, i) => ({
+    valueMu: minVal + bucketSize * BigInt(i) + bucketSize / 2n,
+    densityBp: Math.round((c / total) * 10000),
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// readCalendarReportCH — last-90 buckets of revenue / orders / new_customers /
+// ad spend at day|week|month grain. PG used `date_trunc('${grain}', …)`; CH
+// uses `toStartOf{Day,Week,Month}` (Monday-week to match PG ISO week).
+// ---------------------------------------------------------------------------
+export async function readCalendarReportCH(
+  workspaceId: string,
+  grain: 'day' | 'week' | 'month',
+): Promise<FactCalendarRow[]> {
+  const truncFn =
+    grain === 'week' ? 'toMonday' : grain === 'month' ? 'toStartOfMonth' : 'toDate'
+  const rev = await chQuery<Record<string, string>>(
+    `WITH firsts AS (
+       SELECT customer_ref, min(placed_at) AS acq
+         FROM brain.connector_order_facts
+        WHERE workspace_id = {workspace_id:String}
+          AND customer_ref != ''
+          AND ${CANCELLED_OK}
+        GROUP BY customer_ref
+     )
+     SELECT formatDateTime(${truncFn}(toDate(o.placed_at)), '%Y-%m-%d')      AS period,
+            toString(sum(o.gross_sales_mu - o.discount_mu - o.tax_mu))       AS revenue,
+            toString(count())                                                 AS orders,
+            toString(countIf(f.acq = o.placed_at))                           AS new_customers
+       FROM brain.connector_order_facts o
+       LEFT JOIN firsts f ON f.customer_ref = o.customer_ref
+      WHERE o.workspace_id = {workspace_id:String}
+        AND o.cancelled_at IS NULL
+        AND o.financial_status NOT IN ('voided','refunded')
+      GROUP BY period
+      ORDER BY period DESC
+      LIMIT 90`,
+    { workspaceId },
+  )
+  const spend = await chQuery<Record<string, string>>(
+    `SELECT formatDateTime(${truncFn}(date), '%Y-%m-%d')   AS period,
+            toString(sum(spend_mu))                         AS spend
+       FROM brain.connector_ad_spend_facts
+      WHERE workspace_id = {workspace_id:String}
+      GROUP BY period`,
+    { workspaceId },
+  )
+  const spendByPeriod = new Map(spend.map((r) => [r.period, BigInt(r.spend ?? '0')]))
+  return rev.map((r) => ({
+    periodKey: r.period,
+    revenueMu: BigInt(r.revenue ?? '0'),
+    orders: BigInt(r.orders ?? '0'),
+    newCustomers: BigInt(r.new_customers ?? '0'),
+    spendMu: spendByPeriod.get(r.period) ?? 0n,
+  }))
 }

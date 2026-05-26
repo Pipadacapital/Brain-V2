@@ -21,6 +21,9 @@ import {
   readStoreSummaryCH, readPnlCH, readMarketingCH, readCogsCH, readProductPerformanceCH,
   readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH,
   readCohortsCH, readLtvCH, readLifecycleStatesCH,
+  readOrderTimingsCH, readFirstProductCascadeCH, readDistributionsCH,
+  readDailyNetSalesCH, readDailyAcquisitionCH, readDistributionsGraphPointsCH,
+  readCalendarReportCH,
 } from './fact-analytics-ch.js'
 
 // READ_FROM_CH=true routes specific read functions through brain.connector_*_facts
@@ -771,6 +774,9 @@ export interface FactOrderTimings {
   days34: number | null
 }
 export async function readOrderTimings(workspaceId: string): Promise<FactOrderTimings> {
+  if (READ_FROM_CH) {
+    try { return await readOrderTimingsCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
       `WITH ranked AS (
@@ -817,6 +823,9 @@ export interface FactCascadeRow {
   avgLtvMu: bigint
 }
 export async function readFirstProductCascade(workspaceId: string): Promise<{ rows: FactCascadeRow[]; totalCohort: bigint }> {
+  if (READ_FROM_CH) {
+    try { return await readFirstProductCascadeCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
       `WITH first_order AS (
@@ -867,6 +876,9 @@ export async function readFirstProductCascade(workspaceId: string): Promise<{ ro
 // Distributions — per-product per-order value: mode vs mean (line value = qty × unit price).
 export interface FactDistRow { product: string; orders: bigint; modeMu: bigint; meanMu: bigint }
 export async function readDistributions(workspaceId: string): Promise<{ rows: FactDistRow[]; globalMode: bigint; globalMean: bigint }> {
+  if (READ_FROM_CH) {
+    try { return await readDistributionsCH(workspaceId) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
       `SELECT COALESCE(max(pf.title), li.title, '(unknown)') product,
@@ -912,6 +924,9 @@ export async function readDailyNetSales(
   from: string,
   to: string,
 ): Promise<FactDailySalesRow[]> {
+  if (READ_FROM_CH) {
+    try { return await readDailyNetSalesCH(workspaceId, from, to) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<{ day: string; net: string; orders: string }>(
       `SELECT to_char(date_trunc('day', processed_at), 'YYYY-MM-DD') AS day,
@@ -955,6 +970,9 @@ export async function readDailyAcquisition(
   from: string,
   to: string,
 ): Promise<FactDailyAcquisitionRow[]> {
+  if (READ_FROM_CH) {
+    try { return await readDailyAcquisitionCH(workspaceId, from, to) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Step 1: identify first-order date per customer
     // Step 2: aggregate new-customer orders per day
@@ -1031,6 +1049,9 @@ export async function readDistributionsGraphPoints(
   workspaceId: string,
   metric: 'sales' | 'cm1',
 ): Promise<FactDistGraphPoint[]> {
+  if (READ_FROM_CH) {
+    try { return await readDistributionsGraphPointsCH(workspaceId, metric) } catch { /* PG fallback */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Pull raw per-line values (capped at 500 rows for performance; adequate for density)
     const valueExpr =
@@ -1294,6 +1315,9 @@ export interface FactCalendarRow {
   spendMu: bigint
 }
 export async function readCalendarReport(workspaceId: string, grain: 'day' | 'week' | 'month'): Promise<FactCalendarRow[]> {
+  if (READ_FROM_CH) {
+    try { return await readCalendarReportCH(workspaceId, grain) } catch { /* PG fallback */ }
+  }
   const trunc = grain === 'week' ? 'week' : grain === 'month' ? 'month' : 'day'
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const rev = await tx.query<Record<string, string>>(
