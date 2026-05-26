@@ -606,6 +606,42 @@ export function createBrainRouter(
           request_id: ctx.requestId,
         };
       }),
+
+    /**
+     * P&L period grid — per-period (day/week/month/quarter) full P&L row set.
+     * Legacy-parity: ~34 column grid matching COLUMN_CONFIG. requireRole(ANALYST).
+     * CF-C6-RENDER-ONLY-1: zero arithmetic here — all values from the data plane.
+     * CF-C6-BIGINT-JSON-1: every _mu field is bigint over superjson.
+     */
+    periodGrid: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          granularity: z.enum(['day', 'week', 'month', 'quarter']).default('day'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `pnl.periodGrid requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+
+        const result = await dataPlane.getPnlPeriodGrid({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          granularity: input.granularity,
+        });
+
+        return {
+          rows: result.rows,
+          currency_code: result.currency_code,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
   });
 
   // -------------------------------------------------------------------

@@ -18,7 +18,7 @@ import {
   readProductPerformance, readWorkspaceMembers, readWorkspaceSettings,
   readShipmentAnalytics, readPincodes, readCodPrepaid, readCohorts, readLtv,
   readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
-  readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints,
+  readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints, readPnlPeriodGrid,
 } from '@brain/core-connectors';
 import type {
   DataPlanePort,
@@ -53,6 +53,7 @@ import type {
   CalendarReportResult,
   DailySalesRow,
   DailyAcquisitionRow,
+  PnlPeriodRow,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -711,5 +712,54 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
       })),
       data_epoch: DATA_EPOCH,
     };
+  }
+
+  // P&L period grid — per-period (day/week/month/quarter) full P&L row set.
+  // Legacy-parity: ~34 column grid. Columns with no migrated source → honest 0n.
+  override async getPnlPeriodGrid(p: Parameters<DataPlanePort['getPnlPeriodGrid']>[0]): Promise<{ rows: PnlPeriodRow[]; currency_code: string; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const raw = await readPnlPeriodGrid(this.ws, p.date_range.start, p.date_range.end, p.granularity);
+    const currency_code = raw.length > 0 ? (raw[0].currencyCode ?? 'INR') : 'INR';
+    const rows: PnlPeriodRow[] = raw.map((r) => ({
+      bucketKey: r.bucketKey,
+      label: r.label,
+      grossSales: r.grossSales,
+      productGross: r.productGross,
+      shippingGross: r.shippingGross,
+      discounts: r.discounts,
+      productDiscount: r.productDiscount,
+      shippingDiscount: r.shippingDiscount,
+      sales: r.sales,
+      netSales: r.netSales,
+      productNet: r.productNet,
+      shippingNet: r.shippingNet,
+      refunds: r.refunds,
+      productRefunds: r.productRefunds,
+      shippingRefunds: r.shippingRefunds,
+      returnFees: r.returnFees,
+      revenue: r.revenue,
+      ncNetRevenue: r.ncNetRevenue,
+      ecNetRevenue: r.ecNetRevenue,
+      netRevenue: r.netRevenue,
+      cogs: r.cogs,
+      variableCosts: r.variableCosts,
+      shippingCosts: r.shippingCosts,
+      returnsCosts: r.returnsCosts,
+      paymentCosts: r.paymentCosts,
+      customsCosts: r.customsCosts,
+      otherVariable: r.otherVariable,
+      adSpend: r.adSpend,
+      metaAdSpend: r.metaAdSpend,
+      googleAdSpend: r.googleAdSpend,
+      contributionMargin1: r.contributionMargin1,
+      contributionMargin2: r.contributionMargin2,
+      contributionMargin3: r.contributionMargin3,
+      fixedCosts: r.fixedCosts,
+      founderSalaryAllocated: r.founderSalaryAllocated,
+      netProfit: r.netProfit,
+      orders: r.orders,
+      currencyCode: r.currencyCode,
+    }));
+    return { rows, currency_code, data_epoch: DATA_EPOCH };
   }
 }

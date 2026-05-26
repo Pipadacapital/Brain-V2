@@ -149,4 +149,7 @@ export class DispatchingDataPlane implements DataPlanePort {
   getDailyAcquisition(p: Parameters<DataPlanePort['getDailyAcquisition']>[0]) {
     return this.plane(p.workspace_id).getDailyAcquisition(p);
   }
+  getPnlPeriodGrid(p: Parameters<DataPlanePort['getPnlPeriodGrid']>[0]) {
+    return this.plane(p.workspace_id).getPnlPeriodGrid(p);
+  }
 }

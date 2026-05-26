@@ -1025,6 +1025,221 @@ export async function readDistributionsGraphPoints(
   })
 }
 
+// ---------------------------------------------------------------------------
+// P&L period grid — per-period (day/week/month/quarter) full P&L row set for
+// the grid table view (legacy-parity). Groups order + spend + COGS by period.
+//
+// Columns with NO migrated source (productGross/shippingGross split,
+// productDiscount/shippingDiscount, returnFees, shippingCosts/returnsCosts/
+// paymentCosts/customsCosts/otherVariable, ncNetRevenue/ecNetRevenue,
+// founderSalaryAllocated, fixedCosts) → honest 0n; the grid renders them as zeros.
+// ---------------------------------------------------------------------------
+export type PnlGranularity = 'day' | 'week' | 'month' | 'quarter'
+
+export interface FactPnlPeriodRow {
+  bucketKey: string          // ISO date of period start (YYYY-MM-DD)
+  label: string              // display label e.g. "01 Apr" / "W15 2026"
+  // Revenue block
+  grossSales: bigint
+  productGross: bigint       // honest 0n — no source
+  shippingGross: bigint      // honest 0n — no source
+  discounts: bigint
+  productDiscount: bigint    // honest 0n — no source
+  shippingDiscount: bigint   // honest 0n — no source
+  sales: bigint              // grossSales (alias used by legacy)
+  netSales: bigint           // grossSales − discounts
+  productNet: bigint         // honest 0n — no source
+  shippingNet: bigint        // honest 0n — no source
+  // Refund block (sourced from financial_status='refunded' orders in the period)
+  refunds: bigint
+  productRefunds: bigint     // same as refunds — no split source
+  shippingRefunds: bigint    // honest 0n — no source
+  returnFees: bigint         // honest 0n — no source
+  // Revenue after refunds
+  revenue: bigint            // netSales − refunds
+  ncNetRevenue: bigint       // honest 0n — no source
+  ecNetRevenue: bigint       // honest 0n — no source
+  netRevenue: bigint         // revenue − tax (realized pattern: non-cancelled only)
+  // Cost block
+  cogs: bigint
+  variableCosts: bigint      // honest 0n — no variable-cost source
+  shippingCosts: bigint      // honest 0n — no source
+  returnsCosts: bigint       // honest 0n — no source
+  paymentCosts: bigint       // honest 0n — no source
+  customsCosts: bigint       // honest 0n — no source
+  otherVariable: bigint      // honest 0n — no source
+  // Ad spend
+  adSpend: bigint
+  metaAdSpend: bigint
+  googleAdSpend: bigint
+  // Margin ladder
+  contributionMargin1: bigint
+  contributionMargin2: bigint
+  contributionMargin3: bigint
+  fixedCosts: bigint         // honest 0n — no source
+  founderSalaryAllocated: bigint // honest 0n — no source
+  netProfit: bigint
+  // Meta
+  orders: bigint
+  currencyCode: string
+}
+
+export async function readPnlPeriodGrid(
+  workspaceId: string,
+  from: string,
+  to: string,
+  granularity: PnlGranularity,
+): Promise<FactPnlPeriodRow[]> {
+  const trunc = granularity === 'quarter' ? 'quarter' : granularity
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // ---- Order aggregates per period ----------------------------------------
+    // Gross sales, discounts, tax for ALL orders in the period (non-cancelled).
+    // Refunds are sourced from rows where financial_status = 'refunded'.
+    const orderRes = await tx.query<Record<string, string>>(
+      `SELECT
+         to_char(date_trunc('${trunc}', processed_at), 'YYYY-MM-DD') AS period,
+         max(currency_code) AS currency_code,
+         COALESCE(sum(gross_sales_mu), 0)::text AS gross_sales,
+         COALESCE(sum(total_discount_mu), 0)::text AS discounts,
+         COALESCE(sum(total_tax_mu) FILTER (WHERE ${CANCELLED}), 0)::text AS tax,
+         count(*) FILTER (WHERE ${CANCELLED})::text AS orders,
+         COALESCE(sum(gross_sales_mu) FILTER (WHERE financial_status = 'refunded'), 0)::text AS refunds
+       FROM connector_order_facts
+       WHERE processed_at >= $1::date
+         AND processed_at <  $2::date + interval '1 day'
+       GROUP BY 1
+       ORDER BY 1`,
+      [from, to],
+    )
+
+    // ---- COGS per period (line items × cost_mu joined to orders in that period) --
+    // Group by the ORDER's period bucket, then sum quantity × cost_mu.
+    // Uses LEFT JOIN to product_facts so products with no cost contribute 0 (COALESCE).
+    const cogsRes = await tx.query<Record<string, string>>(
+      `SELECT
+         to_char(date_trunc('${trunc}', o.processed_at), 'YYYY-MM-DD') AS period,
+         COALESCE(sum(li.quantity * COALESCE(pf.cost_mu, 0)), 0)::text AS cogs
+       FROM connector_order_facts o
+       JOIN connector_line_item_facts li
+         ON li.workspace_id = o.workspace_id
+        AND li.vendor_order_id = o.vendor_order_id
+       LEFT JOIN connector_product_facts pf
+         ON pf.workspace_id = li.workspace_id
+        AND pf.vendor_product_id = li.vendor_product_id
+       WHERE o.processed_at >= $1::date
+         AND o.processed_at <  $2::date + interval '1 day'
+         AND ${CANCELLED.replace(/cancelled_at/g, 'o.cancelled_at').replace(/financial_status/g, 'o.financial_status')}
+       GROUP BY 1`,
+      [from, to],
+    )
+
+    // ---- Ad spend per period, split by vendor --------------------------------
+    const spendRes = await tx.query<Record<string, string>>(
+      `SELECT
+         to_char(date_trunc('${trunc}', spend_date), 'YYYY-MM-DD') AS period,
+         vendor,
+         COALESCE(sum(spend_mu), 0)::text AS spend
+       FROM connector_ad_spend_facts
+       WHERE spend_date >= $1::date
+         AND spend_date <= $2::date
+       GROUP BY 1, 2`,
+      [from, to],
+    )
+
+    // Build lookup maps
+    const cogsMap = new Map<string, bigint>()
+    for (const r of cogsRes.rows) {
+      cogsMap.set(r.period, BigInt(r.cogs ?? '0'))
+    }
+    const spendMap = new Map<string, { meta: bigint; google: bigint }>()
+    for (const r of spendRes.rows) {
+      const entry = spendMap.get(r.period) ?? { meta: 0n, google: 0n }
+      const v = BigInt(r.spend ?? '0')
+      if (r.vendor === 'META') entry.meta = v
+      else if (r.vendor === 'GOOGLE') entry.google = v
+      spendMap.set(r.period, entry)
+    }
+
+    return orderRes.rows.map((r) => {
+      const period = r.period ?? ''
+      const grossSales = BigInt(r.gross_sales ?? '0')
+      const discounts = BigInt(r.discounts ?? '0')
+      const tax = BigInt(r.tax ?? '0')
+      const orders = BigInt(r.orders ?? '0')
+      const refunds = BigInt(r.refunds ?? '0')
+      const netSales = grossSales - discounts
+      const revenue = netSales - refunds
+      const netRevenue = revenue - tax
+      const cogs = cogsMap.get(period) ?? 0n
+      const spend = spendMap.get(period) ?? { meta: 0n, google: 0n }
+      const adSpend = spend.meta + spend.google
+      const cm1 = netRevenue - cogs
+      const cm2 = cm1 - adSpend
+      const cm3 = cm2 // no fixed cost source
+      const currencyCode = r.currency_code ?? 'INR'
+
+      // Label per granularity
+      let label: string = period
+      try {
+        const d = new Date(period + 'T00:00:00Z')
+        if (granularity === 'day') {
+          label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' })
+        } else if (granularity === 'week') {
+          label = `W${Math.ceil((d.getUTCDate()) / 7) + 1} ${d.getUTCFullYear()}`
+        } else if (granularity === 'month') {
+          label = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' })
+        } else if (granularity === 'quarter') {
+          const q = Math.floor(d.getUTCMonth() / 3) + 1
+          label = `Q${q} ${d.getUTCFullYear()}`
+        }
+      } catch {
+        label = period
+      }
+
+      return {
+        bucketKey: period,
+        label,
+        grossSales,
+        productGross: 0n,
+        shippingGross: 0n,
+        discounts,
+        productDiscount: 0n,
+        shippingDiscount: 0n,
+        sales: grossSales,
+        netSales,
+        productNet: 0n,
+        shippingNet: 0n,
+        refunds,
+        productRefunds: refunds,
+        shippingRefunds: 0n,
+        returnFees: 0n,
+        revenue,
+        ncNetRevenue: 0n,
+        ecNetRevenue: 0n,
+        netRevenue,
+        cogs,
+        variableCosts: 0n,
+        shippingCosts: 0n,
+        returnsCosts: 0n,
+        paymentCosts: 0n,
+        customsCosts: 0n,
+        otherVariable: 0n,
+        adSpend,
+        metaAdSpend: spend.meta,
+        googleAdSpend: spend.google,
+        contributionMargin1: cm1,
+        contributionMargin2: cm2,
+        contributionMargin3: cm3,
+        fixedCosts: 0n,
+        founderSalaryAllocated: 0n,
+        netProfit: cm3,
+        orders,
+        currencyCode,
+      }
+    })
+  })
+}
+
 // Calendar report — per-period (day/week/month) revenue + ad spend + orders + new customers.
 export interface FactCalendarRow {
   periodKey: string

@@ -2246,6 +2246,19 @@ export class StubDataPlane implements DataPlanePort {
     return { rows: [], data_epoch: DATA_EPOCH };
   }
 
+  // P&L period grid stub — returns empty rows (Sugandh seed does not have period-level
+  // breakdowns seeded; the real read runs in LocalDbDataPlane for connected workspaces).
+  async getPnlPeriodGrid(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    granularity: 'day' | 'week' | 'month' | 'quarter';
+  }): Promise<{ rows: import('../domain/proto-types.js').PnlPeriodRow[]; currency_code: string; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { rows: [], currency_code: 'INR', data_epoch: DATA_EPOCH };
+  }
+
   getDecisionLog(): InMemoryDecisionLog {
     return this.decisionLog;
   }
