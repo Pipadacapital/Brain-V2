@@ -25,6 +25,11 @@ import cors from '@fastify/cors';
 import { fastifyTRPCPlugin, type CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
 import { TRPCError } from '@trpc/server';
 import { randomUUID } from 'node:crypto';
+import {
+  createLogger,
+  extractCorrelation,
+  PII_REDACT_PATHS,
+} from '@brain/lib-logger';
 
 import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
@@ -190,14 +195,35 @@ export async function buildRealAuthContext(
 // ---------------------------------------------------------------------------
 
 async function buildServer(cfg: GatewayAuthConfig) {
+  // Brain shared logger (pino + canonical PII redact + ISO timestamps + service
+  // binding). One source of truth across every TS service; see packages/lib-logger.
+  // Fastify accepts a pino instance directly via `loggerInstance` (v5+).
+  const log = createLogger('api-gateway', {
+    level: process.env['LOG_LEVEL'] ?? 'info',
+  });
+
   const fastify = Fastify({
-    logger: { level: 'info' },
+    loggerInstance: log,
+    // Re-apply the canonical redact paths at the Fastify-request-serializer
+    // level so req.headers.authorization etc. are scrubbed in the auto-emitted
+    // req/res log lines (Fastify owns those log calls; pino's top-level redact
+    // applies, but documenting the dependency here for the reader).
+    disableRequestLogging: false,
+    genReqId: (req) => {
+      const hdr = req.headers['x-request-id'];
+      if (typeof hdr === 'string' && hdr.trim()) return hdr;
+      return randomUUID();
+    },
     // tRPC catch-all captures the comma-joined procedure path. With Fastify's
     // default (100), any 5+ procedure batch (>100 chars) silently 404s and the
     // client falls back to smaller batches — extra RTT per page-load. 5000 matches
     // the trpc-fastify adapter recommendation.
     maxParamLength: 5000,
   });
+  // Cross-reference (intentional): PII_REDACT_PATHS is the canonical list (see
+  // imports). Pino applies it via createLogger's redact config; we don't
+  // re-declare per-service. Reference here keeps the dependency explicit.
+  void PII_REDACT_PATHS;
 
   const jwtVerifier = createSupabaseJwtVerifier({ supabaseUrl: cfg.supabaseUrl });
   const membershipResolver: MembershipResolver = new DbMembershipResolver(resolveMembership);
@@ -224,16 +250,36 @@ async function buildServer(cfg: GatewayAuthConfig) {
     trpcOptions: {
       router: brainRouter,
       async createContext({ req }: CreateFastifyContextOptions): Promise<IdentityContext> {
-        const requestId = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
-        const traceId   = (req.headers['x-trace-id']   as string | undefined) ?? randomUUID();
+        // Canonical 4-tuple — request_id / trace_id from incoming headers,
+        // fresh UUIDs when absent. Workspace + user fill in below from the
+        // verified JWT membership (NEVER from header — that's a spoof vector).
+        const correlation = extractCorrelation(req.headers);
+        const requestId = correlation.request_id;
+        const traceId = correlation.trace_id;
 
-        req.server.log.info({ requestId, traceId, url: req.url }, 'api-gateway request');
+        // Bind correlation onto the per-request logger so every downstream
+        // `req.log.info(...)` call carries the 4-tuple automatically.
+        // (Fastify accepts this via assigning to req.log.)
+        Object.assign(req, {
+          log: req.log.child({
+            request_id: requestId,
+            trace_id: traceId,
+          }),
+        });
+
+        req.log.info(
+          {
+            route: req.url,
+            method: req.method,
+          },
+          'gateway request',
+        );
 
         // Client-selected active workspace (workspace switch) — validated against
         // the user's real memberships inside buildRealAuthContext.
-        const requestedWorkspaceId = (req.headers['x-brain-workspace'] as string | undefined)?.trim() || undefined;
+        const requestedWorkspaceId = correlation.workspace_id;
 
-        return buildRealAuthContext(
+        const ctx = await buildRealAuthContext(
           req.headers['authorization'] as string | undefined,
           requestId,
           traceId,
@@ -241,13 +287,27 @@ async function buildServer(cfg: GatewayAuthConfig) {
             verifier: jwtVerifier,
             resolver: membershipResolver,
             listMemberships: (sub: string) => listWorkspaces(sub),
-            log: req.server.log,
+            log: req.log,
           },
           requestedWorkspaceId,
         );
+
+        // After auth resolves, enrich the logger with workspace_id + user_id
+        // (sub only — NEVER the email) so downstream lines carry the full
+        // 4-tuple. PII redact paths defend against accidental email leaks.
+        if (ctx.workspaceId || ctx.identity?.sub) {
+          Object.assign(req, {
+            log: req.log.child({
+              workspace_id: ctx.workspaceId,
+              user_id: ctx.identity?.sub,
+            }),
+          });
+        }
+
+        return ctx;
       },
 
-      onError({ error, path, ctx }: {
+      onError({ error, path, ctx, req }: {
         error: { code: string; message: string };
         path: string | undefined;
         ctx: IdentityContext | undefined;
@@ -255,10 +315,21 @@ async function buildServer(cfg: GatewayAuthConfig) {
         req: FastifyRequest;
         type: string;
       }) {
-        const requestId = ctx?.requestId ?? 'unknown';
-        fastify.log.error(
-          { path, code: error.code, message: error.message, requestId },
-          'tRPC error',
+        // Use the per-request log so the 4-tuple binding flows through. Fall
+        // back to the top-level fastify.log if the request log was never
+        // child-enriched (createContext threw before the child binding).
+        const reqLog = (req.log ?? fastify.log);
+        reqLog.error(
+          {
+            trpc_path: path,
+            code: error.code,
+            message: error.message,
+            request_id: ctx?.requestId,
+            trace_id: ctx?.traceId,
+            workspace_id: ctx?.workspaceId,
+            user_id: ctx?.identity?.sub,
+          },
+          'tRPC procedure error',
         );
       },
     },
