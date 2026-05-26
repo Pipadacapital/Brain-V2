@@ -66,6 +66,12 @@ import {
   listStoreCustomers,
 } from '@brain/core-store-browser';
 import {
+  listCampaigns,
+  listAdAccounts,
+  spendByIntent,
+  type AdVendor,
+} from '@brain/core-platform-ads';
+import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
@@ -1083,6 +1089,87 @@ export function createBrainRouter(
           metric: result.result.metric,
           data_epoch: result.data_epoch,
           request_id: ctx.requestId,
+        };
+      }),
+
+    // -----------------------------------------------------------------
+    // Platform-ads breakdown (Slice 5 of the parity epic): campaign-level
+    // table + intent breakdown for /meta-ads & /google-ads. Funnel / Creative
+    // tabs render ConnectorPending stubs (ad-level + creative facts not
+    // ingested yet — honest affordance per CF-S10-HONEST-STATE-1).
+    // -----------------------------------------------------------------
+    platformCampaigns: workspaceProc
+      .input(
+        z.object({
+          vendor:      z.enum(['META', 'GOOGLE']),
+          date_start:  z.string(),
+          date_end:    z.string(),
+          adAccountId: z.string().optional().nullable(),
+          intent:      z.string().optional().nullable(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.platformCampaigns requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await listCampaigns(ctx.workspaceId, input.vendor as AdVendor, input.date_start, input.date_end, {
+          adAccountId: input.adAccountId ?? null,
+          intent: input.intent ?? null,
+        });
+        return {
+          rows: r.rows.map((row) => ({
+            ...row,
+            spendMu:   row.spendMu.toString(),
+            revenueMu: row.revenueMu.toString(),
+            cpcMu:     row.cpcMu.toString(),
+            cpmMu:     row.cpmMu.toString(),
+          })),
+          totalSpendMu:       r.totalSpendMu.toString(),
+          totalRevenueMu:     r.totalRevenueMu.toString(),
+          totalImpressions:   r.totalImpressions,
+          totalClicks:        r.totalClicks,
+          totalConversions:   r.totalConversions,
+          currencyCode:       r.currencyCode,
+          request_id:         ctx.requestId,
+        };
+      }),
+
+    platformAccounts: workspaceProc
+      .input(z.object({ vendor: z.enum(['META', 'GOOGLE']) }))
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.platformAccounts requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const rows = await listAdAccounts(ctx.workspaceId, input.vendor as AdVendor);
+        return { rows, request_id: ctx.requestId };
+      }),
+
+    spendByIntent: workspaceProc
+      .input(
+        z.object({
+          vendor:     z.enum(['META', 'GOOGLE']),
+          date_start: z.string(),
+          date_end:   z.string(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.spendByIntent requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const r = await spendByIntent(ctx.workspaceId, input.vendor as AdVendor, input.date_start, input.date_end);
+        return {
+          rows: r.rows.map((row) => ({ ...row, spendMu: row.spendMu.toString() })),
+          totalSpendMu: r.totalSpendMu.toString(),
+          request_id:   ctx.requestId,
         };
       }),
   });

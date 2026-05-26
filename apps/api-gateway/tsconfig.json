@@ -11,7 +11,8 @@
       "@brain/core-notifications": ["../../apps/core-service/src/application/notifications/index.ts"],
       "@brain/core-user-profile": ["../../apps/core-service/src/application/user-profile/index.ts"],
       "@brain/core-product-cogs": ["../../apps/core-service/src/application/product-cogs/index.ts"],
-      "@brain/core-store-browser": ["../../apps/core-service/src/application/store-browser/index.ts"]
+      "@brain/core-store-browser": ["../../apps/core-service/src/application/store-browser/index.ts"],
+      "@brain/core-platform-ads": ["../../apps/core-service/src/application/platform-ads/index.ts"]
     }
   },
   "include": ["src/**/*"],

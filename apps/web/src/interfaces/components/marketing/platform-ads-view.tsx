@@ -12,13 +12,15 @@
 // per-campaign breakdown" — NEVER a fabricated campaign. This mirrors legacy, which
 // returns this state at HTTP 200 when the platform is unconnected.
 
-import { useQueryState, parseAsString } from 'nuqs';
+import { useQueryState, parseAsString, parseAsStringEnum } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 import { ConnectorPending } from '@/interfaces/components/shared/connector-pending.js';
 import { formatBpMultiple } from '@/interfaces/components/marketing/format-ratio.js';
+import { PlatformAdsCampaigns } from './platform-ads-campaigns.js';
+import { cn } from '@/lib/utils.js';
 
 type Platform = 'meta' | 'google';
 
@@ -36,11 +38,18 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+const TAB_VALUES = ['performance', 'funnel', 'creative'] as const;
+type TabValue = (typeof TAB_VALUES)[number];
+
 export function PlatformAdsView({ platform }: { platform: Platform }) {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
   const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault('2026-04-01'));
   const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault('2026-04-30'));
+  const [tab, setTab] = useQueryState(
+    'tab',
+    parseAsStringEnum<TabValue>([...TAB_VALUES]).withDefault('performance'),
+  );
   const enabled = Boolean(isAuthenticated && workspaceId);
 
   const eff = trpc.marketing.efficiency.useQuery({ date_start: dateStart, date_end: dateEnd }, { enabled });
@@ -110,14 +119,57 @@ export function PlatformAdsView({ platform }: { platform: Platform }) {
         </section>
       )}
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold text-gray-900">Campaign breakdown</h2>
-        <ConnectorPending
-          source={`${label} campaigns`}
-          detail={`Per-campaign performance syncs from ${label} via OAuth. Connect to see the campaign-level breakdown.`}
-          deferredAction={`Connect ${label}`}
+      {/* Tabs: Performance / Funnel / Creative (legacy parity) */}
+      <div className="border-b">
+        <div className="flex gap-1 -mb-px">
+          {(
+            [
+              { v: 'performance' as const, l: 'Performance' },
+              { v: 'funnel'      as const, l: 'Funnel' },
+              { v: 'creative'    as const, l: 'Creative' },
+            ]
+          ).map((t) => (
+            <button
+              key={t.v}
+              type="button"
+              onClick={() => setTab(t.v === 'performance' ? null : t.v)}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+                tab === t.v
+                  ? 'border-foreground text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/40',
+              )}
+            >
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === 'performance' && (
+        <PlatformAdsCampaigns
+          vendor={platform === 'meta' ? 'META' : 'GOOGLE'}
+          label={label}
+          dateStart={dateStart}
+          dateEnd={dateEnd}
         />
-      </section>
+      )}
+
+      {tab === 'funnel' && (
+        <ConnectorPending
+          source={`${label} funnel`}
+          detail={`Video-funnel metrics (hook %, hold %, watch-time P25–P95) require the ad-level facts. Brain's PG mirror carries campaign-level only today; the ${label} connector populates these into the wider CH facts but the read-path companion isn't wired yet. Surfaces here as soon as it is.`}
+          deferredAction={`Funnel data — pending`}
+        />
+      )}
+
+      {tab === 'creative' && (
+        <ConnectorPending
+          source={`${label} creatives`}
+          detail={`Creative-level analytics (per-creative spend, CTR, hook %) require ${label === 'Meta Ads' ? 'meta_ads_creative_daily' : 'google_ads_creative_daily'} facts. Ingestion is on the connector-framework roadmap.`}
+          deferredAction={`Creative data — pending`}
+        />
+      )}
     </div>
   );
 }
