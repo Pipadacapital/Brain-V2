@@ -50,6 +50,12 @@ import {
   markAllNotificationsRead,
 } from '@brain/core-notifications';
 import {
+  getProfile,
+  updateProfile,
+  deleteAccount,
+  UserProfileError,
+} from '@brain/core-user-profile';
+import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
@@ -259,6 +265,67 @@ export function createBrainRouter(
         email: ctx.identity.email,
       });
       return { userId, created, requestId: ctx.requestId };
+    }),
+
+    /** Return the caller's account profile (full_name, job_role, avatar_url, …). */
+    account: identityProc.query(async ({ ctx }) => {
+      try {
+        const profile = await getProfile(ctx.identity.sub);
+        return { ...profile, requestId: ctx.requestId };
+      } catch (err) {
+        if (err instanceof UserProfileError && err.code === 'NOT_FOUND') {
+          // Lazy upsert: if a Supabase user has never touched core, ensureUser
+          // creates the row. Then re-read so the page renders on first visit.
+          await ensureUser({ sub: ctx.identity.sub, email: ctx.identity.email });
+          const profile = await getProfile(ctx.identity.sub);
+          return { ...profile, requestId: ctx.requestId };
+        }
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (err as Error).message });
+      }
+    }),
+
+    /** Update the caller's profile (name / role / avatar). */
+    updateProfile: identityProc
+      .input(
+        z.object({
+          fullName:  z.string().trim().min(1).max(200).optional(),
+          jobRole:   z.string().trim().max(200).optional(),
+          avatarUrl: z.string().url().max(2000).nullable().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        try {
+          const profile = await updateProfile(ctx.identity.sub, input);
+          return { ...profile, requestId: ctx.requestId };
+        } catch (err) {
+          if (err instanceof UserProfileError) {
+            throw new TRPCError({
+              code: err.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'BAD_REQUEST',
+              message: err.message,
+            });
+          }
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (err as Error).message });
+        }
+      }),
+
+    /**
+     * Delete the caller's account. Blocked if they're sole owner of a non-empty
+     * workspace. Solo-owned empty workspaces are deleted too. Auth row (Supabase
+     * auth.users) is left for ops cleanup; the client signs out after.
+     */
+    deleteAccount: identityProc.mutation(async ({ ctx }) => {
+      try {
+        const result = await deleteAccount(ctx.identity.sub);
+        return { ...result, requestId: ctx.requestId };
+      } catch (err) {
+        if (err instanceof UserProfileError && err.code === 'OWNER_CONFLICT') {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: err.message });
+        }
+        if (err instanceof UserProfileError && err.code === 'NOT_FOUND') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: err.message });
+        }
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: (err as Error).message });
+      }
     }),
   });
 

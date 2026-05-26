@@ -21,6 +21,7 @@
       "@brain/core-onboarding": ["../../apps/core-service/src/application/onboarding/index.ts"],
       "@brain/core-connectors": ["../../apps/core-service/src/application/connectors/index.ts"],
       "@brain/core-notifications": ["../../apps/core-service/src/application/notifications/index.ts"],
+      "@brain/core-user-profile": ["../../apps/core-service/src/application/user-profile/index.ts"],
       "@/*": ["./src/*"]
     }
   },
