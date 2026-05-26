@@ -3,6 +3,40 @@
 > Items here require Founder review. Agents add lines; Founder acts and strikes them through.
 > Each line names the issue, the artifact path, and the slash command to act.
 
+---
+
+## 🧹 Hygiene Sweep — 2026-05-26 (claude-code) — current state at a glance
+
+The historical bullets below are preserved as audit trail. This sweep reconciles them against actual git state on `origin/development` so readers don't re-act on already-resolved items.
+
+### ✅ Code-merged (status `merged-on-development` in active.json)
+All "you commit" / "awaiting-founder-commit" / "committed-on-feature-branch" asks below for the following 18 items have been **fulfilled** — the code landed on `origin/development` via PRs #1–#5. Do NOT re-act on the strike-eligible commit-asks for these items:
+
+- **Migration epic children (via PRs #1+#2, feat-tenancy-auth-rls-hardening branch):** `feat-tenancy-auth-rls-hardening`, `feat-tenancy-rls-brain-native`, `feat-money-minor-units-parity`, `feat-connector-framework-cutover`, `feat-metric-engine-olap-split`, `feat-ai-engine-intelligence`, `feat-legacy-decommission`
+- **Phase-2 parity slices (via PRs #3+#4):** `feat-store-order-fact-layer`, `feat-pnl-cm-waterfall`, `feat-rto-cod-economics`, `feat-marketing-acquisition`, `feat-cohorts-ltv`, `feat-catalog-inventory`, `feat-finance-settings-goals`, `feat-parity-cleanup-pages`
+- **Real-auth epic slices (via PR #3):** `feat-auth-supabase-identity` (A), `feat-onboarding-membership-db` (C), `feat-connector-data-ingestion` (E)
+
+### 🚧 STILL OPEN — Founder action required (not resolved by the merges)
+
+These are NOT resolved by the merges and remain valid asks below:
+
+1. **🚨 Custody Option A vs B** (`CF-C3-SECRETS-INTERIM-1`) — your binary decision. Code is merged; decision still required before Stage-3 LIVE build runs.
+2. **🚨 Real `seal()` implementation** (`CF-C7-CUSTODY-PROOF-1`) — both backings still `NotImplementedError`. Required before any legacy plaintext-DELETE.
+3. **🚨 OPEN P0 — live Supabase has zero RLS** — Brain-native RLS rebuild needed (sequenced vs the live legacy app still hitting that DB).
+4. **ℹ️ ARMED tripwire** `CF-C7-DPDP-ERASURE-1` (archive format) — fires at decommission Stage 2 if Aryan can't name a §12-satisfying format.
+5. **📋 Candidate rule** `2026-05-25__verify-the-verifier-mutation-on-gate` — Rohan recommends `/adopt-rule`; 5 occurrences across 4 children.
+6. **Epic-level ratifications still open:** `epic-real-auth-supabase`, `epic-phase2-feature-parity`, `chore-migrate-legacy-to-brain` — constituent children merged, parent ratification is a Founder act.
+
+### ❓ Genuinely still pending (no merged work)
+- `feat-frontend-dashboard-morningbrief` — mobile-only; never built into web. Still at Stage 8 readiness, no code in `origin/development`.
+
+### 🔒 Held LIVE-prod cutover gates (NOT closed by the merges)
+Code-merge ≠ live cutover. These remain HELD per the original Stage-8 readiness notes: `HOLD-AT-FORCE` (Child-1 RLS), `HOLD-AT-CUTOVER` (Child-3 connector token transfer + webhook re-register + legacy plaintext-DELETE), `HOLD-AT-LIVE-RECON` (Child-2), `HOLD-AT-READ-FLIP` (Child-4 prod CH read flip). All await Founder Stage-8 ceremonies + the custody decision.
+
+**Sweep notes:** `active.json` backed up at `state/active.json.bak.20260526T*.json`. Per-item updates carry `merged_at`, `merged_via_pr`, `merged_via_branch`, and `hygiene_sweep_note` fields. No historical text below was rewritten.
+
+---
+
 - **🚨 ESCALATION (Rohan, CTO Advisor) — FIRED at synthesis 2026-05-24T20:30:00Z — `feat-connector-framework-cutover` (Child 3): credential-custody decision required BEFORE Stage-3 build authorization.** This upgrades the Child-3 intake heads-up below from *armed* to *fired*. The compliance persona confirmed with code what I flagged at intake: **Brain has no Secrets Manager and the Supabase DB is the de-facto plaintext credential vault** (`ShiprocketConnection.email/password` schema:498-500; `KlaviyoConnection.apiKey` :559; `meta_ads_connections.access_token` :763; `google_ads_connections.refresh_token` :699). The architecture's R-CRED-01 names "Brain secrets manager" as the rotation destination — it **does not exist** (you deferred it to inactive WS-1). There is **no lawful long-term interim** — only a Founder-ratifiable bounded one. This is the same rubric class as the Child-1 DPDP escalation (a missing instrument only you can produce/decide), so I fire it now, Child-1-style.
   - **Why now, not Stage 7:** the Stage-2/3 cutover runbook (3b) cannot name a truthful custody mechanism until you decide. Writing "rotate into Brain Secrets Manager" for a system that does not exist is a compliance fiction. Firing now lets you decide in parallel with Aryan's Stage-2 design (no live data, no creds touched). **Stage 2 PROCEEDS; Stage 3 build is GATED on this decision.**
   - **Founder ask — choose ONE (a 2-sentence decision):**
