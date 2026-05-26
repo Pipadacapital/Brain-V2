@@ -851,6 +851,180 @@ export async function readDistributions(workspaceId: string): Promise<{ rows: Fa
   })
 }
 
+// ---------------------------------------------------------------------------
+// Daily net-sales series — feeds the AreaChart on the analytics page.
+// Groups connector_order_facts by day; returns (date, net_sales_mu, orders).
+// Only non-cancelled rows. net_sales = gross − discount (no tax deduction here;
+// matches legacy analytics "netSales" which is pre-tax net).
+// ---------------------------------------------------------------------------
+export interface FactDailySalesRow {
+  date: string        // 'YYYY-MM-DD'
+  netSalesMu: bigint
+  orders: bigint
+}
+export async function readDailyNetSales(
+  workspaceId: string,
+  from: string,
+  to: string,
+): Promise<FactDailySalesRow[]> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<{ day: string; net: string; orders: string }>(
+      `SELECT to_char(date_trunc('day', processed_at), 'YYYY-MM-DD') AS day,
+              COALESCE(sum(gross_sales_mu - total_discount_mu), 0)::text AS net,
+              count(*)::text AS orders
+         FROM connector_order_facts
+        WHERE ${CANCELLED}
+          AND processed_at >= $1::date
+          AND processed_at <  $2::date + interval '1 day'
+        GROUP BY 1
+        ORDER BY 1`,
+      [from, to],
+    )
+    return res.rows.map((r) => ({
+      date: r.day,
+      netSalesMu: BigInt(r.net ?? '0'),
+      orders: BigInt(r.orders ?? '0'),
+    }))
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Daily acquisition series — feeds the ComposedChart on the acquisition page.
+// Per-day: new customers, NC CM2 (NC revenue − that day's ad spend), ad spend,
+// CM2 per NC, CAC, and per-platform spend. Uses the first-order proxy for NC.
+// Ad spend is joined by spend_date (best-effort: spend allocated to the same day).
+// ---------------------------------------------------------------------------
+export interface FactDailyAcquisitionRow {
+  date: string
+  newCustomers: bigint
+  ncRevenueMu: bigint     // gross−discount−tax for NC orders on this day
+  adSpendMu: bigint       // total spend on this day
+  ncCm2Mu: bigint         // ncRevenueMu − adSpendMu
+  cacMu: bigint | null
+  cm2PerNcMu: bigint | null
+  metaSpendMu: bigint
+  googleSpendMu: bigint
+}
+export async function readDailyAcquisition(
+  workspaceId: string,
+  from: string,
+  to: string,
+): Promise<FactDailyAcquisitionRow[]> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // Step 1: identify first-order date per customer
+    // Step 2: aggregate new-customer orders per day
+    const ncRes = await tx.query<{ day: string; nc: string; nc_rev: string }>(
+      `WITH firsts AS (
+         SELECT customer_ref, min(processed_at)::date acq_date
+           FROM connector_order_facts
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+          GROUP BY customer_ref
+       )
+       SELECT f.acq_date::text AS day,
+              count(*)::text AS nc,
+              COALESCE(sum(o.gross_sales_mu - o.total_discount_mu - o.total_tax_mu), 0)::text AS nc_rev
+         FROM firsts f
+         JOIN connector_order_facts o
+           ON o.customer_ref = f.customer_ref
+          AND o.processed_at::date = f.acq_date
+          AND ${CANCELLED.replace(/cancelled_at/g, 'o.cancelled_at').replace(/financial_status/g, 'o.financial_status')}
+        WHERE f.acq_date >= $1::date
+          AND f.acq_date <= $2::date
+        GROUP BY 1
+        ORDER BY 1`,
+      [from, to],
+    )
+    // Step 3: ad spend per day, by vendor
+    const spendRes = await tx.query<{ day: string; vendor: string; spend: string }>(
+      `SELECT to_char(spend_date, 'YYYY-MM-DD') AS day, vendor,
+              COALESCE(sum(spend_mu), 0)::text AS spend
+         FROM connector_ad_spend_facts
+        WHERE spend_date >= $1::date AND spend_date <= $2::date
+        GROUP BY 1, 2`,
+      [from, to],
+    )
+    // Build spend map keyed by date → { meta, google }
+    const spendMap = new Map<string, { meta: bigint; google: bigint }>()
+    for (const row of spendRes.rows) {
+      const entry = spendMap.get(row.day) ?? { meta: 0n, google: 0n }
+      const v = BigInt(row.spend ?? '0')
+      if (row.vendor === 'META') entry.meta = v
+      else if (row.vendor === 'GOOGLE') entry.google = v
+      spendMap.set(row.day, entry)
+    }
+    return ncRes.rows.map((r) => {
+      const nc = BigInt(r.nc ?? '0')
+      const ncRev = BigInt(r.nc_rev ?? '0')
+      const spend = spendMap.get(r.day) ?? { meta: 0n, google: 0n }
+      const totalSpend = spend.meta + spend.google
+      const ncCm2 = ncRev - totalSpend
+      return {
+        date: r.day,
+        newCustomers: nc,
+        ncRevenueMu: ncRev,
+        adSpendMu: totalSpend,
+        ncCm2Mu: ncCm2,
+        cacMu: nc > 0n ? totalSpend / nc : null,
+        cm2PerNcMu: nc > 0n ? ncCm2 / nc : null,
+        metaSpendMu: spend.meta,
+        googleSpendMu: spend.google,
+      }
+    })
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Distributions graph points — density curve from per-order line values.
+// Buckets the (quantity × unit_price_mu) values into 40 even buckets across
+// the observed range, counts orders per bucket, returns density in bp.
+// ---------------------------------------------------------------------------
+export interface FactDistGraphPoint {
+  valueMu: bigint   // bucket midpoint (minor units)
+  densityBp: number // share of orders in this bucket (basis points, sum ≈ 10000)
+}
+export async function readDistributionsGraphPoints(
+  workspaceId: string,
+  metric: 'sales' | 'cm1',
+): Promise<FactDistGraphPoint[]> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // Pull raw per-line values (capped at 500 rows for performance; adequate for density)
+    const valueExpr =
+      metric === 'cm1'
+        ? 'li.quantity * li.unit_price_mu - COALESCE(li.quantity * pf.cost_mu, 0)'
+        : 'li.quantity * li.unit_price_mu'
+    const res = await tx.query<{ v: string }>(
+      `SELECT (${valueExpr})::text AS v
+         FROM connector_line_item_facts li
+         LEFT JOIN connector_product_facts pf
+           ON pf.workspace_id = li.workspace_id AND pf.vendor_product_id = li.vendor_product_id
+        WHERE li.vendor_product_id IS NOT NULL
+        LIMIT 2000`,
+    )
+    if (!res.rows.length) return []
+    const values = res.rows.map((r) => BigInt(r.v ?? '0'))
+    // Filter to positive values for meaningful density (negative CM1 is rare)
+    const positive = values.filter((v) => v > 0n)
+    if (!positive.length) return []
+    const sorted = [...positive].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    const minVal = sorted[0]
+    const maxVal = sorted[sorted.length - 1]
+    if (minVal === maxVal) return [{ valueMu: minVal, densityBp: 10000 }]
+    const BUCKETS = 40
+    const range = maxVal - minVal
+    const bucketSize = range / BigInt(BUCKETS) || 1n
+    const counts = new Array<number>(BUCKETS).fill(0)
+    for (const v of positive) {
+      const idx = Math.min(BUCKETS - 1, Number((v - minVal) / bucketSize))
+      counts[idx]++
+    }
+    const total = positive.length
+    return counts.map((c, i) => ({
+      valueMu: minVal + bucketSize * BigInt(i) + bucketSize / 2n,
+      densityBp: Math.round((c / total) * 10000),
+    }))
+  })
+}
+
 // Calendar report — per-period (day/week/month) revenue + ad spend + orders + new customers.
 export interface FactCalendarRow {
   periodKey: string

@@ -364,6 +364,32 @@ export interface DistributionsFilterInput {
 }
 
 // ---------------------------------------------------------------------------
+// Daily sales series — feeds AreaChart on analytics page.
+// Phase-2 chart-parity (feat-store-order-fact-layer chart addition).
+// ---------------------------------------------------------------------------
+export interface DailySalesRow {
+  date: string;         // 'YYYY-MM-DD'
+  net_sales_mu: bigint;
+  orders: bigint;
+}
+
+// ---------------------------------------------------------------------------
+// Daily acquisition series — feeds ComposedChart on acquisition page.
+// Phase-2 chart-parity (feat-marketing-acquisition chart addition).
+// ---------------------------------------------------------------------------
+export interface DailyAcquisitionRow {
+  date: string;
+  new_customers: bigint;
+  nc_revenue_mu: bigint;
+  ad_spend_mu: bigint;
+  nc_cm2_mu: bigint;
+  cac_mu: bigint | null;
+  cm2_per_nc_mu: bigint | null;
+  meta_spend_mu: bigint;
+  google_spend_mu: bigint;
+}
+
+// ---------------------------------------------------------------------------
 // Cohorts + LTV proto types (Phase-2 slice-5: feat-cohorts-ltv)
 // Cohorts use CM3 (Finding 1); LTV uses CM2 (Finding 2); payback is the cumulative
 // bucket-walk (Finding 3); cohort_ltv feeds ltv_cac_bp (Finding 4).
@@ -1254,4 +1280,22 @@ export interface DataPlanePort {
   getBackfillStatus(params: {
     workspace_id: string;
   }): Promise<{ result: BackfillStatusResult; data_epoch: Date }>;
+
+  /**
+   * Chart-parity: daily net-sales series for the analytics AreaChart.
+   * Aggregates connector_order_facts by day for the requested date range.
+   */
+  getDailySales(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ rows: DailySalesRow[]; data_epoch: Date }>;
+
+  /**
+   * Chart-parity: daily acquisition series for the acquisition ComposedChart.
+   * Per-day: new customers, NC CM2, ad spend, CAC, CM2-per-NC.
+   */
+  getDailyAcquisition(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ rows: DailyAcquisitionRow[]; data_epoch: Date }>;
 }

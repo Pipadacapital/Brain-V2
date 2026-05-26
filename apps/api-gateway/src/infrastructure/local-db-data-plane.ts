@@ -18,6 +18,7 @@ import {
   readProductPerformance, readWorkspaceMembers, readWorkspaceSettings,
   readShipmentAnalytics, readPincodes, readCodPrepaid, readCohorts, readLtv,
   readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
+  readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints,
 } from '@brain/core-connectors';
 import type {
   DataPlanePort,
@@ -50,6 +51,8 @@ import type {
   LifecycleStatesResult,
   FirstProductCascadeResult,
   CalendarReportResult,
+  DailySalesRow,
+  DailyAcquisitionRow,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -463,13 +466,17 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getDistributions(p: Parameters<DataPlanePort['getDistributions']>[0]) {
     this.assertWs(p.workspace_id);
-    const d = await readDistributions(this.ws);
+    const metric = (p.filters?.metric ?? 'sales') as 'sales' | 'cm1';
+    const [d, graphRaw] = await Promise.all([
+      readDistributions(this.ws),
+      readDistributionsGraphPoints(this.ws, metric),
+    ]);
     const result: DistributionsResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
-      metric: 'sales',
+      metric,
       rows: d.rows.map((r) => ({ product: r.product, orders: r.orders, mode_mu: r.modeMu, mean_mu: r.meanMu, diff_mu: r.meanMu - r.modeMu })),
       total_rows: BigInt(d.rows.length),
-      graph_points: [],
+      graph_points: graphRaw.map((g) => ({ value_mu: g.valueMu, density_bp: g.densityBp })),
       global_mode_mu: d.globalMode,
       global_mean_mu: d.globalMean,
     };
@@ -674,5 +681,35 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   override async getEmailSmsPerformance(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
     return { result: emptyEmailSmsPerformance(this.ws), data_epoch: DATA_EPOCH };
+  }
+
+  // Chart-parity: daily net-sales series (feeds analytics AreaChart).
+  override async getDailySales(p: { workspace_id: string; date_range: DateRange }): Promise<{ rows: DailySalesRow[]; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const raw = await readDailyNetSales(this.ws, p.date_range.start, p.date_range.end);
+    return {
+      rows: raw.map((r) => ({ date: r.date, net_sales_mu: r.netSalesMu, orders: r.orders })),
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  // Chart-parity: daily acquisition series (feeds acquisition ComposedChart).
+  override async getDailyAcquisition(p: { workspace_id: string; date_range: DateRange }): Promise<{ rows: DailyAcquisitionRow[]; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const raw = await readDailyAcquisition(this.ws, p.date_range.start, p.date_range.end);
+    return {
+      rows: raw.map((r) => ({
+        date: r.date,
+        new_customers: r.newCustomers,
+        nc_revenue_mu: r.ncRevenueMu,
+        ad_spend_mu: r.adSpendMu,
+        nc_cm2_mu: r.ncCm2Mu,
+        cac_mu: r.cacMu,
+        cm2_per_nc_mu: r.cm2PerNcMu,
+        meta_spend_mu: r.metaSpendMu,
+        google_spend_mu: r.googleSpendMu,
+      })),
+      data_epoch: DATA_EPOCH,
+    };
   }
 }

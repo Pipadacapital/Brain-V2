@@ -143,4 +143,10 @@ export class DispatchingDataPlane implements DataPlanePort {
   getBackfillStatus(p: { workspace_id: string }) {
     return this.plane(p.workspace_id).getBackfillStatus(p);
   }
+  getDailySales(p: Parameters<DataPlanePort['getDailySales']>[0]) {
+    return this.plane(p.workspace_id).getDailySales(p);
+  }
+  getDailyAcquisition(p: Parameters<DataPlanePort['getDailyAcquisition']>[0]) {
+    return this.plane(p.workspace_id).getDailyAcquisition(p);
+  }
 }

@@ -2231,6 +2231,21 @@ export class StubDataPlane implements DataPlanePort {
     return { result: buildSugandhlokBackfillStatus(), data_epoch: DATA_EPOCH };
   }
 
+  async getDailySales(params: { workspace_id: string; date_range: DateRange }): Promise<{ rows: import('../domain/proto-types.js').DailySalesRow[]; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    // Stub: return empty — no seed daily series for the stub plane.
+    return { rows: [], data_epoch: DATA_EPOCH };
+  }
+
+  async getDailyAcquisition(params: { workspace_id: string; date_range: DateRange }): Promise<{ rows: import('../domain/proto-types.js').DailyAcquisitionRow[]; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { rows: [], data_epoch: DATA_EPOCH };
+  }
+
   getDecisionLog(): InMemoryDecisionLog {
     return this.decisionLog;
   }

@@ -508,6 +508,32 @@ export function createBrainRouter(
           request_id: ctx.requestId,
         };
       }),
+
+    /**
+     * Chart-parity: daily net-sales series for the analytics AreaChart.
+     * Aggregates connector_order_facts by day for the requested date range.
+     * requireRole(ANALYST).
+     */
+    dailySales: workspaceProc
+      .input(
+        z.object({
+          date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+          date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `store.dailySales requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getDailySales({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+        return { rows: result.rows, data_epoch: result.data_epoch, request_id: ctx.requestId };
+      }),
   });
 
   // -------------------------------------------------------------------
@@ -740,6 +766,27 @@ export function createBrainRouter(
         request_id: ctx.requestId,
       };
     }),
+
+    /**
+     * Chart-parity: daily acquisition series for the ComposedChart.
+     * Per-day: new customers, NC CM2, ad spend, CAC, CM2-per-NC, meta/google split.
+     * requireRole(ANALYST).
+     */
+    dailyAcquisition: workspaceProc
+      .input(dateInput)
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `marketing.dailyAcquisition requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getDailyAcquisition({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+        });
+        return { rows: result.rows, data_epoch: result.data_epoch, request_id: ctx.requestId };
+      }),
 
     /** Per-product distributions (mode/mean/diff + histogram). requireRole(ANALYST). */
     distributions: workspaceProc

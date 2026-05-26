@@ -106,6 +106,9 @@ export {
   readFirstProductCascade,
   readDistributions,
   readCalendarReport,
+  readDailyNetSales,
+  readDailyAcquisition,
+  readDistributionsGraphPoints,
   type FactStoreSummary,
   type FactPnl,
   type FactMarketing,
@@ -124,4 +127,7 @@ export {
   type FactCascadeRow,
   type FactDistRow,
   type FactCalendarRow,
+  type FactDailySalesRow,
+  type FactDailyAcquisitionRow,
+  type FactDistGraphPoint,
 } from './sync/index.js'
