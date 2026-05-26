@@ -11,6 +11,7 @@
     "dev": "tsx --env-file=.env src/interfaces/server.ts"
   },
   "dependencies": {
+    "@brain/lib-logger": "workspace:*",
     "@fastify/cors": "^10.0.2",
     "@grpc/grpc-js": "^1.12.6",
     "@grpc/proto-loader": "^0.7.15",

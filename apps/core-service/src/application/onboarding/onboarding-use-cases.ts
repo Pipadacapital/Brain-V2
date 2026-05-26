@@ -25,7 +25,13 @@
  */
 
 import type { PoolClient } from 'pg'
+import { packageLogger } from '@brain/lib-logger'
 import { withWorkspace, withSuperadmin } from '../../infrastructure/db/workspace-context.js'
+
+// Per-package logger — every line emitted inside this module carries
+// `package: 'core-onboarding'` so an on-call sees WHICH package failed inside
+// the api-gateway service (microservice trace discipline; see docs/observability.md).
+const log = packageLogger('api-gateway', 'core-onboarding')
 import {
   isValidSlug,
   normalizeSlug,
@@ -99,28 +105,43 @@ export async function resolveMembership(
   runners: DbRunners = defaultRunners,
 ): Promise<ResolvedMembership | null> {
   if (!sub) return null // fail closed
-  return runners.withSuperadmin(async (tx: PoolClient) => {
-    const res = await tx.query<{
-      workspace_id: string
-      role: WorkspaceRoleString
-      system_role: SystemRoleString
-    }>(
-      `SELECT wm.workspace_id, wm.role, u.system_role
-         FROM workspace_members wm
-         JOIN users u ON u.id = wm.user_id
-        WHERE wm.user_id = $1
-        ORDER BY wm.joined_at ASC
-        LIMIT 1`,
-      [sub],
+  const fn = 'resolveMembership'
+  const t0 = Date.now()
+  try {
+    const result = await runners.withSuperadmin(async (tx: PoolClient) => {
+      const res = await tx.query<{
+        workspace_id: string
+        role: WorkspaceRoleString
+        system_role: SystemRoleString
+      }>(
+        `SELECT wm.workspace_id, wm.role, u.system_role
+           FROM workspace_members wm
+           JOIN users u ON u.id = wm.user_id
+          WHERE wm.user_id = $1
+          ORDER BY wm.joined_at ASC
+          LIMIT 1`,
+        [sub],
+      )
+      const row = res.rows[0]
+      if (!row) return null // no membership → caller routes to /onboarding
+      return {
+        workspaceId: row.workspace_id,
+        workspaceRole: row.role,
+        systemRole: row.system_role,
+      }
+    })
+    log.debug(
+      { fn, sub_prefix: sub.slice(0, 8), found: result !== null, duration_ms: Date.now() - t0 },
+      'resolveMembership done',
     )
-    const row = res.rows[0]
-    if (!row) return null // no membership → caller routes to /onboarding
-    return {
-      workspaceId: row.workspace_id,
-      workspaceRole: row.role,
-      systemRole: row.system_role,
-    }
-  })
+    return result
+  } catch (err) {
+    log.error(
+      { fn, err, sub_prefix: sub.slice(0, 8), duration_ms: Date.now() - t0 },
+      'resolveMembership failed',
+    )
+    throw err
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -132,9 +153,12 @@ export async function listWorkspaces(
   runners: DbRunners = defaultRunners,
 ): Promise<WorkspaceSummary[]> {
   if (!sub) return []
-  return runners.withSuperadmin(async (tx: PoolClient) => {
-    const res = await tx.query<{
-      workspace_id: string
+  const fn = 'listWorkspaces'
+  const t0 = Date.now()
+  try {
+    const out = await runners.withSuperadmin(async (tx: PoolClient) => {
+      const res = await tx.query<{
+        workspace_id: string
       slug: string
       name: string
       role: WorkspaceRoleString
@@ -152,7 +176,19 @@ export async function listWorkspaces(
       name: r.name,
       role: r.role,
     }))
-  })
+    })
+    log.debug(
+      { fn, sub_prefix: sub.slice(0, 8), count: out.length, duration_ms: Date.now() - t0 },
+      'listWorkspaces done',
+    )
+    return out
+  } catch (err) {
+    log.error(
+      { fn, err, sub_prefix: sub.slice(0, 8), duration_ms: Date.now() - t0 },
+      'listWorkspaces failed',
+    )
+    throw err
+  }
 }
 
 // ---------------------------------------------------------------------------

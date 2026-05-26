@@ -1,0 +1,23 @@
+{
+  "name": "@brain/lib-logger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Brain's shared structured-logging primitive. One pino config used by every TS service (api-gateway, core-service, web). Enforces JSON-to-stdout, ISO timestamps, level-from-env, and the canonical PII-redact path list (DPDP minimization). Exports correlation-extract helpers so the request_id + trace_id + workspace_id + user_id 4-tuple flows end-to-end.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --reporter=verbose"
+  },
+  "dependencies": {
+    "pino": "^9.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
+  }
+}

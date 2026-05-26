@@ -12,6 +12,12 @@ import { createTRPCReact } from '@trpc/react-query';
 import superjson from 'superjson';
 import type { BrainRouter } from '@brain/api-gateway';
 import { createSupabaseBrowserClient } from './supabase/client.js';
+import {
+  newCorrelationId,
+  REQUEST_ID_HEADER,
+  TRACE_ID_HEADER,
+} from '@brain/lib-logger';
+import { browserLog } from './browser-logger.js';
 
 // Slice A: when real auth is active (the default), every tRPC call carries the
 // Supabase access token as `Authorization: Bearer`. The gateway JWKS-verifies it
@@ -55,9 +61,20 @@ export function createTrpcClient(workspaceId?: string) {
         url: `${getApiUrl()}/trpc`,
         transformer: superjson,
         async headers() {
+          // Correlation 4-tuple — every tRPC call gets a fresh request_id
+          // (per-call) and trace_id (shared within a tRPC batch). The gateway
+          // receives both and propagates downstream. Browser console gets the
+          // same request_id so a user-reported bug links DevTools → server logs.
+          const request_id = newCorrelationId();
+          const trace_id = newCorrelationId();
           const h: Record<string, string> = {
-            'x-trace-id': globalThis.crypto?.randomUUID?.() ?? 'browser',
+            [REQUEST_ID_HEADER]: request_id,
+            [TRACE_ID_HEADER]: trace_id,
           };
+
+          // Browser-side log (DevTools console). PII-free — just the IDs +
+          // route shape. Set localStorage 'brain.log_level' to 'debug' to see.
+          browserLog('debug', 'trpc call', { request_id, trace_id });
 
           if (IS_LOCAL_HARNESS) {
             // Offline harness ONLY: the stub gateway path reads x-workspace-id.
