@@ -656,3 +656,25 @@
 **Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, code-review, architecture-patterns, verification-before-completion, integration-connectors, idempotency-handling.
 **Open questions:** LIVE pull verified-by-fixture (Founder has only app creds — needs interactive OAuth consent to mint per-account tokens); COGS/RTO/Shiprocket/cohorts not connector-fed → honest empty. Both stated, not faked.
 **Next:** Founder registers 3 redirect URIs + consent + "Sync now" to confirm LIVE pull; then 'commit it' (pending-founder-commit.md, exact paths, real .env excluded). STOP after slice E.
+
+## 2026-05-26T12:48:53Z — Rohan (cto-advisor) — feat-tenancy-rls-live-cutover
+**Stage:** 1 (intake)
+**Action:** New /requirement intake from Founder draft `.engineering-os/requirements-draft/feat-tenancy-rls-live-cutover.md`. Closes the OPEN P0 (live Supabase zero RLS, open since 2026-05-24). Child-1 follow-on (`feat-tenancy-rls-brain-native` already MERGED to origin/development, HOLD-AT-FORCE).
+**Lane:** high-stakes (multi-tenancy + pii + india-compliance + schema-proto + connectors trigger surfaces on live PROD DB; foundational-scaffolding carve-out barred; conservative tie-break holds).
+**Personas spawned (Stage 1):** 2 of 2 (high-stakes cap) — `india-data-isolation-compliance-officer:sonnet` + `live-rollout-strangler-realist:sonnet`. Both `:sonnet` because both reasoning-heavy (DPDP §4 multi-step trade-off; ops/strangler multi-step ordering).
+**Decision (intake):** ADVANCE → personas → synthesis → architect Stage 2.
+**Rationale:** OPEN P0 closure materially overdue; requirement is buildable, correctly scoped, dependency-clean (predecessor MERGED, HOLD-AT-FORCE). Path choice (4 options collapsed to 2 — A1/B inadmissible) deferred to synthesis with personas' grounded inputs.
+**Skills loaded:** engineering-discipline, india-commerce-economics, cost-routing-paradigms, verification-before-completion, architecture-patterns, code-review (synthesis-side), task-tracker-integration.
+**Open questions:** path choice (Founder ratification fired at synthesis); legacy-app connection identity (Aryan binds at Stage 2 from Founder's identification); maintenance window date (Stage 7/8 Founder); ordering vs WS-1 (independent — Founder picks calendar).
+**Next:** orchestrator equivalent — persona artifacts authored in-session, synthesis below.
+
+## 2026-05-26T12:55:00Z — Rohan (cto-advisor) — feat-tenancy-rls-live-cutover (synthesis)
+**Stage:** 1 (synthesis)
+**Action:** Folded both personas (5+7=12 concerns, 1 CRITICAL on STEP-5 verify-the-verifier, 0 looks-good). Bound 11 CF-CUT-* constraints (1 CRITICAL escalated + 1 CRITICAL gate-rule + 7 HIGH + 2 MEDIUM); inherited 11 CF-* from Child-1 unchanged.
+**Decision:** ADVANCE → Architect (Aryan), Stage 2. Build gated on CF-CUT-PATH-1 (Founder ratification of path choice). Stage 2 proceeds in parallel on default = Path C with exit deadline = Path B completion date.
+**Escalation:** FIRED — CF-CUT-PATH-1 (Founder picks {Path C with hard exit deadline, Path A2}; A1 + B-as-immediate-close inadmissible). Mirrored to pending-founder-attention.md per the discipline.
+**Durable rule applied:** 2026-05-26__verify-the-verifier-mutation-on-gate. Persona 2's CRITICAL O2 = the rule's 10th-occurrence pre-empt (STEP-5 as drafted was the canonical false-GREEN class). CF-CUT-VERIFY-THE-VERIFIER-1 bound CRITICAL with 3 captured pre-ceremony kill-tests on the staging clone + Stage-6 disk re-mutation per sub-rule 7.
+**Rationale:** Path-C-with-deadline is defensible under DPDP §7 transitional continuity for a bounded interval, consistent with Founder's own "merge code + HOLD irreversibles" discipline; B-as-immediate-close is canon-incompatible with §8(6) notice-time exposure; A1 barred by feedback_legacy_is_reference_only.md.
+**Skills loaded (same as intake).**
+**Open questions:** none on the synthesis side; CF-CUT-PATH-1 awaits Founder.
+**Next:** Aryan picks up Stage 2 on default Path C; amends if Founder rules A2. Intake artifacts on branch `chore/intake-feat-tenancy-rls-live-cutover` (off origin/development); the live-cutover work itself ships on its own feature branch when Stage 2 begins.
