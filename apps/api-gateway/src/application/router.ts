@@ -44,6 +44,12 @@ import {
   ConnectorError,
 } from '@brain/core-connectors';
 import {
+  listNotifications,
+  getUnreadCount,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from '@brain/core-notifications';
+import {
   assertKpiRegistryTraceability,
   assertWaterfallDefinitionId,
   assertLadderDefinitionId,
@@ -319,6 +325,58 @@ export function createBrainRouter(
         } catch (err) {
           throw mapOnboardingError(err, ctx.requestId);
         }
+      }),
+  });
+
+  // -------------------------------------------------------------------
+  // notifications router — identity tier (user-scoped, workspace-optional).
+  // Notifications belong to a USER and may target a workspace OR be global.
+  // RLS-safe: every query in core-notifications filters by user_id = ctx.sub.
+  // -------------------------------------------------------------------
+  const notificationsRouter = router({
+    /** List the caller's notifications, newest first. Optional unread filter + ws scope. */
+    list: identityProc
+      .input(
+        z.object({
+          filter:      z.enum(['all', 'unread']).optional().default('all'),
+          workspaceId: z.string().uuid().optional().nullable(),
+          limit:       z.number().int().min(1).max(200).optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const items = await listNotifications(ctx.identity.sub, {
+          filter:      input.filter,
+          workspaceId: input.workspaceId ?? null,
+          limit:       input.limit,
+        });
+        return { items, requestId: ctx.requestId };
+      }),
+
+    /** Unread count for the shell badge — separate proc keeps it cheap to poll. */
+    unreadCount: identityProc
+      .input(z.object({ workspaceId: z.string().uuid().optional().nullable() }).optional())
+      .query(async ({ ctx, input }) => {
+        const count = await getUnreadCount(ctx.identity.sub, input?.workspaceId ?? null);
+        return { count, requestId: ctx.requestId };
+      }),
+
+    /** Mark a single notification read (no-op if already read or not yours). */
+    markRead: identityProc
+      .input(z.object({ id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        const changed = await markNotificationRead(ctx.identity.sub, input.id);
+        return { changed, requestId: ctx.requestId };
+      }),
+
+    /** Mark every unread notification (optionally scoped to a workspace) read. */
+    markAllRead: identityProc
+      .input(z.object({ workspaceId: z.string().uuid().optional().nullable() }).optional())
+      .mutation(async ({ ctx, input }) => {
+        const updated = await markAllNotificationsRead(
+          ctx.identity.sub,
+          input?.workspaceId ?? null,
+        );
+        return { updated, requestId: ctx.requestId };
       }),
   });
 
@@ -1807,6 +1865,7 @@ export function createBrainRouter(
     user: userRouter,
     onboarding: onboardingRouter,
     invitation: invitationRouter,
+    notifications: notificationsRouter,
     metrics: metricsRouter,
     store: storeRouter,
     pnl: pnlRouter,

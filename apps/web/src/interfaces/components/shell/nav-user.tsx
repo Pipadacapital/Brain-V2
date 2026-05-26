@@ -28,6 +28,7 @@ import {
   useSidebar,
 } from "@/interfaces/components/ui/sidebar.js";
 import { useAppSelector } from "@/domain/store/hooks.js";
+import { trpc } from "@/infrastructure/trpc-client.js";
 
 function getUserInitials(name: string): string {
   return name
@@ -43,6 +44,15 @@ export function NavUser() {
   const router = useRouter();
   const workspaceRole = useAppSelector((s) => s.session.workspaceRole);
   const userId = useAppSelector((s) => s.session.userId);
+  const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+
+  // Unread notifications badge — small, polled every 60s. Identity-tier proc:
+  // works as soon as we have a session, no workspace context needed.
+  const { data: unreadData } = trpc.notifications.unreadCount.useQuery(
+    undefined,
+    { enabled: isAuthenticated, refetchInterval: 60_000 },
+  );
+  const unreadCount = unreadData?.count ?? 0;
 
   const displayName = "Brain User";
   const displayEmail = userId ? `${userId.slice(0, 8)}@brain.app` : "user@brain.app";
@@ -106,9 +116,14 @@ export function NavUser() {
                 <CreditCard className="size-4" />
                 Billing
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/notifications")}>
                 <Bell className="size-4" />
-                Notifications
+                <span className="flex-1">Notifications</span>
+                {unreadCount > 0 && (
+                  <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+                    {unreadCount}
+                  </span>
+                )}
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
