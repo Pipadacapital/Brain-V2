@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-26T11:15:00Z",
-  "updated_by": "claude-code-hygiene-sweep",
+  "updated_at": "2026-05-26T11:40:00Z",
+  "updated_by": "claude-code-epic-ratification",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -2863,7 +2863,7 @@
     {
       "req_id": "epic-phase2-feature-parity",
       "title": "Phase 2 \u2014 feature-breadth parity: port the ~40 legacy workspace feature endpoints onto the Brain architecture",
-      "status": "awaiting-founder-ratification",
+      "status": "epic-ratified",
       "stage": 1,
       "current_owner": "founder",
       "surface_to_founder": true,
@@ -3036,8 +3036,8 @@
           ]
         }
       ],
-      "children_merged_summary": "All 10 slices merged (slices 1-10 on origin/development via PRs #3+#4). Epic-level ratification still open.",
-      "hygiene_sweep_note": "Hygiene sweep 2026-05-26T11:15:00Z: see children_merged_summary."
+      "founder_ratified_at": "2026-05-26T11:40:00Z",
+      "founder_ratification_note": "Founder-ratified 2026-05-26 (via claude-code hygiene loop). All 10 slices merged via PRs #3+#4; Founder walked the E2E app on 2026-05-26 (156 requests / 0 errors / 0 5xx server-side). UI parity vs legacy deferred to a later pass per Founder. Ratification is the formal breadth-phase-complete act; no new build triggered."
     },
     {
       "req_id": "feat-pnl-cm-waterfall",
@@ -3276,7 +3276,7 @@
     {
       "req_id": "epic-real-auth-supabase",
       "title": "Real authentication (Supabase) \u2014 login + signup + onboarding + Google OAuth, Brain-native (EPIC)",
-      "status": "awaiting-founder",
+      "status": "epic-ratified",
       "stage": 1,
       "current_owner": "founder \u2014 slice D Stage-7 gate SIGNED under delegation; awaiting commit authorization + provider-dashboard redirect-URI registration for live e2e",
       "feature_class": "high-stakes",
@@ -3412,8 +3412,8 @@
         ],
         "epic_close_out": "FINAL slice \u2014 closes epic-real-auth-supabase (A/B/C/D all built + mechanically verified locally)."
       },
-      "children_merged_summary": "All 5 slices merged (A,B,C,D,E on origin/development via PR #3). Epic-level ratification still open.",
-      "hygiene_sweep_note": "Hygiene sweep 2026-05-26T11:15:00Z: see children_merged_summary."
+      "founder_ratified_at": "2026-05-26T11:40:00Z",
+      "founder_ratification_note": "Founder-ratified 2026-05-26 (via claude-code hygiene loop). All 5 slices (A,B,C,D,E) merged via PR #3; Stage-6 PASS signed under delegation by Rohan (CTO Advisor) per the slice 12-founder-decision.json artifacts. Ratification is the formal epic-completion act; no new build triggered."
     },
     {
       "req_id": "feat-auth-supabase-identity",
