@@ -39,7 +39,7 @@ export function LogisticsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Logistics</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — Shiprocket operations: delivery, RTO, and shipping charges</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Shiprocket operations: delivery, RTO, and shipping charges</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="log-from" className="sr-only">From date</label>

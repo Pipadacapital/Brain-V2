@@ -39,7 +39,7 @@ export function CodPrepaidContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">COD vs Prepaid</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — realization, effective revenue, and the break-even COD RTO rate</p>
+          <p className="text-sm text-muted-foreground mt-0.5">realization, effective revenue, and the break-even COD RTO rate</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="cod-from" className="sr-only">From date</label>

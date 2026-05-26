@@ -48,7 +48,7 @@ export function DistributionsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Distributions</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — per-product per-order value distribution (mode vs mean)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">per-product per-order value distribution (mode vs mean)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="dist-from" className="sr-only">From date</label>

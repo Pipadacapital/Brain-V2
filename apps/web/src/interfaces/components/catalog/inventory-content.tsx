@@ -68,7 +68,7 @@ export function InventoryContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Inventory</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — on-hand, days of cover &amp; sell-through by SKU</p>
+          <p className="text-sm text-muted-foreground mt-0.5">on-hand, days of cover &amp; sell-through by SKU</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status filter" className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground">

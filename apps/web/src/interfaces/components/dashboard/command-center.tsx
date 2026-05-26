@@ -87,7 +87,7 @@ export function CommandCenter() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Command Center</h1>
             <p className="text-sm text-gray-500 mt-1">
-              Sugandh Lok — Morning Brief
+              Morning Brief
             </p>
           </div>
 

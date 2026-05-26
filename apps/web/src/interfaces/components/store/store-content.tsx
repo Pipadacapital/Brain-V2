@@ -48,7 +48,7 @@ export function StoreContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Store</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Sugandh Lok — revenue quality
+            revenue quality
           </p>
           {summary && (
             <div className="mt-1">

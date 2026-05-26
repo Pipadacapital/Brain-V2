@@ -12,7 +12,7 @@
 // CF-C6-PII-CLIENT-1: email/password/token NEVER logged.
 // CF-C6-PERF-A11Y-1: WCAG AA labels, error roles, keyboard nav.
 
-import { useState, useId } from 'react';
+import { useState, useId, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAppDispatch } from '@/domain/store/hooks.js';
@@ -40,6 +40,16 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Surface a reason when the app bounced us back here (e.g. SessionBootstrap could
+  // not resolve a session on a protected route). Read from the URL client-side to
+  // avoid a useSearchParams Suspense boundary.
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('error');
+    if (reason === 'session') {
+      setError('Your session has expired or could not be verified. Please sign in again.');
+    }
+  }, []);
 
   const goToDashboard = () => {
     if (onSuccess) onSuccess();

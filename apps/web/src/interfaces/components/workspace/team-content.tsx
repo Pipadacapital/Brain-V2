@@ -42,7 +42,7 @@ export function TeamContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Team</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — workspace members &amp; roles</p>
+          <p className="text-sm text-muted-foreground mt-0.5">workspace members &amp; roles</p>
         </div>
         <button
           type="button"

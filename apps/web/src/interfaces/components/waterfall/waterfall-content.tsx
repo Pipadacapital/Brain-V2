@@ -40,7 +40,7 @@ export function WaterfallContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Waterfall</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Sugandh Lok — contribution margin waterfall
+            contribution margin waterfall
           </p>
         </div>
 

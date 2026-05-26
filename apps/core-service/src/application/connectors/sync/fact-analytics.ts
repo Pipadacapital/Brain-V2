@@ -16,7 +16,7 @@
  */
 
 import type { PoolClient } from 'pg'
-import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
+import { withWorkspace, withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 
 export interface FactStoreSummary {
   hasData: boolean
@@ -53,6 +53,20 @@ export interface FactMarketing {
   googleSpendMu: bigint
   newCustomerRevenueMu: bigint
   newCustomersCount: bigint
+}
+
+export interface FactIntegrationRow {
+  connector: string
+  status: string
+  lastSyncAt: string | null
+  lastSyncError: string | null
+}
+
+const VENDOR_LABEL: Record<string, string> = {
+  SHOPIFY: 'Shopify',
+  META: 'Meta Ads',
+  GOOGLE: 'Google Ads',
+  SHIPROCKET: 'Shiprocket',
 }
 
 const CANCELLED = "(cancelled_at IS NULL AND COALESCE(financial_status,'') NOT IN ('voided','refunded'))"
@@ -154,6 +168,32 @@ export async function readPnl(workspaceId: string): Promise<FactPnl> {
   }
 }
 
+/**
+ * Connector connection state for the Integrations page — the REAL connected/synced
+ * status from connector_connections (read under withWorkspace + RLS). Replaces the
+ * Sugandh-Lok seed for a real workspace so the page reflects actual integrations.
+ */
+export async function readIntegrations(workspaceId: string): Promise<FactIntegrationRow[]> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<{
+      vendor: string
+      status: string
+      last_sync_at: Date | null
+      last_sync_error: string | null
+    }>(
+      `SELECT vendor, status, last_sync_at, last_sync_error
+         FROM connector_connections
+        ORDER BY vendor`,
+    )
+    return res.rows.map((r) => ({
+      connector: VENDOR_LABEL[r.vendor] ?? r.vendor,
+      status: r.status,
+      lastSyncAt: r.last_sync_at ? new Date(r.last_sync_at).toISOString() : null,
+      lastSyncError: r.last_sync_error ?? null,
+    }))
+  })
+}
+
 export async function readMarketing(workspaceId: string): Promise<FactMarketing> {
   const store = await readStoreSummary(workspaceId)
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
@@ -182,5 +222,673 @@ export async function readMarketing(workspaceId: string): Promise<FactMarketing>
       newCustomerRevenueMu: BigInt(nc?.nc_rev ?? '0'),
       newCustomersCount: BigInt(nc?.nc_count ?? '0'),
     }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// COGS — per-line cost = quantity × product.cost_mu, joined line→product. Only
+// lines whose product has a cost contribute; coverage is reported so the caller
+// can flag the report "estimated" below the data-quality bar (≥80% coverage).
+// ---------------------------------------------------------------------------
+export interface FactCogs {
+  cogsMu: bigint
+  coveredLines: bigint
+  totalLines: bigint
+}
+export async function readCogs(workspaceId: string): Promise<FactCogs> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<{ cogs: string | null; covered: string | null; total: string | null }>(
+      `SELECT
+         COALESCE(sum(li.quantity * pf.cost_mu) FILTER (WHERE pf.cost_mu IS NOT NULL), 0)::text AS cogs,
+         count(*) FILTER (WHERE pf.cost_mu IS NOT NULL)::text AS covered,
+         count(*)::text AS total
+       FROM connector_line_item_facts li
+       LEFT JOIN connector_product_facts pf
+         ON pf.workspace_id = li.workspace_id AND pf.vendor_product_id = li.vendor_product_id`,
+    )
+    const r = res.rows[0]
+    return {
+      cogsMu: BigInt(r?.cogs ?? '0'),
+      coveredLines: BigInt(r?.covered ?? '0'),
+      totalLines: BigInt(r?.total ?? '0'),
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Product performance — per-product CM1 (revenue − COGS), units sold, orders,
+// AOV, and a Pareto grade (A ≤80% cumulative CM1, B ≤95%, C rest, F if CM1≤0).
+// ---------------------------------------------------------------------------
+export interface FactProductRow {
+  label: string
+  paretoGrade: 'A' | 'B' | 'C' | 'F'
+  cm1Mu: bigint
+  revenueMu: bigint
+  soldQty: bigint
+  orders: bigint
+  aovMu: bigint | null
+}
+export async function readProductPerformance(
+  workspaceId: string,
+): Promise<{ rows: FactProductRow[]; totalCm1Mu: bigint }> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<{
+      label: string | null
+      grade: 'A' | 'B' | 'C' | 'F'
+      cm1_mu: string
+      revenue_mu: string
+      sold: string
+      orders: string
+      total_cm1: string
+    }>(
+      `WITH per AS (
+         SELECT li.vendor_product_id AS pid,
+                max(COALESCE(pf.title, li.title)) AS label,
+                COALESCE(sum(li.quantity * li.unit_price_mu), 0) AS revenue_mu,
+                COALESCE(sum(li.quantity * COALESCE(pf.cost_mu, 0)), 0) AS cogs_mu,
+                COALESCE(sum(li.quantity), 0) AS sold,
+                count(DISTINCT li.vendor_order_id) AS orders
+           FROM connector_line_item_facts li
+           LEFT JOIN connector_product_facts pf
+             ON pf.workspace_id = li.workspace_id AND pf.vendor_product_id = li.vendor_product_id
+          WHERE li.vendor_product_id IS NOT NULL
+          GROUP BY li.vendor_product_id
+       ),
+       ranked AS (
+         SELECT *, (revenue_mu - cogs_mu) AS cm1_mu,
+                SUM(revenue_mu - cogs_mu) OVER () AS total_cm1,
+                SUM(revenue_mu - cogs_mu) OVER (ORDER BY (revenue_mu - cogs_mu) DESC, pid) AS cum_cm1
+           FROM per
+       )
+       SELECT label, revenue_mu::text, cm1_mu::text, sold::text, orders::text, total_cm1::text,
+         CASE WHEN cm1_mu <= 0 THEN 'F'
+              WHEN total_cm1 > 0 AND cum_cm1 <= 0.80 * total_cm1 THEN 'A'
+              WHEN total_cm1 > 0 AND cum_cm1 <= 0.95 * total_cm1 THEN 'B'
+              ELSE 'C' END AS grade
+       FROM ranked ORDER BY cm1_mu DESC LIMIT 200`,
+    )
+    const rows: FactProductRow[] = res.rows.map((r) => {
+      const orders = BigInt(r.orders ?? '0')
+      const revenue = BigInt(r.revenue_mu ?? '0')
+      return {
+        label: r.label ?? '(unknown)',
+        paretoGrade: r.grade,
+        cm1Mu: BigInt(r.cm1_mu ?? '0'),
+        revenueMu: revenue,
+        soldQty: BigInt(r.sold ?? '0'),
+        orders,
+        aovMu: orders > 0n ? revenue / orders : null,
+      }
+    })
+    const totalCm1Mu = res.rows.length ? BigInt(res.rows[0].total_cm1 ?? '0') : 0n
+    return { rows, totalCm1Mu }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Workspace members — real members + roles. users is superadmin-only RLS, so the
+// read runs under withSuperadmin, scoped strictly to this workspace_id.
+// ---------------------------------------------------------------------------
+export interface FactMemberRow {
+  userId: string
+  fullName: string
+  email: string
+  role: string
+  joinedAt: string
+}
+export async function readWorkspaceMembers(
+  workspaceId: string,
+): Promise<{ members: FactMemberRow[]; pendingInvitations: number }> {
+  return withSuperadmin(async (tx: PoolClient) => {
+    const m = await tx.query<{
+      user_id: string
+      full_name: string | null
+      email: string
+      role: string
+      joined_at: Date | null
+    }>(
+      `SELECT wm.user_id, u.full_name, u.email, wm.role, wm.joined_at
+         FROM workspace_members wm
+         JOIN users u ON u.id = wm.user_id
+        WHERE wm.workspace_id = $1
+        ORDER BY wm.joined_at`,
+      [workspaceId],
+    )
+    const inv = await tx.query<{ c: string }>(
+      `SELECT count(*)::text AS c FROM invitations WHERE workspace_id = $1`,
+      [workspaceId],
+    )
+    return {
+      members: m.rows.map((r) => ({
+        userId: r.user_id,
+        fullName: r.full_name ?? '',
+        email: r.email,
+        role: r.role,
+        joinedAt: r.joined_at ? new Date(r.joined_at).toISOString() : '',
+      })),
+      pendingInvitations: Number(inv.rows[0]?.c ?? 0),
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Workspace settings — the real workspace row (readable under withWorkspace via
+// ws_self_isolation). The local-dev schema doesn't store plan/timezone/region, so
+// those are honest India defaults (NOT a Sugandh seed).
+// ---------------------------------------------------------------------------
+export interface FactWorkspaceSettings {
+  name: string
+  slug: string
+  createdAt: string
+}
+export async function readWorkspaceSettings(workspaceId: string): Promise<FactWorkspaceSettings | null> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<{ name: string; slug: string; created_at: Date | null }>(
+      `SELECT name, slug, created_at FROM workspaces WHERE id = $1`,
+      [workspaceId],
+    )
+    const r = res.rows[0]
+    if (!r) return null
+    return {
+      name: r.name,
+      slug: r.slug,
+      createdAt: r.created_at ? new Date(r.created_at).toISOString() : '',
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Shipment analytics (Shiprocket facts) — feeds RTO + Logistics surfaces.
+// status_bucket ∈ DELIVERED|RTO|CANCELLED|UNDELIVERED|IN_TRANSIT.
+// ---------------------------------------------------------------------------
+export interface FactCourierRow {
+  courierName: string
+  count: bigint
+  deliveredCount: bigint
+  rtoCount: bigint
+  chargesMu: bigint
+}
+export interface FactShipmentAnalytics {
+  totalShipments: bigint
+  deliveredCount: bigint
+  rtoCount: bigint
+  codCount: bigint
+  prepaidCount: bigint
+  totalChargesMu: bigint
+  rtoChargesMu: bigint
+  codRtoCount: bigint
+  codTotal: bigint
+  prepaidRtoCount: bigint
+  prepaidTotal: bigint
+  byCourier: FactCourierRow[]
+}
+export async function readShipmentAnalytics(workspaceId: string): Promise<FactShipmentAnalytics> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const a = await tx.query<Record<string, string>>(
+      `SELECT
+         count(*)::text total,
+         count(*) FILTER (WHERE status_bucket='DELIVERED')::text delivered,
+         count(*) FILTER (WHERE status_bucket='RTO')::text rto,
+         count(*) FILTER (WHERE is_cod)::text cod,
+         count(*) FILTER (WHERE NOT is_cod)::text prepaid,
+         COALESCE(sum(shipping_charges_mu),0)::text charges,
+         COALESCE(sum(shipping_charges_mu) FILTER (WHERE status_bucket='RTO'),0)::text rto_charges,
+         count(*) FILTER (WHERE is_cod AND status_bucket='RTO')::text cod_rto,
+         count(*) FILTER (WHERE is_cod)::text cod_total,
+         count(*) FILTER (WHERE NOT is_cod AND status_bucket='RTO')::text prepaid_rto,
+         count(*) FILTER (WHERE NOT is_cod)::text prepaid_total
+       FROM connector_shipment_facts`,
+    )
+    const c = await tx.query<Record<string, string>>(
+      `SELECT COALESCE(NULLIF(courier_name,''),'Unknown') courier,
+              count(*)::text cnt,
+              count(*) FILTER (WHERE status_bucket='DELIVERED')::text delivered,
+              count(*) FILTER (WHERE status_bucket='RTO')::text rto,
+              COALESCE(sum(shipping_charges_mu),0)::text charges
+         FROM connector_shipment_facts
+        GROUP BY courier ORDER BY count(*) DESC LIMIT 50`,
+    )
+    const r = a.rows[0] ?? {}
+    return {
+      totalShipments: BigInt(r.total ?? '0'),
+      deliveredCount: BigInt(r.delivered ?? '0'),
+      rtoCount: BigInt(r.rto ?? '0'),
+      codCount: BigInt(r.cod ?? '0'),
+      prepaidCount: BigInt(r.prepaid ?? '0'),
+      totalChargesMu: BigInt(r.charges ?? '0'),
+      rtoChargesMu: BigInt(r.rto_charges ?? '0'),
+      codRtoCount: BigInt(r.cod_rto ?? '0'),
+      codTotal: BigInt(r.cod_total ?? '0'),
+      prepaidRtoCount: BigInt(r.prepaid_rto ?? '0'),
+      prepaidTotal: BigInt(r.prepaid_total ?? '0'),
+      byCourier: c.rows.map((x) => ({
+        courierName: x.courier ?? 'Unknown',
+        count: BigInt(x.cnt ?? '0'),
+        deliveredCount: BigInt(x.delivered ?? '0'),
+        rtoCount: BigInt(x.rto ?? '0'),
+        chargesMu: BigInt(x.charges ?? '0'),
+      })),
+    }
+  })
+}
+
+// Pincode-level shipment reliability (Shiprocket facts).
+export interface FactPincodeRow {
+  pincode: string
+  city: string
+  shipmentCount: bigint
+  rtoCount: bigint
+  deliveredCount: bigint
+  codCount: bigint
+}
+export async function readPincodes(workspaceId: string): Promise<FactPincodeRow[]> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<Record<string, string>>(
+      `SELECT delivery_pincode pincode,
+              max(COALESCE(delivery_city,'')) city,
+              count(*)::text cnt,
+              count(*) FILTER (WHERE status_bucket='RTO')::text rto,
+              count(*) FILTER (WHERE status_bucket='DELIVERED')::text delivered,
+              count(*) FILTER (WHERE is_cod)::text cod
+         FROM connector_shipment_facts
+        WHERE delivery_pincode IS NOT NULL AND delivery_pincode <> ''
+        GROUP BY delivery_pincode ORDER BY count(*) DESC LIMIT 200`,
+    )
+    return res.rows.map((x) => ({
+      pincode: x.pincode,
+      city: x.city ?? '',
+      shipmentCount: BigInt(x.cnt ?? '0'),
+      rtoCount: BigInt(x.rto ?? '0'),
+      deliveredCount: BigInt(x.delivered ?? '0'),
+      codCount: BigInt(x.cod ?? '0'),
+    }))
+  })
+}
+
+// COD vs Prepaid — order counts + revenue from order facts (payment_method).
+export interface FactCodPrepaid {
+  codOrders: bigint
+  prepaidOrders: bigint
+  codGrossMu: bigint
+  prepaidGrossMu: bigint
+  aovMu: bigint | null
+}
+export async function readCodPrepaid(workspaceId: string): Promise<FactCodPrepaid> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<Record<string, string>>(
+      `SELECT
+         count(*) FILTER (WHERE payment_method='COD')::text cod_orders,
+         count(*) FILTER (WHERE payment_method='Prepaid')::text prepaid_orders,
+         COALESCE(sum(gross_sales_mu) FILTER (WHERE payment_method='COD'),0)::text cod_gross,
+         COALESCE(sum(gross_sales_mu) FILTER (WHERE payment_method='Prepaid'),0)::text prepaid_gross,
+         COALESCE(sum(gross_sales_mu - total_discount_mu - total_tax_mu),0)::text net,
+         count(*)::text orders
+       FROM connector_order_facts WHERE ${CANCELLED}`,
+    )
+    const r = res.rows[0] ?? {}
+    const orders = BigInt(r.orders ?? '0')
+    const net = BigInt(r.net ?? '0')
+    return {
+      codOrders: BigInt(r.cod_orders ?? '0'),
+      prepaidOrders: BigInt(r.prepaid_orders ?? '0'),
+      codGrossMu: BigInt(r.cod_gross ?? '0'),
+      prepaidGrossMu: BigInt(r.prepaid_gross ?? '0'),
+      aovMu: orders > 0n ? net / orders : null,
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Cohorts — acquisition-month cohorts from order history. m[] is cumulative net
+// revenue (gross−discount−tax) by month-offset 0..11 from the cohort month; rr90 is
+// the share of the cohort that re-ordered within 90 days. CAC/payback are null (ad
+// spend is not cohort-attributed in the connector facts — honest).
+// ---------------------------------------------------------------------------
+const NET_EXPR = '(gross_sales_mu - total_discount_mu - total_tax_mu)'
+const MONTH_OFFSET =
+  "LEAST(11, GREATEST(0, (date_part('year', age(o.processed_at, fo.cohort_dt))*12 + date_part('month', age(o.processed_at, fo.cohort_dt)))::int))"
+
+export interface FactCohortRow {
+  cohortMonth: string
+  newCustomers: bigint
+  rr90Bp: number | null
+  m: bigint[] // length 12, cumulative net revenue (minor units)
+}
+export async function readCohorts(workspaceId: string): Promise<FactCohortRow[]> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // Set-based (no correlated subquery): one window pass to find each customer's
+    // acquisition + 2nd-order date, then a 90-day-repeat flag. Uses the
+    // (workspace_id, customer_ref, processed_at) index.
+    const sizes = await tx.query<{ cohort: string; new_customers: string; rr90: string }>(
+      `WITH ranked AS (
+         SELECT customer_ref, processed_at,
+                row_number() OVER (PARTITION BY customer_ref ORDER BY processed_at, vendor_order_id) rn,
+                min(processed_at) OVER (PARTITION BY customer_ref) acq
+           FROM connector_order_facts
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+       ),
+       cust AS (
+         SELECT customer_ref,
+                max(acq) acq,
+                to_char(date_trunc('month', max(acq)), 'YYYY-MM') cohort,
+                min(processed_at) FILTER (WHERE rn = 2) second_at
+           FROM ranked GROUP BY customer_ref
+       )
+       SELECT cohort,
+              count(*)::text new_customers,
+              count(*) FILTER (WHERE second_at IS NOT NULL AND second_at <= acq + interval '90 days')::text rr90
+         FROM cust GROUP BY cohort ORDER BY cohort`,
+    )
+    const rev = await tx.query<{ cohort: string; off: string; net: string }>(
+      `WITH fo AS (
+         SELECT customer_ref, date_trunc('month', min(processed_at)) cohort_dt
+           FROM connector_order_facts
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+          GROUP BY customer_ref
+       )
+       SELECT to_char(fo.cohort_dt, 'YYYY-MM') cohort,
+              ${MONTH_OFFSET} off,
+              sum(${NET_EXPR})::text net
+         FROM connector_order_facts o
+         JOIN fo ON fo.customer_ref = o.customer_ref
+        WHERE o.customer_ref IS NOT NULL AND ${CANCELLED}
+        GROUP BY 1, 2`,
+    )
+    // pivot revenue into per-cohort 12-month cumulative arrays
+    const byCohort = new Map<string, bigint[]>()
+    for (const row of rev.rows) {
+      const arr = byCohort.get(row.cohort) ?? new Array<bigint>(12).fill(0n)
+      const off = Math.max(0, Math.min(11, Number(row.off)))
+      arr[off] += BigInt(row.net ?? '0')
+      byCohort.set(row.cohort, arr)
+    }
+    return sizes.rows.map((s) => {
+      const per = byCohort.get(s.cohort) ?? new Array<bigint>(12).fill(0n)
+      const cum: bigint[] = []
+      let running = 0n
+      for (let i = 0; i < 12; i++) {
+        running += per[i]
+        cum.push(running)
+      }
+      const newCustomers = BigInt(s.new_customers ?? '0')
+      const rr90 = BigInt(s.rr90 ?? '0')
+      return {
+        cohortMonth: s.cohort,
+        newCustomers,
+        rr90Bp: newCustomers > 0n ? Number((rr90 * 10000n) / newCustomers) : null,
+        m: cum,
+      }
+    })
+  })
+}
+
+// ---------------------------------------------------------------------------
+// LTV — average cumulative net revenue per acquired customer at M0/M1/M3/M6/M12.
+// rows are per acquisition-month cohort (per-customer cumulative trajectory).
+// ---------------------------------------------------------------------------
+export interface FactLtv {
+  newCustomers: bigint
+  firstOrderMu: bigint // avg first-order net per customer
+  month1Mu: bigint
+  month3Mu: bigint
+  month6Mu: bigint
+  month12Mu: bigint
+  rows: { cohortMonth: string; newCustomers: bigint; firstOrderMu: bigint; m: bigint[] }[]
+}
+export async function readLtv(workspaceId: string): Promise<FactLtv> {
+  const cohorts = await readCohorts(workspaceId)
+  let totalCustomers = 0n
+  let sumFirst = 0n
+  let sumM1 = 0n
+  let sumM3 = 0n
+  let sumM6 = 0n
+  let sumM12 = 0n
+  const rows = cohorts.map((c) => {
+    totalCustomers += c.newCustomers
+    sumFirst += c.m[0] ?? 0n
+    sumM1 += c.m[1] ?? 0n
+    sumM3 += c.m[3] ?? 0n
+    sumM6 += c.m[6] ?? 0n
+    sumM12 += c.m[11] ?? 0n
+    const per = c.newCustomers > 0n ? c.m.map((v) => v / c.newCustomers) : c.m
+    return {
+      cohortMonth: c.cohortMonth,
+      newCustomers: c.newCustomers,
+      firstOrderMu: c.newCustomers > 0n ? (c.m[0] ?? 0n) / c.newCustomers : 0n,
+      m: per,
+    }
+  })
+  const avg = (x: bigint) => (totalCustomers > 0n ? x / totalCustomers : 0n)
+  return {
+    newCustomers: totalCustomers,
+    firstOrderMu: avg(sumFirst),
+    month1Mu: avg(sumM1),
+    month3Mu: avg(sumM3),
+    month6Mu: avg(sumM6),
+    month12Mu: avg(sumM12),
+    rows,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle states — recency segmentation by days since last order (fixed
+// India-DTC fallback thresholds: new ≤30, active ≤90, at_risk ≤180, churned >180).
+// ---------------------------------------------------------------------------
+export interface FactLifecycleBucket { bucket: string; customerCount: bigint; revenueMu: bigint; orderCount: bigint }
+export interface FactLifecycle { buckets: FactLifecycleBucket[]; totalCustomers: bigint; netActive: bigint }
+export async function readLifecycleStates(workspaceId: string): Promise<FactLifecycle> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<Record<string, string>>(
+      `WITH cust AS (
+         SELECT customer_ref, max(processed_at) last_at, count(*) orders,
+                sum(${NET_EXPR}) net
+           FROM connector_order_facts
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+          GROUP BY customer_ref
+       ), nowref AS (SELECT max(last_at) n FROM cust),
+       b AS (
+         SELECT CASE
+                  WHEN (nowref.n - last_at) <= interval '30 days' THEN 'new'
+                  WHEN (nowref.n - last_at) <= interval '90 days' THEN 'active'
+                  WHEN (nowref.n - last_at) <= interval '180 days' THEN 'at_risk'
+                  ELSE 'churned' END bucket,
+                orders, net
+           FROM cust, nowref
+       )
+       SELECT bucket, count(*)::text cnt, COALESCE(sum(net),0)::text rev, COALESCE(sum(orders),0)::text ord
+         FROM b GROUP BY bucket`,
+    )
+    const byBucket = new Map(res.rows.map((r) => [r.bucket, r]))
+    const names = ['new', 'active', 'at_risk', 'churned']
+    const buckets = names.map((name) => {
+      const r = byBucket.get(name)
+      return {
+        bucket: name,
+        customerCount: BigInt(r?.cnt ?? '0'),
+        revenueMu: BigInt(r?.rev ?? '0'),
+        orderCount: BigInt(r?.ord ?? '0'),
+      }
+    })
+    const total = buckets.reduce((a, b) => a + b.customerCount, 0n)
+    const netActive = buckets[0].customerCount + buckets[1].customerCount
+    return { buckets, totalCustomers: total, netActive }
+  })
+}
+
+// Order timings — sequence rates (2nd/3rd/4th) + median days between orders.
+export interface FactOrderTimings {
+  firstOrders: bigint
+  secondBp: number
+  thirdBp: number
+  fourthBp: number
+  days12: number | null
+  days23: number | null
+  days34: number | null
+}
+export async function readOrderTimings(workspaceId: string): Promise<FactOrderTimings> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<Record<string, string>>(
+      `WITH ranked AS (
+         SELECT customer_ref, processed_at,
+                row_number() OVER (PARTITION BY customer_ref ORDER BY processed_at, vendor_order_id) rn,
+                processed_at - lag(processed_at) OVER (PARTITION BY customer_ref ORDER BY processed_at, vendor_order_id) gap
+           FROM connector_order_facts
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+       )
+       SELECT
+         count(DISTINCT customer_ref) FILTER (WHERE rn = 1)::text first_orders,
+         count(DISTINCT customer_ref) FILTER (WHERE rn >= 2)::text c2,
+         count(DISTINCT customer_ref) FILTER (WHERE rn >= 3)::text c3,
+         count(DISTINCT customer_ref) FILTER (WHERE rn >= 4)::text c4,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM gap)/86400) FILTER (WHERE rn = 2)::text d12,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM gap)/86400) FILTER (WHERE rn = 3)::text d23,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM gap)/86400) FILTER (WHERE rn = 4)::text d34
+       FROM ranked`,
+    )
+    const r = res.rows[0] ?? {}
+    const first = BigInt(r.first_orders ?? '0')
+    const rate = (c: string | undefined) => (first > 0n ? Number((BigInt(c ?? '0') * 10000n) / first) : 0)
+    const num = (x: string | undefined) => (x === null || x === undefined ? null : Math.round(Number(x)))
+    return {
+      firstOrders: first,
+      secondBp: rate(r.c2),
+      thirdBp: rate(r.c3),
+      fourthBp: rate(r.c4),
+      days12: num(r.d12),
+      days23: num(r.d23),
+      days34: num(r.d34),
+    }
+  })
+}
+
+// First-product cascade — the product of each customer's FIRST order → repeat behaviour.
+export interface FactCascadeRow {
+  productKey: string
+  productTitle: string
+  firstOrderCustomers: bigint
+  with2nd: bigint
+  with3rd: bigint
+  with4thPlus: bigint
+  avgLtvMu: bigint
+}
+export async function readFirstProductCascade(workspaceId: string): Promise<{ rows: FactCascadeRow[]; totalCohort: bigint }> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<Record<string, string>>(
+      `WITH first_order AS (
+         SELECT DISTINCT ON (customer_ref) customer_ref, vendor_order_id
+           FROM connector_order_facts
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+          ORDER BY customer_ref, processed_at, vendor_order_id
+       ),
+       first_prod AS (
+         SELECT DISTINCT ON (fo.customer_ref) fo.customer_ref,
+                li.vendor_product_id pid, COALESCE(pf.title, li.title) title
+           FROM first_order fo
+           JOIN connector_line_item_facts li ON li.vendor = 'SHOPIFY' AND li.vendor_order_id = fo.vendor_order_id
+           LEFT JOIN connector_product_facts pf ON pf.vendor_product_id = li.vendor_product_id
+          WHERE li.vendor_product_id IS NOT NULL
+          ORDER BY fo.customer_ref, li.vendor_line_id
+       ),
+       cust AS (
+         SELECT customer_ref, count(*) orders, sum(${NET_EXPR}) ltv
+           FROM connector_order_facts
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+          GROUP BY customer_ref
+       )
+       SELECT fp.pid,
+              max(fp.title) title,
+              count(*)::text first_customers,
+              count(*) FILTER (WHERE c.orders >= 2)::text w2,
+              count(*) FILTER (WHERE c.orders >= 3)::text w3,
+              count(*) FILTER (WHERE c.orders >= 4)::text w4,
+              COALESCE(avg(c.ltv),0)::bigint::text avg_ltv
+         FROM first_prod fp JOIN cust c ON c.customer_ref = fp.customer_ref
+        GROUP BY fp.pid ORDER BY count(*) DESC LIMIT 100`,
+    )
+    const rows = res.rows.map((r) => ({
+      productKey: r.pid,
+      productTitle: r.title ?? '(unknown)',
+      firstOrderCustomers: BigInt(r.first_customers ?? '0'),
+      with2nd: BigInt(r.w2 ?? '0'),
+      with3rd: BigInt(r.w3 ?? '0'),
+      with4thPlus: BigInt(r.w4 ?? '0'),
+      avgLtvMu: BigInt(r.avg_ltv ?? '0'),
+    }))
+    const totalCohort = rows.reduce((a, r) => a + r.firstOrderCustomers, 0n)
+    return { rows, totalCohort }
+  })
+}
+
+// Distributions — per-product per-order value: mode vs mean (line value = qty × unit price).
+export interface FactDistRow { product: string; orders: bigint; modeMu: bigint; meanMu: bigint }
+export async function readDistributions(workspaceId: string): Promise<{ rows: FactDistRow[]; globalMode: bigint; globalMean: bigint }> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<Record<string, string>>(
+      `SELECT COALESCE(max(pf.title), li.title, '(unknown)') product,
+              count(*)::text orders,
+              COALESCE(mode() WITHIN GROUP (ORDER BY li.quantity * li.unit_price_mu),0)::text mode_mu,
+              COALESCE(avg(li.quantity * li.unit_price_mu),0)::bigint::text mean_mu
+         FROM connector_line_item_facts li
+         LEFT JOIN connector_product_facts pf ON pf.vendor_product_id = li.vendor_product_id
+        WHERE li.vendor_product_id IS NOT NULL
+        GROUP BY li.vendor_product_id, li.title ORDER BY count(*) DESC LIMIT 100`,
+    )
+    const g = await tx.query<Record<string, string>>(
+      `SELECT COALESCE(mode() WITHIN GROUP (ORDER BY quantity * unit_price_mu),0)::text mode_mu,
+              COALESCE(avg(quantity * unit_price_mu),0)::bigint::text mean_mu
+         FROM connector_line_item_facts`,
+    )
+    return {
+      rows: res.rows.map((r) => ({
+        product: r.product ?? '(unknown)',
+        orders: BigInt(r.orders ?? '0'),
+        modeMu: BigInt(r.mode_mu ?? '0'),
+        meanMu: BigInt(r.mean_mu ?? '0'),
+      })),
+      globalMode: BigInt(g.rows[0]?.mode_mu ?? '0'),
+      globalMean: BigInt(g.rows[0]?.mean_mu ?? '0'),
+    }
+  })
+}
+
+// Calendar report — per-period (day/week/month) revenue + ad spend + orders + new customers.
+export interface FactCalendarRow {
+  periodKey: string
+  revenueMu: bigint
+  orders: bigint
+  newCustomers: bigint
+  spendMu: bigint
+}
+export async function readCalendarReport(workspaceId: string, grain: 'day' | 'week' | 'month'): Promise<FactCalendarRow[]> {
+  const trunc = grain === 'week' ? 'week' : grain === 'month' ? 'month' : 'day'
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const rev = await tx.query<Record<string, string>>(
+      `WITH firsts AS (
+         SELECT customer_ref, min(processed_at) acq
+           FROM connector_order_facts WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+           GROUP BY customer_ref
+       )
+       SELECT to_char(date_trunc('${trunc}', o.processed_at), 'YYYY-MM-DD') period,
+              COALESCE(sum(${NET_EXPR.replace(/gross_sales_mu/g, 'o.gross_sales_mu').replace(/total_discount_mu/g, 'o.total_discount_mu').replace(/total_tax_mu/g, 'o.total_tax_mu')}),0)::text revenue,
+              count(*)::text orders,
+              count(*) FILTER (WHERE f.acq = o.processed_at)::text new_customers
+         FROM connector_order_facts o
+         LEFT JOIN firsts f ON f.customer_ref = o.customer_ref
+        WHERE ${CANCELLED.replace(/cancelled_at/g, 'o.cancelled_at').replace(/financial_status/g, 'o.financial_status')}
+        GROUP BY 1 ORDER BY 1 DESC LIMIT 90`,
+    )
+    const spend = await tx.query<Record<string, string>>(
+      `SELECT to_char(date_trunc('${trunc}', spend_date), 'YYYY-MM-DD') period,
+              COALESCE(sum(spend_mu),0)::text spend
+         FROM connector_ad_spend_facts GROUP BY 1`,
+    )
+    const spendByPeriod = new Map(spend.rows.map((r) => [r.period, BigInt(r.spend ?? '0')]))
+    return rev.rows.map((r) => ({
+      periodKey: r.period,
+      revenueMu: BigInt(r.revenue ?? '0'),
+      orders: BigInt(r.orders ?? '0'),
+      newCustomers: BigInt(r.new_customers ?? '0'),
+      spendMu: spendByPeriod.get(r.period) ?? 0n,
+    }))
   })
 }

@@ -53,7 +53,7 @@ export function AcquisitionContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Acquisition</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — marketing efficiency &amp; new-customer economics (CM2-first)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">marketing efficiency &amp; new-customer economics (CM2-first)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label htmlFor="acq-from" className="sr-only">From date</label>

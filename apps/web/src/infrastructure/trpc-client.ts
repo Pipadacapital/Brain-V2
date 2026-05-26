@@ -82,6 +82,17 @@ export function createTrpcClient(workspaceId?: string) {
             // No session / misconfig → send no Bearer; the gateway returns
             // UNAUTHORIZED and the middleware bounces to /auth/login.
           }
+
+          // Active workspace selection (workspace switch). The gateway validates this
+          // against the user's REAL memberships before honoring it (never blind trust);
+          // when absent it defaults to the user's primary workspace.
+          try {
+            const activeWs =
+              typeof window !== 'undefined' ? window.localStorage.getItem('brain.activeWorkspace') : null;
+            if (activeWs) h['x-brain-workspace'] = activeWs;
+          } catch {
+            /* localStorage unavailable — fall back to the gateway default */
+          }
           return h;
         },
       }),

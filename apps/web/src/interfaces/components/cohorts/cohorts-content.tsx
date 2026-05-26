@@ -60,7 +60,7 @@ export function CohortsContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Cohorts</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — repeat-purchase &amp; retention by acquisition month (CM3-first)</p>
+          <p className="text-sm text-muted-foreground mt-0.5">repeat-purchase &amp; retention by acquisition month (CM3-first)</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <select value={metric} onChange={(e) => setMetric(e.target.value)} aria-label="Metric" className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground">

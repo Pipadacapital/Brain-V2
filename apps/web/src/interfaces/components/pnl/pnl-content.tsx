@@ -42,7 +42,7 @@ export function PnlContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">P&amp;L</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Sugandh Lok — honest contribution margin
+            honest contribution margin
           </p>
         </div>
 

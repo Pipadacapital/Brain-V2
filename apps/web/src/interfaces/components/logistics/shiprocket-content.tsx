@@ -51,7 +51,7 @@ export function ShiprocketContent() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">Shiprocket</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Sugandh Lok — shipping operations: delivery, RTO &amp; charges</p>
+          <p className="text-sm text-muted-foreground mt-0.5">shipping operations: delivery, RTO &amp; charges</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <button type="button" disabled title="Backfill is available after connector cutover" className="cursor-not-allowed rounded-md border border-border bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-60">Backfill couriers (pending cutover)</button>

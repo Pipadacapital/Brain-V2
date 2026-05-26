@@ -64,7 +64,7 @@ export function DashboardContent() {
             Dashboard
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Sugandh Lok — Morning Brief
+            Morning Brief
           </p>
         </div>
 
