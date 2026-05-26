@@ -201,3 +201,44 @@ the gate was already green in production and hid a real bug — it was caught on
 recalled the lineage, which is not a repeatable control.
 
 - **📋 CANDIDATE RULE (Rohan, Stage-6, 2026-05-25) — `feat-marketing-acquisition` (Phase-2 slice 4).** Recurring root cause across ≥3 runs (slices 3 & 4 + metric-engine/pnl divergence retros): the ratified slice-table shorthand cannot be trusted as a spec, and speculative pre-builds hidden behind a parity "shadow-phase" carve diverge from legacy silently. Proposal `.engineering-os/rule-proposals/2026-05-25__verify-legacy-formula-at-stage1-not-slice-table.md` would make "read the real legacy formula at Stage 1/2 + reconcile/decommission divergent pre-builds" a mandatory gate. Review with `/brain-engineering-os:adopt-rule .engineering-os/rule-proposals/2026-05-25__verify-legacy-formula-at-stage1-not-slice-table.md` or `/reject-rule verify-legacy-formula-at-stage1-not-slice-table <reason>`.
+
+---
+
+## 2026-05-26T12:55:00Z — 🚨 ESCALATION (Rohan, CTO Advisor) — FIRED at synthesis — `feat-tenancy-rls-live-cutover`: Founder picks the path BEFORE Stage-3 build (default Stage-2 design = Path C with exit deadline)
+
+**Subject:** This is the slice that finally closes the OPEN P0 logged at the top of this file. Founder-priced trade-off between path choices needs ratification now so Stage-2 plan is written to ONE path; Stage 2 proceeds on the default in parallel.
+
+**Why now, not Stage 7:** at intake the path choice was an open question; the compliance persona (`03-persona-india-data-isolation-compliance-officer.md`) confirmed that a standing Path-C bypass is NOT lawful as a permanent state under DPDP §4 — it needs an exit deadline + narrow named scope + audit + a second-brand tripwire. The strangler persona (`04-persona-live-rollout-strangler-realist.md`) confirmed Path C is operationally cleanest if reconciled with Child-3's `CF-C3-FORCE-UNLOCK-SCOPE-1`. Synthesis is the right gate per the precedent set on Child-1 (DPDP at synthesis) and Child-3 (custody Option A/B at synthesis). Deferring to Stage 7 risks Stage-2/3 rework.
+
+**Founder ask — pick ONE (a 2-sentence decision):**
+
+- **(A) Path C with hard exit deadline = Path B completion date** *(my recommendation, Stage-2 default)*. Closes the OPEN P0 at the storage layer for every NEW connection within one cutover window. Residual surface = ONE explicitly-named legacy connection identity, bypass usage audited per CF-CUT-BYPASS-AUDIT-1, lifetime bounded by the Founder-ratified Path-B completion date. Defensible under DPDP §7 transitional continuity for the bounded interval; consistent with the Founder's own established "merge code, HOLD irreversibles for Founder-at-console" discipline used on Children 1-7.
+- **(C) Path A2 — pgbouncer custom auth.** Cleanest DPDP posture (workspace-scoped on the legacy side too, no transitional bypass). BUT real infra work (pgbouncer custom-auth hooks + JWT-to-`workspace_id` derivation at the pool layer); blast-radius dwarfs Path C's narrow bypass; weeks of new infra + risk before the OPEN P0 closes.
+
+**Inadmissible options:**
+- **Path A1** — barred by `feedback_legacy_is_reference_only.md` (requires legacy backend code edit).
+- **Path B as the immediate close** — barred. §8(6) notice timeline: the OPEN P0 has been open since 2026-05-24; waiting weeks while parity ships compounds the exposure. Path B remains the right *final* close (sequenced after Path C closes the immediate leak), not the immediate close.
+
+**Effect:** `build_gated_on` = CF-CUT-PATH-1 (Founder ratification on record before Stage-3 build authorization). **Stage 2 PROCEEDS in parallel on default (Path C with deadline)**; if Founder rules A2, Stage 2 amends with a decision-logged plan revision (the runbook outline transfers; only STEP 3's shim shape changes).
+
+**What this also unlocks** (informational, no Founder act required today):
+- **The OPEN P0** (item #3 in the hygiene sweep at the top of this file) closes once this slice's Stage 8 ceremony runs.
+- **DPDP §7 continuity addendum** (CF-CUT-DPDP-ADDENDUM-1) will be drafted by Aryan at Stage 2 enumerating (i) live FORCE-flip execution, (ii) live CF-SEC-1 probe execution, (iii) creation+use of legacy bypass (Path C only), (iv) STEP-5 smoke against legacy HTTP. Founder signs before Stage-8 STEP 5. Same Founder-as-controller-of-Sugandh-Lok basis as the Child-1 memo; CF-SEC-3.HARD does NOT re-trigger.
+
+**Artifacts:** `.engineering-os/runs/2026-05-26T12-48-53Z__6c7c71__feat-tenancy-rls-live-cutover__rishabhporwal/`
+- `01-requirement.md` (canonical body from the Founder draft)
+- `02-cto-advisor-review.md` (intake, persona-count decision, armed escalations)
+- `03-persona-india-data-isolation-compliance-officer.md` (5 concerns; recommends this escalation)
+- `04-persona-live-rollout-strangler-realist.md` (7 concerns including CRITICAL O2 — STEP-5 verify-the-verifier hazard; 10th occurrence of the durable-rule class)
+- `05-stage1-synthesis.md` §4 (the escalation), §6 (full CF-* contract)
+
+**Intake branch:** `chore/intake-feat-tenancy-rls-live-cutover` (branched off `origin/development`). No commit; intake artifacts only, no code change.
+
+---
+
+## 2026-05-26T12:55:00Z — ℹ️ HEADS-UP (Rohan, non-blocking) — `feat-tenancy-rls-live-cutover` Stage-1 synthesis complete; durable rule's 10th occurrence pre-empted
+
+**Subject:** The strangler persona's CRITICAL O2 finding (`STEP 5` legacy-smoke is the canonical verify-the-verifier hazard for THIS slice) is exactly the durable-rule `2026-05-26__verify-the-verifier-mutation-on-gate` target class — the rule's #10 occurrence would have landed in production if STEP 5 had shipped as a psql double of the bypass role (a fake green that authorizes the cutover-complete signal). The synthesis bound CF-CUT-VERIFY-THE-VERIFIER-1 to CRITICAL/binding with explicit kill-test pair (real legacy HTTP path + 3 captured pre-ceremony mutants on the staging clone + Stage-6 disk re-mutation per sub-rule 7).
+
+**No action required** — this is the durable-rule working as designed (Stage-1 catch, before Stage-2 plan, before any code). Logged for visibility as additional evidence that the adopted rule is doing its job structurally.
+
