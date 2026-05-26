@@ -23,11 +23,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { updateSession } from '@/infrastructure/supabase/middleware.js';
 import { webLogger } from '@/infrastructure/logger.js';
+// Browser-safe subpath — Next.js middleware runs on the Edge runtime which
+// does not have Node's std-lib (pino's stdSerializers fail there). Using the
+// /correlation subpath keeps pino out of the middleware bundle.
 import {
   newCorrelationId,
   REQUEST_ID_HEADER,
   TRACE_ID_HEADER,
-} from '@brain/lib-logger';
+} from '@brain/lib-logger/correlation';
 
 const IS_LOCAL_HARNESS = process.env.NEXT_PUBLIC_BRAIN_LOCAL_HARNESS === 'true';
 
