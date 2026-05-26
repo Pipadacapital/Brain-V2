@@ -86,6 +86,20 @@ export async function middleware(request: NextRequest) {
   // Real auth: refresh the session cookies and resolve the user.
   const { response, user } = await updateSession(request);
 
+  // Copy any refreshed Supabase cookies from `response` onto a redirect
+  // response. updateSession() rotates the access token during getUser() and
+  // stamps the new cookies on `response` — if we return a fresh
+  // NextResponse.redirect() without those cookies, the next request lands
+  // with the old (now-invalid) token and the user gets bounced back to login.
+  // Bug surfaced post-Docker as a tight redirect-to-login loop after a
+  // successful Google OAuth callback. See @supabase/ssr SSR guide.
+  const propagateCookies = (target: NextResponse): NextResponse => {
+    response.cookies.getAll().forEach((c) => {
+      target.cookies.set(c.name, c.value, c);
+    });
+    return target;
+  };
+
   // Unauthenticated + protected route → redirect to /auth/login.
   if (!user && !isPublic(pathname)) {
     log.info(
@@ -94,7 +108,7 @@ export async function middleware(request: NextRequest) {
     );
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/auth/login';
-    return stamp(NextResponse.redirect(loginUrl));
+    return stamp(propagateCookies(NextResponse.redirect(loginUrl)));
   }
 
   // Authenticated + on the login page → go to the dashboard.
@@ -109,7 +123,7 @@ export async function middleware(request: NextRequest) {
     );
     const dashUrl = request.nextUrl.clone();
     dashUrl.pathname = '/dashboard';
-    return stamp(NextResponse.redirect(dashUrl));
+    return stamp(propagateCookies(NextResponse.redirect(dashUrl)));
   }
 
   log.info(
