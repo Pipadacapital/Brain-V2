@@ -17,6 +17,13 @@
 
 import type { PoolClient } from 'pg'
 import { withWorkspace, withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
+import { readStoreSummaryCH } from './fact-analytics-ch.js'
+
+// READ_FROM_CH=true routes specific read functions through brain.connector_*_facts
+// in ClickHouse instead of the PG hot-mirror (v2 §6, function-by-function cutover).
+// Default OFF so the rollout doesn't change behaviour. Per function we PG-fallback
+// if the CH path throws (zero-regression rule from the Founder).
+const READ_FROM_CH = process.env.READ_FROM_CH === 'true'
 
 export interface FactStoreSummary {
   hasData: boolean
@@ -77,6 +84,10 @@ const CANCELLED = "(cancelled_at IS NULL AND COALESCE(financial_status,'') NOT I
  * the per-order tax (which the per-SKU line items roll up into total_tax_mu).
  */
 export async function readStoreSummary(workspaceId: string): Promise<FactStoreSummary> {
+  if (READ_FROM_CH) {
+    // Flag-routed CH read with PG fallback (v2 §6, Founder no-regression rule).
+    try { return await readStoreSummaryCH(workspaceId) } catch { /* fall through */ }
+  }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<{
       currency_code: string | null
