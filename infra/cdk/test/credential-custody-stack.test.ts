@@ -75,8 +75,10 @@ describe("CredentialCustodyStack — Secrets Manager posture (CF-CC-RESIDENCY-1)
     ({ template } = buildTemplate());
   });
 
-  test("has exactly one Secrets Manager secret", () => {
-    template.resourceCountIs("AWS::SecretsManager::Secret", 1);
+  test("has exactly two Secrets Manager secrets (posture sentinel + app-level singleton)", () => {
+    // T3 delta: one posture sentinel (brain/custody-posture) +
+    // one app-level singleton (brain/_app/shopify/hmac_secret).
+    template.resourceCountIs("AWS::SecretsManager::Secret", 2);
   });
 
   test("secret name is prefixed with 'brain/'", () => {
@@ -114,6 +116,216 @@ describe("CredentialCustodyStack — Secrets Manager posture (CF-CC-RESIDENCY-1)
     template.hasResource("AWS::SecretsManager::Secret", {
       DeletionPolicy: "Retain",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T3 (chore-app-hmac-secret-custody) — App-level singleton secret assertions
+// CF-HMAC-RESIDENCY-1: CMK-encrypted, brain/_app/ prefix, RemovalPolicy.RETAIN.
+// ---------------------------------------------------------------------------
+
+describe("CredentialCustodyStack — App-level singleton secret (CF-HMAC-RESIDENCY-1, T3)", () => {
+  let template: Template;
+  let stack: CredentialCustodyStack;
+
+  beforeAll(() => {
+    ({ template, stack } = buildTemplate());
+  });
+
+  test("app-level singleton secret name is prefixed with 'brain/_app/'", () => {
+    // The _app/ segment is the explicit no-workspace app-level namespace.
+    // It must NOT use the per-workspace brain/{workspace_id}/ shape.
+    template.hasResourceProperties("AWS::SecretsManager::Secret", {
+      Name: Match.stringLikeRegexp("^brain/_app/"),
+    });
+  });
+
+  test("app-level singleton secret name is 'brain/_app/shopify/hmac_secret'", () => {
+    template.hasResourceProperties("AWS::SecretsManager::Secret", {
+      Name: "brain/_app/shopify/hmac_secret",
+    });
+  });
+
+  test("app-level singleton secret is CMK-encrypted (NOT the default aws/secretsmanager key)", () => {
+    // The KmsKeyId must reference the CredentialCustodyCmk construct — same CMK
+    // as the posture sentinel. No second CMK was created (CF-CC-IAM-LEASTPRIV-1).
+    const secrets = template.findResources("AWS::SecretsManager::Secret");
+    const appSecret = Object.values(secrets).find((s) => {
+      const props = (s as Record<string, unknown>).Properties as Record<string, unknown>;
+      return (props["Name"] as string) === "brain/_app/shopify/hmac_secret";
+    });
+
+    expect(appSecret).toBeDefined();
+    const props = (appSecret as Record<string, unknown>).Properties as Record<string, unknown>;
+    const kmsKeyId = props["KmsKeyId"];
+
+    // Must be present (explicit CMK).
+    expect(kmsKeyId).toBeDefined();
+    // Must NOT be the default AWS-managed key literal.
+    expect(kmsKeyId).not.toBe("aws/secretsmanager");
+    // The CMK KeyId must reference the same CMK as the rest of the stack
+    // (CDK emits it as a Ref or Fn::GetAtt object, not a bare "*").
+    expect(kmsKeyId).not.toBe("*");
+  });
+
+  test("app-level singleton secret uses the SAME CMK as the posture sentinel (no new key)", () => {
+    // Exactly one KMS key resource must exist — the existing CredentialCustodyCmk.
+    // If a second CMK were created, this count would be 2 (regression guard).
+    template.resourceCountIs("AWS::KMS::Key", 1);
+  });
+
+  test("app-level singleton secret has DeletionPolicy Retain (CF-HMAC-RESIDENCY-1 / no auto-delete)", () => {
+    // Both secrets must have RETAIN. hasResource passes if at least one matches;
+    // we verify both explicitly via findResources.
+    const secrets = template.findResources("AWS::SecretsManager::Secret");
+    for (const [, secretResource] of Object.entries(secrets)) {
+      const resource = secretResource as Record<string, unknown>;
+      expect(resource["DeletionPolicy"]).toBe("Retain");
+    }
+  });
+
+  test("app-level singleton secret description references auto-rotation FORBIDDEN (CF-HMAC-ROTATION-MANUAL-1)", () => {
+    template.hasResourceProperties("AWS::SecretsManager::Secret", {
+      Name: "brain/_app/shopify/hmac_secret",
+      Description: Match.stringLikeRegexp("FORBIDDEN"),
+    });
+  });
+
+  test("appShopifyHmacSecret construct property is accessible on the stack", () => {
+    // Verify the public readonly is wired (cross-stack reference support).
+    expect(stack.appShopifyHmacSecret).toBeDefined();
+    expect(stack.appShopifyHmacSecret.secretName).toBeDefined();
+  });
+
+  test("emits AppShopifyHmacSecretArn CloudFormation output", () => {
+    template.hasOutput("AppShopifyHmacSecretArn", {
+      Description: Match.stringLikeRegexp("brain/_app/shopify/hmac_secret"),
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T3 IAM regression — the existing brain/* scope ALREADY covers brain/_app/*;
+// NO IAM widening was introduced by the T3 delta (CF-CC-IAM-LEASTPRIV-1).
+// ---------------------------------------------------------------------------
+
+describe("CredentialCustodyStack — IAM NOT widened by T3 (CF-CC-IAM-LEASTPRIV-1 regression)", () => {
+  let template: Template;
+
+  beforeAll(() => {
+    ({ template } = buildTemplate());
+  });
+
+  test("STILL exactly one ManagedPolicy — no new policy was added for brain/_app/*", () => {
+    // Adding the app-level secret must NOT create a second policy.
+    // The existing brain/* scope already covers brain/_app/* by prefix.
+    template.resourceCountIs("AWS::IAM::ManagedPolicy", 1);
+  });
+
+  test("STILL exactly two IAM statements (SM + KMS) — no new statement was added", () => {
+    // brain/_app/* is covered by the existing brain/* resource; no new statement needed.
+    const policies = template.findResources("AWS::IAM::ManagedPolicy");
+    const policyDoc = Object.values(policies)[0].Properties.PolicyDocument as {
+      Statement: unknown[];
+    };
+    expect(policyDoc.Statement).toHaveLength(2);
+  });
+
+  test("SM resource 'brain/*' prefix-covers 'brain/_app/shopify/hmac_secret' (IAM-not-widened proof)", () => {
+    // The IAM resource ARN `arn:aws:secretsmanager:ap-south-1:*:secret:brain/*`
+    // covers any secret whose name begins with `brain/`, including `brain/_app/...`.
+    // This test makes the coverage explicit so it is mechanically verifiable in CI.
+    const policies = template.findResources("AWS::IAM::ManagedPolicy");
+    const policyDoc = Object.values(policies)[0].Properties.PolicyDocument as {
+      Statement: Array<{
+        Sid?: string;
+        Action: string | string[];
+        Resource: string | string[];
+        Effect: string;
+      }>;
+    };
+
+    const smStatement = policyDoc.Statement.find(
+      (stmt) =>
+        stmt.Sid === "BrainSecretsManagerCustody" ||
+        (Array.isArray(stmt.Action)
+          ? stmt.Action.some((a) => a.startsWith("secretsmanager:"))
+          : (stmt.Action as string).startsWith("secretsmanager:"))
+    );
+
+    expect(smStatement).toBeDefined();
+
+    const resources = Array.isArray(smStatement!.Resource)
+      ? smStatement!.Resource
+      : [smStatement!.Resource];
+
+    // The resource ARN must still be the brain/* scoped form (not widened to "*").
+    expect(resources).not.toContain("*");
+
+    for (const resource of resources) {
+      expect(resource).toMatch(/^arn:aws:secretsmanager:ap-south-1:.+:secret:brain\//);
+    }
+
+    // Mechanically verify prefix coverage:
+    // Any SM ARN matching the policy resource pattern that starts with `brain/`
+    // will also match `brain/_app/shopify/hmac_secret`.
+    const iamResourcePattern = resources[0] as string;
+    // Strip the trailing wildcard to get the literal prefix the IAM pattern covers.
+    const arnPrefix = iamResourcePattern.replace(/\*$/, "");
+    const exampleAppSecretArn = `${arnPrefix}_app/shopify/hmac_secret-AbCdEf`;
+    // The example ARN must start with the IAM resource pattern prefix (minus `*`).
+    expect(exampleAppSecretArn).toMatch(new RegExp(`^${arnPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  });
+
+  test("NEGATIVE: SM resource scope was NOT widened to '*' by the T3 delta", () => {
+    const policies = template.findResources("AWS::IAM::ManagedPolicy");
+    const policyDoc = Object.values(policies)[0].Properties.PolicyDocument as {
+      Statement: Array<{ Action: string | string[]; Resource: string | string[] }>;
+    };
+
+    for (const stmt of policyDoc.Statement) {
+      const resources = Array.isArray(stmt.Resource) ? stmt.Resource : [stmt.Resource];
+      // No statement may have a bare "*" resource.
+      expect(resources).not.toContain("*");
+    }
+  });
+
+  test("NEGATIVE: SM action set was NOT expanded beyond the original 6 actions by T3", () => {
+    const expectedSmActions = new Set([
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:CreateSecret",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:TagResource",
+    ]);
+
+    const policies = template.findResources("AWS::IAM::ManagedPolicy");
+    const policyDoc = Object.values(policies)[0].Properties.PolicyDocument as {
+      Statement: Array<{
+        Sid?: string;
+        Action: string | string[];
+      }>;
+    };
+
+    const smStatement = policyDoc.Statement.find(
+      (stmt) =>
+        stmt.Sid === "BrainSecretsManagerCustody" ||
+        (Array.isArray(stmt.Action)
+          ? stmt.Action.some((a) => a.startsWith("secretsmanager:"))
+          : (stmt.Action as string).startsWith("secretsmanager:"))
+    );
+
+    expect(smStatement).toBeDefined();
+
+    const actions = new Set(
+      Array.isArray(smStatement!.Action)
+        ? smStatement!.Action
+        : [smStatement!.Action]
+    );
+
+    // Exact equality — T3 must not have added new SM actions.
+    expect(actions).toEqual(expectedSmActions);
   });
 });
 

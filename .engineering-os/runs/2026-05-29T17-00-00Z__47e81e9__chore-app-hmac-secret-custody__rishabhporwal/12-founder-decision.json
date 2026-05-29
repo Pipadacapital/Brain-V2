@@ -1,0 +1,45 @@
+{
+  "req_id": "chore-app-hmac-secret-custody",
+  "stage": 7,
+  "decision": "APPROVE",
+  "decided_by": "rishabhporwal (Founder) via Rohan standing delegation",
+  "delegation_basis": "feedback_founder_delegates_to_cto_advisor — Founder delegated the Stage-7 gate to Rohan (CTO Advisor) to sign on the Founder's behalf for end-to-end EOS pipeline runs. No-commit-without-Founder rule + held live-provisioning remain in force.",
+  "ts": "2026-05-29T18:45:00Z",
+  "feature_class": "high-stakes",
+  "paradigm": "sql",
+  "monthly_cost_inr": 0,
+  "parent": "feat-credential-custody-aws-sm",
+  "cf_ref": "CF-CC-SHOPIFY-HMAC-1",
+  "final_review_artifact": "11-final-review.md",
+  "verdict_basis": {
+    "cfs_met": "11/11",
+    "open_critical": 0,
+    "open_high": 0,
+    "s4_findings": 0,
+    "s5_findings": 0,
+    "s6_findings": 0,
+    "rohan_remutation": "Both CRITICAL gates re-mutated on disk by Rohan: #1 compare_digest->== RED/revert-byte-identical/GREEN; #2 not-found-raise->return\"\" RED(4 fails)/revert-byte-identical/GREEN. Non-vacuous.",
+    "gates_spot_rerun": "5 of Tanvi's gates replicated with captured output (2 mutations + full Python 263p/14s + CDK 35p + shpss_ grep 0)",
+    "hard_rule_deviation_scan": "clean — no dependency/single-primitive/compliance/paradigm/gate-skip deviation; delegated auto-approve permitted",
+    "over_engineering_audit": "PASS — no files/deps/abstractions/comments beyond plan"
+  },
+  "next_stage": 8,
+  "next_agent": "platform-devops",
+  "stage8_status": "HELD behind named live-provisioning ceremony (Founder/Jatin at console)",
+  "held_for_stage8": [
+    "Real Secrets Manager provisioning of brain/_app/shopify/hmac_secret + app CMK association",
+    "Put + ROTATE the live shpss_... value (compromised-by-exposure at apps/api-gateway/.env:27)",
+    "IAM role attachment to ingestion-service task role (policy already scoped; brain/* prefix-covers brain/_app/*; no widening)",
+    "Inbound-webhook INGRESS ROUTE — separate feature connector-webhook-intake (this slice leaves the seam only; its Stage-4 re-checks traceability N1 + seam contract)",
+    "botocore/urllib3 OFF-DEBUG in live ingestion-service (operational precondition; in-code suppression is belt-and-suspenders)",
+    "Festival-safe window for the live rotation"
+  ],
+  "named_follow_on": "chore-ts-oauth-app-secret-custody — move C1/C2 TS OAuth off requireEnv to a TS app-secret reader against the SAME brain/_app/shopify/hmac_secret key; bound in plan §3 ruling; mechanical extension, not a rework.",
+  "commit_authorization": "NOT YET. Reviewed code staged; awaiting Founder free-text 'commit it'. See pending-founder-commit.md for the mechanical commit command (explicit product-code paths, no git add -A).",
+  "guardrails": {
+    "no_commit_without_founder": true,
+    "no_cdk_deploy_without_founder": true,
+    "no_live_secret_provisioning_in_build": true,
+    "legacy_reference_only": true
+  }
+}

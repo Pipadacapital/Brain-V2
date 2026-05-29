@@ -5,6 +5,20 @@
 
 ---
 
+## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `chore-app-hmac-secret-custody`
+
+**Rohan's verdict: PASS → APPROVE.** Signed the Founder gate on your behalf under standing delegation (hard-rule deviation scan clean). Closes the plaintext-secret posture on the **Shopify inbound-webhook HMAC verifier (C3, Python)**: an app-level singleton secret provider (`AppSecretsManagerProvider` + factory + dev/held fallbacks) feeds the **unchanged** `verify_shopify_hmac()` — fail-closed on unretrievable, ap-south-1 residency-asserted, ids-only never-log with botocore-DEBUG suppression, boot/cached (≤1 SM call). CDK adds the representative `brain/_app/shopify/hmac_secret` (CMK-encrypted, RETAIN, authored-NOT-deployed, IAM not widened). `@paradigm sql`, **₹0/mo**. 11/11 CFs MET; 0 CRITICAL/HIGH at S4/S5/S6; over-engineering audit PASS. Run folder: `.engineering-os/runs/2026-05-29T17-00-00Z__47e81e9__chore-app-hmac-secret-custody__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
+
+**Re-mutation (run by me on disk — moto, no real AWS, NOT deferred):** the two CRITICAL gate tests were authored by the orchestrator after a transient builder API-500, so I gave them special scrutiny. #1 `compare_digest`→`==` → RED / byte-identical revert / GREEN. #2 not-found `raise`→`return ""` (fall-open) → RED across **4 tests** (the mutation test + 3 corroborating behavioral assertions on different code paths) / byte-identical revert / 37 GREEN. **Both gates genuinely non-vacuous.** Also replicated Tanvi's full suites (263p/14s Python, 35p CDK, `shpss_` grep 0).
+
+**Two Founder asks:**
+1. **Commit it** — say "commit it" to commit the reviewed code to a fresh `feat/chore-app-hmac-secret-custody` branch off `development`. Mechanical command (5 product files only, no `git add -A`) in `…/pending-founder-commit.md`. Committing the code is NOT the live provisioning. `apps/api-gateway/.env` is deliberately left untouched.
+2. **Note the named follow-on** — `chore-ts-oauth-app-secret-custody` moves the TS OAuth path (C1/C2) off `requireEnv` to the SAME key; bound, not built, mechanical when scheduled.
+
+**What stays HELD for Stage 8 (Founder/Jatin-at-console — none delegable, none auto-advanced):** real SM provisioning of `brain/_app/shopify/hmac_secret` + CMK association · put + **rotate** the live `shpss_…` value (compromised-by-exposure at `apps/api-gateway/.env:27`) · IAM role attach to the ingestion-service task role (policy already scoped — `brain/*` prefix-covers `brain/_app/*`, no widening) · the inbound-webhook **INGRESS ROUTE** (a separate `connector-webhook-intake` feature — this slice leaves the seam only) · **botocore/urllib3 OFF-DEBUG** in the live service · **festival-safe window** for the rotation.
+
+---
+
 ## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `feat-credential-custody-aws-sm`
 
 **Rohan's verdict: PASS → APPROVE.** Signed the Founder gate on your behalf under standing delegation (hard-rule deviation scan clean). Real boto3 AWS Secrets Manager custody (Option A) is built: fail-closed factory, lazy client, ap-south-1 residency, least-priv IAM in CDK (authored-NOT-deployed), 7-day-recovery seal, ids-only never-log. 226 Python tests + 22 CDK assertions + cdk synth clean. `@paradigm sql`, **₹0/mo recurring** (HELD live cost ~$0.40/secret/mo + ~$1/mo KMS CMK — awareness only). Over-engineering audit PASS. Run folder: `.engineering-os/runs/2026-05-29T16-00-00Z__cc1a2b__feat-credential-custody-aws-sm__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
@@ -305,3 +319,24 @@ Shiprocket last). This build only makes the first of those three legs real.
 **Separately tracked (Rohan ruling, not built here):** the app-level Shopify HMAC secret
 (`SHOPIFY_CLIENT_SECRET`) needs its own non-workspace-scoped custody line (TS webhook consumer) —
 `CF-CC-SHOPIFY-HMAC-1`, recommended as a small follow-up requirement under WS-1.
+
+---
+
+## 2026-05-29T17:05:00Z — NON-BLOCKING readiness item (chore-app-hmac-secret-custody, Stage 1)
+
+**Filed by:** Rohan (CTO Advisor). **Severity:** medium. **Does NOT block** Stage 2/build.
+
+**Item — exposed Shopify HMAC secret should be rotated at the Stage-8 cutover ceremony.**
+The live Shopify Partner-app secret value (`shpss_…`) currently sits in plaintext in
+`apps/api-gateway/.env:27`. It is git-ignored (dev-only) but it HAS been observed in tooling
+output / grounding during this intake, so treat it as **compromised-by-exposure**.
+
+At the Stage-8 console ceremony for this feature (alongside the parent
+`feat-credential-custody-aws-sm` AWS provisioning), please:
+1. Set a NEW app secret in the Shopify Partner dashboard.
+2. `put-secret-value` the new value into AWS Secrets Manager `brain/_app/shopify/hmac_secret` (ap-south-1).
+3. Confirm the boot-time cache refresh picks it up.
+
+Rotation for this key is a documented MANUAL two-place ceremony (Shopify dashboard + custody) —
+Secrets Manager auto-rotation is FORBIDDEN for it (SM cannot update Shopify's dashboard → would
+break every signature). No action needed now; line this up ahead of cutover.

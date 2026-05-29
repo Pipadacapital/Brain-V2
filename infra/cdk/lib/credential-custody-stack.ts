@@ -69,6 +69,31 @@ export class CredentialCustodyStack extends cdk.Stack {
   public readonly representativeBrainSecret: secretsmanager.Secret;
 
   /**
+   * Representative app-level singleton secret for the Shopify Partner-app HMAC secret.
+   *
+   * CF-HMAC-RESIDENCY-1 + CF-CC-IAM-LEASTPRIV-1 (IAM-NOT-WIDENED NOTE):
+   *   The existing IAM policy resource `arn:aws:secretsmanager:ap-south-1:*:secret:brain/*`
+   *   (see `BrainSecretsManagerCustody` statement) ALREADY covers `brain/_app/*` by prefix.
+   *   `_app/` is a sub-prefix of `brain/`, so NO IAM action-set widening and NO new IAM
+   *   statement or resource are required for this secret. The enumerated SECRETSMANAGER_ACTIONS
+   *   and KMS_ACTIONS arrays above remain unchanged (CF-CC-IAM-LEASTPRIV-1).
+   *
+   * Secret path: `brain/_app/shopify/hmac_secret`
+   *   The `_app/` segment is the explicit "no-workspace, app-level" namespace — deliberately
+   *   distinct from `brain/{workspace_id}/{vendor}/credential` (per-workspace shape, which this
+   *   secret MUST NOT use — custody.py:26–31 forbids folding).
+   *
+   * No real SecretString is provisioned here. Real provisioning + value injection are
+   * HELD for the Stage-8 Founder/Jatin-at-console ceremony (CF-CC-NO-LIVE-1).
+   * Auto-rotation FORBIDDEN on this key (CF-HMAC-ROTATION-MANUAL-1): rotation is a manual
+   * two-place ceremony (Shopify Partner dashboard → SM put-secret-value → provider refresh()).
+   *
+   * encryptionKey: the existing CredentialCustodyCmk (NOT the default aws/secretsmanager key).
+   * removalPolicy: RETAIN — never auto-delete.
+   */
+  public readonly appShopifyHmacSecret: secretsmanager.Secret;
+
+  /**
    * The least-privilege managed policy for the ingestion-service IAM role that
    * runs the AwsSecretsManagerCustody client.
    * Scoped to secret:brain/* + the CMK ARN only. No "*" resource.
@@ -141,6 +166,42 @@ export class CredentialCustodyStack extends cdk.Stack {
         description:
           "IaC posture sentinel — establishes CMK-encrypted brain/* secret convention. " +
           "No real credential value. Stage-8 ceremony provisions actual secrets. (CF-CC-NO-LIVE-1)",
+        encryptionKey: this.credentialCmk,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
+      }
+    );
+
+    // -------------------------------------------------------------------------
+    // 2b. App-level singleton secret — brain/_app/shopify/hmac_secret
+    //     (Track T3 — chore-app-hmac-secret-custody, CF-HMAC-RESIDENCY-1)
+    //
+    // This is the representative CDK resource for the Shopify Partner-app HMAC
+    // singleton secret. It shares the existing CMK (above) and the existing IAM
+    // policy (below) — NO new key, NO IAM widening.
+    //
+    // IAM-NOT-WIDENED PROOF (CF-CC-IAM-LEASTPRIV-1):
+    //   The `BrainSecretsManagerCustody` statement resource is already:
+    //     arn:aws:secretsmanager:ap-south-1:*:secret:brain/*
+    //   `brain/_app/shopify/hmac_secret` matches this ARN pattern because
+    //   `_app/shopify/hmac_secret` is a suffix of `brain/` (the `brain/*` glob
+    //   covers any name under the brain/ prefix, including `_app/` sub-paths).
+    //   The SECRETSMANAGER_ACTIONS and KMS_ACTIONS arrays are UNCHANGED.
+    //   No new IAM statement, no new resource entry, no action-set widening.
+    //
+    // Auto-rotation FORBIDDEN (CF-HMAC-ROTATION-MANUAL-1): manual two-place
+    // ceremony only (Shopify Partner dashboard → SM put-secret-value → provider
+    // refresh()). The CDK Secret construct does not configure a rotation schedule.
+    // -------------------------------------------------------------------------
+    this.appShopifyHmacSecret = new secretsmanager.Secret(
+      this,
+      "AppShopifyHmacSecret",
+      {
+        secretName: `${SECRET_NAME_PREFIX}_app/shopify/hmac_secret`,
+        description:
+          "App-level singleton Shopify Partner HMAC secret (brain/_app/shopify/hmac_secret). " +
+          "CMK-encrypted, ap-south-1. No real value — Stage-8 ceremony provisions the actual shpss_… value. " +
+          "CF-HMAC-RESIDENCY-1 + CF-CC-NO-LIVE-1. " +
+          "Auto-rotation FORBIDDEN (CF-HMAC-ROTATION-MANUAL-1): manual ceremony only.",
         encryptionKey: this.credentialCmk,
         removalPolicy: cdk.RemovalPolicy.RETAIN,
       }
@@ -229,6 +290,14 @@ export class CredentialCustodyStack extends cdk.Stack {
       description:
         "Least-privilege Secrets Manager + KMS policy ARN for the ingestion-service role. CF-CC-IAM-LEASTPRIV-1.",
       exportName: "brain-ingestion-custody-policy-arn",
+    });
+
+    new cdk.CfnOutput(this, "AppShopifyHmacSecretArn", {
+      value: this.appShopifyHmacSecret.secretArn,
+      description:
+        "App-level singleton Shopify HMAC secret ARN (brain/_app/shopify/hmac_secret). " +
+        "Provisioned in Stage-8 ceremony. CF-HMAC-RESIDENCY-1.",
+      exportName: "brain-app-shopify-hmac-secret-arn",
     });
   }
 }
