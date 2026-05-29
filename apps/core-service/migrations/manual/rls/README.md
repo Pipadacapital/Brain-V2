@@ -68,3 +68,61 @@ the Track T test suite:
 
 - `app.workspace_id` — set per-tx to the workspace UUID by `withWorkspace()`
 - `app.is_superadmin` — set to `'true'` by `withSuperadmin()`; `'false'` by `withWorkspace()`
+
+---
+
+## Path-C bypass + audit (feat-tenancy-rls-live-cutover, Stage 3)
+
+This section covers the files added and the binding constraints introduced by the
+`feat-tenancy-rls-live-cutover` slice (Path C ratified by Founder 2026-05-26T16:00:00Z,
+CF-CUT-PATH-1). The 44-table DDL above is **unchanged**; these files are additive.
+
+### New files
+
+| File | What it does | When to run |
+|------|-------------|-------------|
+| `step-c-bypass-audit.sql` | CREATE `bypass_query_log` table + 3 indexes + RLS enable + `ws_isolation` policy + `superadmin_system_rows` policy | Runbook STEP 3.5 — after STEP 3 ENABLE+CREATE, before STEP 4 CF-SEC-1 probe |
+| `down-bypass-audit.sql` | DROP policies + DROP TABLE IF EXISTS `bypass_query_log` (idempotent; run BEFORE bypass-revoke per ordering below) | Rollback step 2 — AFTER `down.sql`, BEFORE `ALTER ROLE … NOBYPASSRLS` |
+| `scripts/parse-pg-log-to-bypass-audit.sh` | Parses `postgresql.log` mod-statement lines; best-effort regex-extracts `workspace_id`; INSERTs into `bypass_query_log` | Run one-shot or cron'd post-cutover |
+| `scripts/post-flip-second-brand-grep.sh` | CF-SEC-3.HARD second-brand tripwire — exit non-zero if non-Sugandh-Lok workspace_id appears in last N minutes | Run at STEP 6 and on demand |
+
+### Path-C ROLLBACK ordering (CF-CUT-ROLLBACK-ATOMIC-1 — BINDING)
+
+The rollback order MUST be:
+
+```
+R1  psql "$DIRECT_URL" --file down.sql              # drops all 44-table policies + NO FORCE
+R2  psql "$DIRECT_URL" --file down-bypass-audit.sql # drops bypass_query_log policies + DROP TABLE
+R3  psql "$DIRECT_URL" -c "ALTER ROLE \"$LEGACY_ROLNAME\" NOBYPASSRLS"  # revoke bypass LAST
+R4  Brain Decision-Log "rls.rollback" INSERT under app.is_superadmin=true
+```
+
+**Why this order matters (G3 kill-test evidence):**
+
+If bypass is revoked (R3) BEFORE the FORCE is removed (R1), the legacy
+`postgres.<tenant>` role loses its BYPASSRLS while FORCE ROW LEVEL SECURITY is
+still on. With no `app.workspace_id` GUC set (legacy app sets none), every query
+on a FORCE'd table returns 0 rows — a silent data outage until R1 runs. The
+staging-clone G3.kill capture (`staging-rehearsal/rollback-wrong-order-kill.txt`)
+proves this window is real. Target wall-clock for R1→R2→R3 in the correct order:
+≤ 60s (bound by the staging-rehearsal timing capture in `rollback-timing.txt`).
+
+### Hold states added by this slice
+
+- **HOLD-AT-BYPASS-REVOKE** (NEW): bypass revoke ceremony is a SEPARATE Stage-8
+  slice (Path B legacy retirement). Do NOT run `ALTER ROLE … NOBYPASSRLS` until
+  the legacy Express app is permanently off LB and decommissioned.
+- **HOLD-AT-STEP-5** (NEW): the DPDP §7 addendum (`06b-dpdp-section7-addendum-draft.md`)
+  must be signed by Founder BEFORE Stage-8 STEP 5 executes.
+
+### Exit ceremony (Path-B completion — separate Stage-8 slice)
+
+When the legacy app is retired:
+
+```
+E1  Confirm legacy Express permanently off LB (decommissioned)
+E2  psql "$DIRECT_URL" -c "ALTER ROLE \"$LEGACY_ROLNAME\" NOBYPASSRLS"
+E3  Brain Decision-Log "bypass.revoke.path-b-completion" INSERT
+E4  Re-run CF-SEC-1 probe via rls_app → confirm still GREEN
+E5  psql "$DIRECT_URL" --file down-bypass-audit.sql  (drops bypass_query_log)
+```
