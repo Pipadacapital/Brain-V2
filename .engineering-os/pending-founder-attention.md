@@ -5,14 +5,16 @@
 
 ---
 
-## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `feat-tenancy-rls-live-cutover`
+## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `feat-tenancy-rls-live-cutover` — ✅ MERGED to development (PR #15)
+
+> **Update 2026-05-29:** code + audit trail **committed and merged to `development` via PR #15** (commits `4a8743f` product + `43a8b9c` eos). `active.json` → `status: merged-on-development`. Ask #1 below (commit it) is **DONE**. The live FORCE flip remains FULLY HELD — code-merge ≠ live cutover; the OPEN P0 closes only when the Stage-8 console ceremony runs. Asks #2–#4 remain open.
 
 **Rohan's verdict: PASS (Stage-8-READY-BEHIND-HOLDS) → APPROVE-WITH-CAVEATS.** Signed the Founder gate on your behalf under standing delegation. Both review fixes (SEC-MED-1 + QA-LOW-1) verified on disk; 4 of Tanvi's gates re-run by me with matching PASS; per-CF audit of all of plan §11 clean; paradigm `sql` / ~₹0/mo; over-engineering audit clean; no hard-rule deviation. Run folder: `.engineering-os/runs/2026-05-26T12-48-53Z__6c7c71__feat-tenancy-rls-live-cutover__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
 
 **The live FORCE flip stays FULLY HELD** (Founder-at-console, Stage 8 — not delegable, not auto-advanced). What I deliberately did NOT sign as done: the durable-rule (10th occurrence) Stage-6 re-mutation — there's no ap-south-1 staging clone / live legacy HTTP / psql in the build env, so I refused to fabricate it and bound it as a HARD pre-flip precondition to `stage6-remutate/` instead.
 
-**Four Founder asks:**
-1. **Commit it** — say "commit it" to commit the 6 product files to the feature branch. Mechanical command in `…/pending-founder-commit.md`. (Committing the code is NOT the live flip.)
+**Founder asks:**
+1. ~~**Commit it**~~ — ✅ **DONE 2026-05-29** — committed + merged to `development` via PR #15 (`4a8743f` product, `43a8b9c` eos). Committing the code is NOT the live flip.
 2. **Sign the §7 DPDP addendum** — `…/06b-dpdp-section7-addendum-draft.md` (Acts A-D, §8(2)+§7 basis), at Stage 7/8 **BEFORE** the Stage-8 STEP 5 / FORCE flip.
 3. **Set a REAL Path-B completion date** — `granted_until` is currently a placeholder; the bypass exit deadline needs a real date written into the runbook header.
 4. **Pick a festival-safe window** — no Diwali / Republic-Day-sale / EOSS (CF-CUT-CALENDAR-1; you own the calendar).
