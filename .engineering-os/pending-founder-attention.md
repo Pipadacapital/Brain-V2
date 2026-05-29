@@ -5,6 +5,22 @@
 
 ---
 
+## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `feat-tenancy-rls-live-cutover`
+
+**Rohan's verdict: PASS (Stage-8-READY-BEHIND-HOLDS) → APPROVE-WITH-CAVEATS.** Signed the Founder gate on your behalf under standing delegation. Both review fixes (SEC-MED-1 + QA-LOW-1) verified on disk; 4 of Tanvi's gates re-run by me with matching PASS; per-CF audit of all of plan §11 clean; paradigm `sql` / ~₹0/mo; over-engineering audit clean; no hard-rule deviation. Run folder: `.engineering-os/runs/2026-05-26T12-48-53Z__6c7c71__feat-tenancy-rls-live-cutover__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
+
+**The live FORCE flip stays FULLY HELD** (Founder-at-console, Stage 8 — not delegable, not auto-advanced). What I deliberately did NOT sign as done: the durable-rule (10th occurrence) Stage-6 re-mutation — there's no ap-south-1 staging clone / live legacy HTTP / psql in the build env, so I refused to fabricate it and bound it as a HARD pre-flip precondition to `stage6-remutate/` instead.
+
+**Four Founder asks:**
+1. **Commit it** — say "commit it" to commit the 6 product files to the feature branch. Mechanical command in `…/pending-founder-commit.md`. (Committing the code is NOT the live flip.)
+2. **Sign the §7 DPDP addendum** — `…/06b-dpdp-section7-addendum-draft.md` (Acts A-D, §8(2)+§7 basis), at Stage 7/8 **BEFORE** the Stage-8 STEP 5 / FORCE flip.
+3. **Set a REAL Path-B completion date** — `granted_until` is currently a placeholder; the bypass exit deadline needs a real date written into the runbook header.
+4. **Pick a festival-safe window** — no Diwali / Republic-Day-sale / EOSS (CF-CUT-CALENDAR-1; you own the calendar).
+
+**What stays HELD for Stage 8:** HOLD-AT-FORCE · HOLD-AT-STEP-5 (§7 signature) · HOLD-AT-BYPASS-REVOKE (Path B) · HOLD-AT-RE-MUTATION (my `stage6-remutate/` captures, non-waivable) · DEFERRED-STAGING-REHEARSAL (11 deferred captures run live on the provisioned ap-south-1 clone).
+
+---
+
 ## 🧹 Hygiene Sweep — 2026-05-26 (claude-code) — current state at a glance
 
 The historical bullets below are preserved as audit trail. This sweep reconciles them against actual git state on `origin/development` so readers don't re-act on already-resolved items.

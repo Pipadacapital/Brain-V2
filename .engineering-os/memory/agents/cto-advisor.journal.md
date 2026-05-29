@@ -678,3 +678,13 @@
 **Skills loaded (same as intake).**
 **Open questions:** none on the synthesis side; CF-CUT-PATH-1 awaits Founder.
 **Next:** Aryan picks up Stage 2 on default Path C; amends if Founder rules A2. Intake artifacts on branch `chore/intake-feat-tenancy-rls-live-cutover` (off origin/development); the live-cutover work itself ships on its own feature branch when Stage 2 begins.
+
+## 2026-05-29T14:00:00Z — Rohan (cto-advisor) — feat-tenancy-rls-live-cutover
+**Stage:** 6 (final review + delegated Founder gate)
+**Action:** FINAL REVIEW PASS (Stage-8-READY-BEHIND-HOLDS). Signed delegated Founder gate APPROVE-WITH-CAVEATS. Per-CF audit of all of plan §11 = every CF satisfied / honestly-deferred-with-gate / held-for-ceremony; no silent gap. Verified both review fixes on disk (SEC-MED-1 + QA-LOW-1). Spot-re-ran 4 of Tanvi's gates myself — all reproduce her PASS.
+**Re-mutation decision (durable-rule 10th occurrence):** (b) BIND as HARD pre-flip precondition; refused to fabricate against a non-staging-clone env; re-mutated SHAPES locally; bound live re-mutation to stage6-remutate/. The rule-faithful action at Stage 6 for a live-cutover slice was to NOT sign it done.
+**Decision:** APPROVE-WITH-CAVEATS (commit code to feature branch; live FORCE flip HELD Founder-at-console).
+**Rationale:** Clean build, both reviews PASS, paradigm sql / ₹0, over-engineering audit clean, no §9 hard-rule deviation. The one irreversible (FORCE flip) + the un-rehearsable verification leg stay HELD behind 5 named preconditions — the right "merge code, HOLD irreversibles" posture.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion.
+**Open questions:** Path-B has no real date yet (placeholder granted_until) — surfaced as a Founder ask.
+**Next:** Founder — commit-it + sign §7 addendum at Stage 7/8 + set Path-B date + pick festival-safe window. Live flip at Stage-8 console only.

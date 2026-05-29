@@ -1,0 +1,19 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.4 (AC5) — G1 kill-test: drop FORCE on marketing_actions → probe RED
+Reason: Requires ap-south-1 staging clone with FORCE applied.
+
+Command to run at Stage-7/8 rehearsal (K1.kill):
+  # 1. After STEP 5 (FORCE applied), drop FORCE on ONE table:
+  psql "$DIRECT_URL" -c "ALTER TABLE marketing_actions NO FORCE ROW LEVEL SECURITY;"
+
+  # 2. Run probe as rls_app:
+  DIRECT_URL="postgres://rls_app:<pwd>@<host>:5432/postgres" \
+  ALPHA_WORKSPACE_ID="..." BETA_WORKSPACE_ID="..." \
+  node -e "..." > staging-rehearsal/cf-sec-1-kill.txt 2>&1
+
+  # 3. Restore FORCE:
+  psql "$DIRECT_URL" -c "ALTER TABLE marketing_actions FORCE ROW LEVEL SECURITY;"
+
+Expected: overallVerdict=RED, crossWorkspace>=1 OR contextless>=1 for marketing_actions
+Proves: the G1 probe is NOT vacuous — it goes RED when FORCE is absent.

@@ -1,0 +1,19 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.7 (AC5) — G2 kill-test: FORCE without bypass → smoke RED
+Reason: Requires live legacy HTTP endpoint + ap-south-1 staging clone.
+
+Command to run at Stage-7/8 rehearsal (K2.kill):
+  # 1. Apply FORCE (step-b-force.sql) WITHOUT running STEP 3.5 (no bypass granted):
+  psql "$DIRECT_URL" --file step-b-force.sql
+
+  # 2. Run legacy HTTP smoke (should return HTTP 500 or empty rows):
+  curl -is "$LEGACY_BASE_URL$STEP5_ENDPOINT" \
+    -H "Cookie: $LIVE_SUGANDH_LOK_SESSION" \
+    > staging-rehearsal/step5-kill.txt
+
+  # 3. Rollback FORCE:
+  psql "$DIRECT_URL" --file down.sql
+
+Expected: HTTP 500 OR HTTP 200 with 0/empty rows (legacy app has no workspace_id context).
+Proves: STEP 5 smoke is sensitive to bypass; the G2 gate is NOT vacuous.

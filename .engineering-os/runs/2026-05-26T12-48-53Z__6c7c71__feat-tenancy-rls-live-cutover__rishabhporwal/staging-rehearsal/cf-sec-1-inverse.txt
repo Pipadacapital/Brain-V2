@@ -1,0 +1,14 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.5 (AC6) — G1 inverse-mutant: run probe as bypass role → silently GREEN
+Reason: Requires ap-south-1 staging clone.
+
+Command to run at Stage-7/8 rehearsal (K1.inverse):
+  # Run probe as postgres.<tenant> (bypass role) — NOT as rls_app
+  DIRECT_URL="postgres://postgres.<tenant>:<pwd>@<host>:5432/postgres" \
+  ALPHA_WORKSPACE_ID="..." BETA_WORKSPACE_ID="..." \
+  node -e "..." > staging-rehearsal/cf-sec-1-inverse.txt 2>&1
+
+Expected: overallVerdict=GREEN even with cross-workspace rows present.
+Proves: the probe running as the bypass role is VACUOUS — it always returns GREEN
+        regardless of isolation state. This is WHY STEP 4 specifies rls_app explicitly.

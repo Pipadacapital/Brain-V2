@@ -1,0 +1,12 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.6b (AC4) — STEP 5 post-FORCE legacy HTTP smoke snapshot
+Reason: Same as step5-pre.txt — requires live legacy HTTP endpoint.
+
+Command to run at Stage-7/8 rehearsal (immediately after FORCE in STEP 5):
+  curl -is "$LEGACY_BASE_URL$STEP5_ENDPOINT" \
+    -H "Cookie: $LIVE_SUGANDH_LOK_SESSION" \
+    > staging-rehearsal/step5-green.txt
+
+Expected: HTTP 200 with identical order count to step5-pre.txt snapshot.
+          count divergence → G2 RED → immediate rollback.

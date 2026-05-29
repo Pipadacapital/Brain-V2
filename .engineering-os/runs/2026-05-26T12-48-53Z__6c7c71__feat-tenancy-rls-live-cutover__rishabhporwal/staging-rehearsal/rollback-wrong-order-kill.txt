@@ -1,0 +1,24 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.10 (AC5) — G3 kill-test: wrong rollback order → 0-row outage window
+Reason: Requires ap-south-1 staging clone with FORCE applied + live legacy HTTP endpoint.
+
+Command to run at Stage-7/8 rehearsal (K3.kill):
+  # WRONG ORDER (intentional for kill-test only — do NOT use in production):
+  # X1 — revoke bypass FIRST (FORCE still on → 0-row window begins)
+  psql "$DIRECT_URL" -c "ALTER ROLE \"$LEGACY_ROLNAME\" NOBYPASSRLS"
+
+  # Capture smoke DURING outage window (expect 0 rows or HTTP 500):
+  curl -is "$LEGACY_BASE_URL$STEP5_ENDPOINT" \
+    -H "Cookie: $LIVE_SUGANDH_LOK_SESSION" \
+    > staging-rehearsal/rollback-wrong-order-kill.txt
+
+  # X2 — drop FORCE (outage window closes):
+  psql "$DIRECT_URL" --file down.sql
+
+  # Restore bypass for remaining rehearsal:
+  psql "$DIRECT_URL" -c "ALTER ROLE \"$LEGACY_ROLNAME\" BYPASSRLS"
+
+Expected: HTTP 500 OR HTTP 200 with 0/empty rows during X1→X2 window.
+Proves: rollback ordering (down.sql BEFORE NOBYPASSRLS) is non-trivially required.
+        The right-order test passing without this kill would be vacuous.
