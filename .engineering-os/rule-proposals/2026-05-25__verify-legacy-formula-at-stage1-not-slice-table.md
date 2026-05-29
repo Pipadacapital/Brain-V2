@@ -6,7 +6,7 @@
 | **proposed_by** | `cto-advisor (Rohan)` |
 | **proposed_at** | 2026-05-25T15:20:00Z |
 | **target_scope** | `stage-1-cto-advisor` + `stage-2-architect` (all `epic-phase2-feature-parity` slices; any feature ported from legacy) |
-| **status** | proposed |
+| **status** | ADOPTED 2026-05-29 → `.engineering-os/durable-rules/2026-05-29__verify-legacy-formula-at-stage1-not-slice-table.md` |
 
 ---
 
@@ -41,4 +41,4 @@ Three consecutive Phase-2 slices found the ratified slice-table shorthand to be 
 
 ## Disposition
 
-DO NOT self-adopt. Founder: review with `/brain-engineering-os:adopt-rule .engineering-os/rule-proposals/2026-05-25__verify-legacy-formula-at-stage1-not-slice-table.md` or `/reject-rule … <reason>`.
+**ADOPTED 2026-05-29 by Founder (rishabhporwal).** ≥6 occurrences (Phase-2 slices 2-7) — bit every analytics slice with a slice-table shorthand; caught real margin-metric landmines. Promoted to `.engineering-os/durable-rules/2026-05-29__verify-legacy-formula-at-stage1-not-slice-table.md`. Decision-log: `.engineering-os/decision-log/2026/05/2026-05-29.jsonl` (type `rule-adoption`).
