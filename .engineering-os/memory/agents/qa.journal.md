@@ -336,3 +336,34 @@ Full acceptance contract: 14/14 PASS. Traceability chain complete (01→02→02b
 - CDK 22/22 + cdk synth: PASS. IAM least-priv exact sets confirmed. No "*/wildcard. Region guard fires on us-east-1.
 - Legacy guard: 0 changes to `legacy project/`.
 - Flakiness: 0 (3 runs identical: 56 passed in 0.45-0.46s).
+
+## 2026-05-29T20:30:00Z — Tanvi (qa-agent) — connector-webhook-intake
+**Stage:** 5 · **Mode:** FULL · **Verdict:** BOUNCE
+**Smoke:** HELD-Stage-8 (route not registered, gRPC 127.0.0.1, no live Shopify endpoint — explicitly documented, not silently waived) · **Parity:** N/A (sql+io paradigm, zero metric formula added) · **Validity:** Mutation 1 negative-control confirmed (9 RED kills). Mutation 3 negative-control FAILED — mutation survives (0 failures when applied on disk). Belt-and-suspenders `if secret is None` guard absorbs fall-through, making kill test vacuous. · **Next:** Maya fixes `except Exception` block + belt-guard in webhook_servicer.py + mutation-3 kill tests. Delta re-review scoped to that change only.
+
+### Captured evidence
+- `vitest run route.webhook.test.ts`: 42/42 PASS (fresh run this session)
+- `tsc --noEmit`: exit 0 (fresh run this session)
+- `pytest tests/ -q`: 329 passed, 14 skipped (fresh run this session)
+- `buf build protos`: exit 0 (fresh run this session)
+- Mutation 1 on disk (always-True verify): 9 FAIL — RED confirmed — reverted
+- Mutation 3 on disk (except Exception → pass): 0 FAIL — GREEN — vacuous — reverted
+- NO-HARDCODED-VENDOR-1 live grep: 0 dispatch-path violations (only docstrings matched)
+- Per-CF: 17/18 PASS, 1 BOUNCE (VERIFY-THE-VERIFIER-1 mutation 3)
+
+### Bounce: BOUNCE-1
+webhook_servicer.py:239-263 — `except Exception: pass` mutation survives because `if secret is None` guard REJECTs anyway. Kill test vacuous. Bounce to Maya.
+
+## 2026-05-29T22:00:00Z — Tanvi (qa-agent) — connector-webhook-intake
+**Stage:** 5 · **Mode:** DELTA (BOUNCE-1 fix re-review) · **Verdict:** PASS
+**Smoke:** HELD-Stage-8 (unchanged — route not registered, gRPC 127.0.0.1, no live endpoint; explicitly documented) · **Parity:** N/A (sql+io paradigm, no metric formula) · **Validity:** Mutation 3 negative-control confirmed RED (2 failures, UnboundLocalError — captured fresh this session). All 5 mutations confirmed RED (personally applied + reverted each). · **Next:** Stage 6 — Rohan final review. Note for Rohan: Shreya's VERIFY-FIRST-1 line-ref (belt-guard ~254) no longer exists; posture unchanged; non-blocking note in 10-qa-report.md DELTA section.
+
+### Captured evidence (DELTA scope only)
+- Mutation 3 (except Exception → pass): 2 FAIL (UnboundLocalError) — RED confirmed — reverted clean
+- Mutation 1 (always-True verify): 9 FAIL — RED confirmed — reverted clean
+- Mutation 2 (map before verify): 2 FAIL — RED confirmed — reverted clean
+- Mutation 4 (anchor → body hash, webhook_intake.py): 1 FAIL — RED confirmed — reverted clean
+- Mutation 5 (hardcode Shopify spec): 5 FAIL — RED confirmed — reverted clean
+- Full suite post-reverts: `329 passed, 14 skipped in 0.96s` — fresh run this session
+- Default-deny code inspection: belt-guard absent, secret: str inside try, bare except REJECTs — all confirmed
+- Scope check: CLEAN — Maya touched only webhook_servicer.py + test_webhook_servicer.py (+ EOS trail docs); no gateway creep

@@ -10,6 +10,12 @@ dependencies = [
   "pydantic>=2.12.5",
   "pydantic-settings>=2.13.1",
   "boto3>=1.38.0",
+  # gRPC transport for the internal WebhookIngest service (T2 — Track 2, connector-webhook-intake).
+  # Justified: gRPC is the chosen internal transport (Option C ruling, Aryan §3).
+  # Smaller than Option B (no FastAPI/uvicorn added).
+  # grpcio-health-checking adds the gRPC standard health service for readiness checks.
+  "grpcio>=1.68.0,<2.0.0",
+  "grpcio-health-checking>=1.68.0,<2.0.0",
 ]
 
 [build-system]

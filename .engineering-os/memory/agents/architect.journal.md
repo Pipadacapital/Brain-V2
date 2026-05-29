@@ -215,6 +215,37 @@
 **Open questions for Founder:** NONE blocking. Non-blocking readiness item already on record: rotate the exposed .env shpss_… at the Stage-8 ceremony (compromised-by-exposure).
 **Next:** @maya (backend-developer, ingestion-service Python — T1/T2/T4) + @jatin (platform-devops, CDK — T3) — Stage 3, spawned in PARALLEL.
 
+## 2026-05-29T20:30:00Z — Aryan (architect) — connector-webhook-intake
+**Stage:** 2
+**Action:** Produced binding architecture plan (06-architecture-plan.md). Bound Option C + the 15-CF contract.
+**Paradigm:** sql (+ io/event-handling) — crypto HMAC verify + idempotent UPSERT + Kafka produce; zero inference, ₹0; confirms Rohan's Stage-1 first-pass unchanged.
+**THE CRUX CALL — transport = gRPC.** Verified on disk: ingestion-service is a PURE Kafka worker (deps psycopg/aiokafka/httpx/pydantic/boto3 only — NO FastAPI/uvicorn/grpcio, NO inbound server, NO entrypoint yet). Gateway already has @grpc/grpc-js + @grpc/proto-loader + a buf codegen pipeline (bufbuild/es v2.4.0, betterproto v1.2.5 — verified, not invented). Ruled: new proto brain.ingestion.v1.WebhookIngest/ReceiveShopifyWebhook with `bytes raw_body` (FIDELITY anchor, no JSON round-trip) over a grpc.aio server bound INTERNAL-only (NOT Option B's public FastAPI). In-process impossible (Node↔Python). Non-public HTTP rejected: same server weight, but contract-less vs canon service↔service=gRPC.
+**Forward-fidelity proof approach:** gateway route `parseAs: 'buffer'` (no parse) → proto `bytes` → in-slice smoke asserts HMAC(received-buffer) == HMAC(buffer-handed-to-verify_shopify_hmac) across a REAL grpc.aio channel.
+**Verify-first state machine:** missing/empty hmac header→REJECT; get_shopify_hmac_secret() try whose EVERY except (AppSecretUnavailableError/HeldAppSecretError/Exception)→REJECT via default-deny else; verify False→REJECT. POST-verify ONLY: trust shop-domain → resolve_shop_workspace (new connector_shop_map, system-scoped single-row) → None=PARKED no-write → topic allowlist → unknown=IGNORED → receive_webhook push-intake.
+**Push-intake design:** new receive_webhook() reuses ShopifyAdapter.normalize + SHOPIFY_PII_MANIFEST + check_pii_fields + _upsert_event + _produce_kafka + _set_correlation + assert_workspace_allowed; vendor_event_id = X-Shopify-Webhook-Id (NOT body hash); NO adapter.fetch, NO custody read, NO cursor. Duplicate = ON CONFLICT no-op (replay-noop).
+**Single-Primitive sweep:** clean — ONE verify_shopify_hmac (Python); ingest UPSERT/produce EXTENDED via receive_webhook sibling (no ingest_batch fork, no fake adapter/window). connector_shop_map is vendor-discriminated by string (extensible-schema rule), not a per-vendor table.
+**New deps (justified):** grpcio + grpcio-health-checking (Python) — the chosen transport; explicitly SMALLER than Option B (no FastAPI/uvicorn). Versions resolve-and-pin, not invented.
+**must-fix folded (shift-left):** §17b — 16-row AC↔artifact↔S4/S5/S6 bounce. 2 CRIT = VERIFY-FIRST-1 + MAP-AFTER-VERIFY-1; VERIFY-THE-VERIFIER-1 = 4 mutations (flip verify True; reorder map-before-verify; default-deny→accept; anchor→body-hash) each RED w/ captured output, Rohan re-mutates S6. NEVERLOG-1 (Shreya VETO) + FORWARD-FIDELITY-1 pass-1 build items.
+**Tracks emitted:** T0 proto (@maya, prereq), T1 gateway public receive (@vikram), T2 Python servicer+intake+resolver (@maya), T3 shop-map migration (@maya), T4 infra authored-not-deployed (@jatin Stage-8). No new deploy-pipeline track — ingestion-service + api-gateway are EXISTING deployables; no new service created.
+**Handoff fold:** folded into §17/§17b, NO separate 07 (single narrow slice; CFs pre-enumerated; 07 would duplicate §17). Depth IS prescriptive — lives in §17b.
+**Skills loaded:** architecture-patterns, domain-driven-design, database-design, region-adapter, engineering-discipline, verification-before-completion, india-commerce-economics, cost-routing-paradigms, llm-gateway, agentic-design(N/A), writing-plans.
+**Over-engineering self-check:** PASS 7/7 (every §17 file requirement-mapped; only grpcio+health dep, resolve-and-pin; no speculative abstraction; 4 webhook counters reuse existing mechanism, no new dashboard; tests target the 2 CRIT + fail-open class; HELD ingress/registration/rotation authored-not-deployed; no invented versions).
+**Open questions:** NONE blocking. Non-blocking on record: the A/B/C Founder ratification (Stage-1 escalation) — plan builds on Option C default; amends only on a B override.
+**Next:** @vikram (backend-developer — T0 consume + T1) + @maya (intelligence-engineer — T0/T2/T3) — Stage 3, spawned in PARALLEL (T0 proto is the shared prereq).
+
+## 2026-05-29T20:30:00Z — Aryan (architect) — connector-webhook-intake (GENERALIZATION REVISION)
+**Stage:** 2 (plan amendment — Founder directive override)
+**Action:** Revised 06-architecture-plan.md in place (new §0-GEN; updated §17/§17b) — generalized the Shopify-LOCKED Stage-3 shape to a vendor-dispatched registry per Founder directive (100+ sources, not Shopify). Stage-3 work uncommitted → free reshape, refactor-in-place not rewrite.
+**Paradigm:** sql + io/event-handling (UNCHANGED — registry dispatch adds zero inference; per-vendor verify fns are deterministic constant-time compares).
+**Generic contract:** proto `ReceiveWebhook(string vendor, bytes raw_body, map<string,string> headers, request_id, trace_id)` (rpc renamed from ReceiveShopifyWebhook; vendor is a FIELD); `WEBHOOK_VERIFIERS: dict[vendor→VendorWebhookSpec]` (verify_fn/secret_fn/signature+identity+idempotency+topic headers + topic_allowlist) — servicer dispatches by request.vendor, unknown→REJECT default-deny, NO shopify literal; `connector_shop_map`→`connector_identity_map(vendor, external_identity, workspace_id)` PK(vendor,external_identity); `resolve_shop_workspace`→`resolve_identity_workspace(vendor, external_identity)`; route `/webhooks/shopify`→`/webhooks/:vendor`. Shopify = FIRST registered vendor, not the shape.
+**Vendor #2 = ZERO core change:** new verify_fn + new WEBHOOK_VERIFIERS row + new identity_map row. No proto/servicer/route/client change.
+**CFs:** 15→16 (+VENDOR-REGISTRY-DISPATCH-1 CRIT, +NO-HARDCODED-VENDOR-1 HIGH grep-gate); VERIFY-THE-VERIFIER 4→5 mutations (+#5: hardcode Shopify spec → 2nd-test-vendor matrix RED).
+**Preserved:** verify-first/default-deny, MAP-AFTER-VERIFY, idempotency-anchor (now vendor-declared), push-intake reuse, NEVERLOG, correlation, residency, Single-Primitive (per-vendor verify fns ARE the primitives, registry selects).
+**Tracks emitted:** T-GEN-A @maya (proto+registry+servicer+resolver+identity_map+intake+2nd-token-test-vendor+mutation#5), T-GEN-B @vikram (route/:vendor+client+grep-gate). Live HELD-Stage-8.
+**Single-Primitive sweep:** clean — registry is a selector, not a new primitive; per-vendor verifier fns are the single primitives; verify_shopify_hmac untouched.
+**Skills loaded:** architecture-patterns, domain-driven-design, database-design, region-adapter, engineering-discipline.
+**Open questions:** NONE.
+**Next:** @maya (intelligence-engineer T-GEN-A) + @vikram (backend-developer T-GEN-B) — Stage 3 REFACTOR, PARALLEL.
 ## 2026-05-29T19:10:00Z — Aryan (architect) — chore-ts-oauth-app-secret-custody
 **Stage:** 2
 **Action:** Produced binding architecture plan (06-architecture-plan.md). Handoff FOLDED into §17/§17b (small).

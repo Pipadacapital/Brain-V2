@@ -1,0 +1,133 @@
+// WebhookIngest — internal gRPC service for vendor-agnostic webhook intake.
+//
+// @paradigm: sql + io/event-handling (no ML, no LLM)
+//
+// INTERNAL-ONLY service (brain.ingestion.v1).
+//   - Reachable ONLY from the api-gateway over the internal pod network.
+//   - MUST NOT be exposed via any public ingress (PLACEMENT-1 / TRANSPORT-1).
+//   - The api-gateway is the public choke point; this service is a backend sink.
+//
+// CF contract:
+//   VERIFY-FIRST-1 (CRIT)              — Python servicer runs default-deny state machine.
+//   FORWARD-FIDELITY-1                 — raw_body is proto bytes; no JSON parse or re-encode.
+//   NEVERLOG-1 (VETO)                  — response carries ONLY outcome + request_id;
+//                                        NO secret, NO signature, NO PII.
+//   CORRELATION-1                      — request_id + trace_id propagated gateway → proto → Kafka.
+//   VENDOR-REGISTRY-DISPATCH-1 (CRIT)  — vendor field dispatches to WEBHOOK_VERIFIERS registry;
+//                                        unknown/empty vendor → REJECT (default-deny).
+//   NO-HARDCODED-VENDOR-1 (HIGH)       — no vendor-literal branch on the dispatch path.
+//
+// Codegen:
+//   buf generate protos
+//   → packages/proto-ts/gen/             (TypeScript, bufbuild/es v2.4.0)
+//   → pylibs/proto_py/proto_py/_gen/     (Python, betterproto v1.2.5)
+//
+// No public/gateway annotation — this is a service-to-service surface only.
+// Vikram (backend-developer) builds the api-gateway client against this contract.
+// NOTE: vendor is a plain string field (e.g. "shopify", "meta", "stripe") — the
+//   registry in Python is the authority for valid vendors, not the proto enum.
+
+syntax = "proto3";
+
+package brain.ingestion.v1;
+
+// WebhookIngestService is the internal gRPC service that receives webhook
+// events forwarded byte-faithfully from the api-gateway.
+//
+// INTERNAL-ONLY — not exposed via public ingress (PLACEMENT-1 / TRANSPORT-1).
+// The api-gateway holds the public surface (rate-limit, body-cap, 200/401 mapping).
+service WebhookIngestService {
+  // ReceiveWebhook accepts a raw webhook body + full forwarded headers from the
+  // api-gateway and runs the verify-first / default-deny state machine:
+  //   1. unknown/empty vendor                    → REJECTED (default-deny)
+  //   2. missing/empty signature header          → REJECTED
+  //   3. secret retrieval fails                  → REJECTED (default-deny)
+  //   4. HMAC verify returns false               → REJECTED
+  //   5. external_identity unmapped              → PARKED  (no DB write)
+  //   6. topic not in allowlist                  → IGNORED (no DB write)
+  //   7. verify + map + topic OK                 → ACCEPTED (upsert + Kafka produce)
+  //
+  // The vendor field is the registry dispatch key — Shopify is "shopify",
+  // not the shape.  Adding vendor #2 adds a WEBHOOK_VERIFIERS entry only
+  // (no proto change, no servicer change, no route change).
+  //
+  // Response carries ONLY outcome + request_id (NEVERLOG-1).
+  rpc ReceiveWebhook(ReceiveWebhookRequest) returns (ReceiveWebhookResponse);
+}
+
+// ReceiveWebhookRequest carries the vendor dispatch key, raw byte body, and
+// the full forwarded header set.  The registry tells the servicer which header
+// keys matter per vendor.
+//
+// FIDELITY anchor: raw_body is proto bytes — opaque, never a parsed struct.
+// The bytes the gateway received == the bytes the Python HMAC verifier hashes.
+// Any JSON parse/re-encode on this hop would break the HMAC (FORWARD-FIDELITY-1).
+message ReceiveWebhookRequest {
+  // vendor is the registry dispatch key (e.g. "shopify", "meta", "stripe").
+  // The Python servicer looks up WEBHOOK_VERIFIERS[vendor] — unknown/empty → REJECTED.
+  // VENDOR-REGISTRY-DISPATCH-1: this is a value, not a shape; the registry is the authority.
+  string vendor = 1;
+
+  // raw_body is the verbatim HTTP request body as received by the api-gateway,
+  // captured BEFORE any JSON parsing (gateway uses parseAs:'buffer').
+  // This is the exact byte sequence that the vendor signed.
+  // Required for HMAC verification (FORWARD-FIDELITY-1).
+  bytes raw_body = 2;
+
+  // headers carries the full forwarded header set from the api-gateway.
+  // The registry VendorWebhookSpec declares which keys to extract per vendor.
+  // Expected keys (lowercase, as forwarded by the gateway):
+  //   Shopify: "x-shopify-hmac-sha256", "x-shopify-shop-domain",
+  //            "x-shopify-topic", "x-shopify-webhook-id"
+  // MAP-AFTER-VERIFY-1 (CRIT): the Python servicer MUST NOT act on the identity
+  // header until verify == True.
+  map<string, string> headers = 3;
+
+  // request_id is the correlation UUID minted by the api-gateway (genReqId).
+  // Propagated through to _set_correlation and the Kafka envelope (CORRELATION-1).
+  string request_id = 4;
+
+  // trace_id is the distributed trace ID from the gateway (extractCorrelation).
+  // Propagated end-to-end: gateway → proto → Python context → Kafka envelope.
+  string trace_id = 5;
+}
+
+// ReceiveWebhookResponse carries only the intake outcome and the
+// echo'd request_id for correlation.
+//
+// NEVERLOG-1 (VETO): this message MUST NEVER carry:
+//   - the HMAC secret value
+//   - the full HMAC signature
+//   - any raw PII payload bytes
+// Only the outcome enum + the request_id for traceability.
+message ReceiveWebhookResponse {
+  // Outcome is the result of the verify-first state machine.
+  enum Outcome {
+    // OUTCOME_UNSPECIFIED is the proto3 zero value (unused at runtime).
+    // The servicer always returns a named outcome; this value is never emitted.
+    OUTCOME_UNSPECIFIED = 0;
+
+    // OUTCOME_ACCEPTED: HMAC verified, identity mapped, topic known — upserted + Kafka produced.
+    OUTCOME_ACCEPTED = 1;
+
+    // OUTCOME_REJECTED: unknown vendor / HMAC missing / secret unavailable / signature mismatch.
+    // The gateway maps this to HTTP 401 so retries are suppressed.
+    OUTCOME_REJECTED = 2;
+
+    // OUTCOME_PARKED: HMAC verified but external_identity not found in connector_identity_map.
+    // No DB write. Logged as a configuration gap. Gateway returns 200 so
+    // the vendor stops retrying (unmapped identity is not the vendor's fault).
+    OUTCOME_PARKED = 3;
+
+    // OUTCOME_IGNORED: HMAC verified, identity mapped, but topic not in the allowlist.
+    // No DB write. Gateway returns 200 so the vendor stops retrying.
+    OUTCOME_IGNORED = 4;
+  }
+
+  // outcome is the result of the verify-first state machine (VERIFY-FIRST-1).
+  Outcome outcome = 1;
+
+  // request_id is echo'd from the request for end-to-end correlation (CORRELATION-1).
+  // Allows the gateway to log the same request_id on the HTTP response path.
+  string request_id = 2;
+}
