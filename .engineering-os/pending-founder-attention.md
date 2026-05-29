@@ -5,6 +5,22 @@
 
 ---
 
+## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `feat-credential-custody-aws-sm`
+
+**Rohan's verdict: PASS → APPROVE.** Signed the Founder gate on your behalf under standing delegation (hard-rule deviation scan clean). Real boto3 AWS Secrets Manager custody (Option A) is built: fail-closed factory, lazy client, ap-south-1 residency, least-priv IAM in CDK (authored-NOT-deployed), 7-day-recovery seal, ids-only never-log. 226 Python tests + 22 CDK assertions + cdk synth clean. `@paradigm sql`, **₹0/mo recurring** (HELD live cost ~$0.40/secret/mo + ~$1/mo KMS CMK — awareness only). Over-engineering audit PASS. Run folder: `.engineering-os/runs/2026-05-29T16-00-00Z__cc1a2b__feat-credential-custody-aws-sm__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
+
+**The Stage-5 BOUNCE was the verify-the-verifier rule's 11th occurrence — and the rare meta-case: the vacuous test was the gate-mutation test itself.** Maya fixed it (test_2 now drives BOTH fail-closed branches under one spy). I re-mutated all 3 load-bearing gates myself on disk (case None→AWS RED, case _:→AWS RED, residency-removed RED), reverted each clean — fully discharged here (moto, no real AWS; no deferral).
+
+**Two Founder asks:**
+1. **Commit it** — say "commit it" to commit the reviewed code to the feature branch. Mechanical command in `…/pending-founder-commit.md`. ⚠️ The command re-`git add`s the working-tree versions of the test + `custody.py` first (the BOUNCE-1 + LOW-2 fixes sit unstaged on a stale index — committing the staged tree would commit the pre-fix versions). Committing the code is NOT the live provisioning.
+2. **Line up the Stage-8 ceremony prerequisites** (non-blocking now, needed before cutover): a real AWS account with **ap-south-1** enabled + the **KMS CMK** + connector-cutover credentials available to rotate.
+
+**What stays HELD for Stage 8 (Founder/Jatin-at-console — none delegable, none auto-advanced):** real AWS provisioning · KMS CMK · IAM role creation · live token rotation (`cdk deploy`) · `CF-C7-CUSTODY-PROOF-1` vendor-200 + parity-GREEN legs · the legacy-plaintext **DELETE PoNR (Shiprocket LAST, no replay)** · **botocore/urllib3 DEBUG-loggers-OFF** precondition before live activation · **festival-freeze** (no Diwali/Republic-Day/EOSS). This build makes ONLY the real-`seal()`/`get()` leg satisfiable; the `CF-C7` gate stays FIRED until the ceremony signs the rest.
+
+**Carry-forward LOW:** LOW-1 hatchling `uv sync` build-target gap (non-blocking; tests run with `--no-sync`; Maya/WS-1). LOW-2 already resolved on disk.
+
+---
+
 ## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `feat-tenancy-rls-live-cutover`
 
 **Rohan's verdict: PASS (Stage-8-READY-BEHIND-HOLDS) → APPROVE-WITH-CAVEATS.** Signed the Founder gate on your behalf under standing delegation. Both review fixes (SEC-MED-1 + QA-LOW-1) verified on disk; 4 of Tanvi's gates re-run by me with matching PASS; per-CF audit of all of plan §11 clean; paradigm `sql` / ~₹0/mo; over-engineering audit clean; no hard-rule deviation. Run folder: `.engineering-os/runs/2026-05-26T12-48-53Z__6c7c71__feat-tenancy-rls-live-cutover__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
@@ -258,3 +274,29 @@ recalled the lineage, which is not a repeatable control.
 
 **No action required** — this is the durable-rule working as designed (Stage-1 catch, before Stage-2 plan, before any code). Logged for visibility as additional evidence that the adopted rule is doing its job structurally.
 
+
+---
+
+## 2026-05-29T16:00:00Z — NON-BLOCKING readiness heads-up (Rohan) — feat-credential-custody-aws-sm
+
+**This is NOT an escalation and NOT a build blocker.** Your Option-A decision (CF-C3-SECRETS-INTERIM-1, AWS
+Secrets Manager ap-south-1) is on record and the build is scoped to make it real (code + CDK + mocked-boto3
+tests, ZERO live AWS). Stage 1 → ADVANCE → Aryan (Stage 2).
+
+**What you'll need lined up BEFORE the Stage-8 cutover ceremony** (HELD items — gather ahead of time, no action
+needed for the build itself):
+1. A real AWS account with **ap-south-1 enabled**.
+2. A **customer-managed KMS CMK in ap-south-1** for envelope-encrypting the secrets (the build's CDK will
+   declare it; you provision/deploy it at Stage 8).
+3. The **IAM role** for the ingestion-service runtime (least-privilege policy authored by the build).
+4. The **live connector credentials** (the current legacy-DB plaintext tokens) available to rotate into Secrets
+   Manager during the ceremony.
+5. Your **free-text "commit it"** at Stage 7 to commit the reviewed code (no commit without it).
+
+The legacy-plaintext DELETE still stays gated on the FULL CF-C7-CUSTODY-PROOF-1 (real seal()/get() — this build —
+PLUS a Brain call via the production custody path returning vendor 200 PLUS parity GREEN, signed per-connector,
+Shiprocket last). This build only makes the first of those three legs real.
+
+**Separately tracked (Rohan ruling, not built here):** the app-level Shopify HMAC secret
+(`SHOPIFY_CLIENT_SECRET`) needs its own non-workspace-scoped custody line (TS webhook consumer) —
+`CF-CC-SHOPIFY-HMAC-1`, recommended as a small follow-up requirement under WS-1.
