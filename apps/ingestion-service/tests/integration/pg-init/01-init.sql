@@ -11,11 +11,17 @@
 -- CF-C3-RLS-CONSUME-1: with_workspace sets app.workspace_id; FORCE RLS (step-b-force.sql)
 --   is applied only at Stage-8 HOLD-AT-CUTOVER, not here.
 --
+-- VENDOR-REGISTRY-DISPATCH-1 / NO-HARDCODED-VENDOR-1:
+--   connector_shop_map is REPLACED by connector_identity_map (composite PK: vendor,
+--   external_identity).  Shopify is ONE seed row, not the table shape.
+--   Mirror of migrations/manual/shop-map/step-a-create.sql (M1/F-4 discipline).
+--
 -- This init creates:
 --   (a) The brain_rls_app role (non-BYPASSRLS, mirrors Child-1 CF-SEC-1 compliance)
 --   (b) The connector_cursor table (Track M, M4) — with window_start/window_end NOT NULL
 --       matching step-a-enable-create.sql (M2/F-6 fix: LOCAL DDL must match prod DDL)
 --   (c) raw_shopify_orders (prod-DDL-aligned name, raw_* prefix)
+--   (d) connector_identity_map (generic routing table; replaces connector_shop_map)
 --   RLS policy: step-a-enable-create shape (ENABLE + CREATE POLICY, NO FORCE yet)
 
 -- Create the application role (non-BYPASSRLS — mirrors Child-1 rls_app)
@@ -93,3 +99,24 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- connector_identity_map — Track T-GEN-A (connector-webhook-intake, generic identity resolver).
+-- Replaces connector_shop_map (Shopify-locked shape).
+-- System-scoped routing table; NO RLS (read pre-workspace, produces workspace_id).
+-- RLS asymmetry intentional: documented in §5 / §11 of the architecture plan.
+-- VENDOR-REGISTRY-DISPATCH-1: composite PK (vendor, external_identity) — NOT per-vendor tables.
+-- Mirror of migrations/manual/shop-map/step-a-create.sql (M1/F-4 discipline).
+CREATE TABLE IF NOT EXISTS connector_identity_map (
+    vendor            TEXT        NOT NULL,
+    external_identity TEXT        NOT NULL,
+    PRIMARY KEY (vendor, external_identity),
+    workspace_id      UUID        NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Test-harness-only seed row: Sugandh-Lok local test workspace (Shopify).
+-- NO live seed (NO-LIVE-1). Prod seeding is HELD-Stage-8.
+-- VENDOR-REGISTRY-DISPATCH-1: 'shopify' is a DATA value in a row, not a table or branch.
+INSERT INTO connector_identity_map (vendor, external_identity, workspace_id)
+VALUES ('shopify', 'sugandhlok.myshopify.com', '550e8400-e29b-41d4-a716-446655440000')
+ON CONFLICT (vendor, external_identity) DO NOTHING;
