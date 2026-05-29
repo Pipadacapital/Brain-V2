@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-29T23:30:00Z",
-  "updated_by": "cto-advisor (Rohan) — Stage 6 final review connector-webhook-intake",
+  "updated_at": "2026-05-29T23:55:00Z",
+  "updated_by": "orchestrator — PR #22 merged to development (connector-webhook-intake)",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3950,9 +3950,9 @@
     {
       "req_id": "connector-webhook-intake",
       "title": "Inbound Shopify webhook ingress (verify HMAC fail-closed → idempotent intake → produce)",
-      "status": "approved",
-      "stage": 6,
-      "current_owner": "platform-devops (Jatin) — Stage-8 readiness only (HELD behind live ceremony; no live deploy, no commit). Commit of reviewed code pending Founder free-text \"commit it\".",
+      "status": "merged-on-development",
+      "stage": 8,
+      "current_owner": "platform-devops (Jatin) — Stage-8 readiness only (HELD behind live ceremony; no live deploy, no rotation)",
       "feature_class": "high-stakes",
       "feature_class_rationale": "Trigger surfaces: auth (HMAC gate is the auth), multi-tenancy (shop->workspace), connectors, pii (Shopify order email/name), public inbound channel, india-compliance (DPDP residency). Scaffolding carve-out barred (live auth-gate runtime + biz logic + public surface).",
       "trigger_surfaces_touched": [
@@ -4079,7 +4079,11 @@
           "MED-3 out-of-slice Expo @xmldom/xmldom advisories -> mobile-developer"
         ],
         "auto_candidate_rule": "NONE — verify-the-verifier rule already adopted (2026-05-26); BOUNCE-1 is its Nth occurrence and the rule fired correctly; auto-candidate rule (>=3 distinct runs of a NEW root cause) N/A"
-      }
+      },
+      "merged_at": "2026-05-29T23:50:00Z",
+      "merged_via_pr": "22",
+      "merged_via_branch": "chore/intake-connector-webhook-intake",
+      "hygiene_sweep_note": "Code merged to origin/development (PR #22). LIVE-prod cutover gates remain HELD per Stage-8 readiness notes: live deploy, public webhook registration, shpss_ rotation, identity_map real seed, ingress/WAF/TLS, grpcio floor >=1.70.0."
     }
   ],
   "hygiene_sweep_note": "2026-05-26 sweep: reconciled active.json against actual git state on origin/development. Items whose code-work merged via PRs #1-#5 are now status=merged-on-development; LIVE-prod cutover gates remain held per the original Stage-8 notes; epic parents annotated; pending-founder-attention.md updated in companion edit."
