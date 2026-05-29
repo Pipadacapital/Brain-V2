@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-29T23:55:00Z",
-  "updated_by": "orchestrator — PR #22 merged to development (connector-webhook-intake)",
+  "updated_at": "2026-05-30T00:10:00Z",
+  "updated_by": "orchestrator — reconcile state to git reality (all reviewed code merged on development)",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3668,9 +3668,9 @@
     {
       "req_id": "feat-credential-custody-aws-sm",
       "title": "Real AWS Secrets Manager credential custody (Option A) — replace the NotImplementedError stubs with a production custody backing",
-      "status": "approved-stage8-readiness-held",
+      "status": "merged-on-development",
       "stage": 8,
-      "current_owner": "platform-devops (Jatin) — Stage 8 readiness (HELD behind ceremony gates); commit pending Founder \"commit it\"",
+      "current_owner": "platform-devops (Jatin) — Stage-8 readiness only; LIVE ceremony HELD (real AWS provisioning, KMS CMK, IAM, live token rotation, CF-C7 legs, legacy-plaintext DELETE PoNR) — none delegable",
       "stage2_plan_artifact": "06-architecture-plan.md",
       "stage2_complete_ts": "2026-05-29T17:10:00Z",
       "builder_tracks": {
@@ -3739,13 +3739,16 @@
       "carry_forward_low": [
         "LOW-1 hatchling uv-sync build-target (non-blocking, Maya/WS-1)",
         "LOW-2 resolved on disk (commit working tree)"
-      ]
+      ],
+      "committed": true,
+      "merged_via": "efe269e feat(custody): real AWS Secrets Manager credential custody (Option A)",
+      "reconcile_note": "State flag was stale (showed commit-pending); product code confirmed merged on development. No live provisioning performed."
     },
     {
       "req_id": "chore-app-hmac-secret-custody",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
-      "current_owner": "platform-devops (Jatin)",
+      "current_owner": "platform-devops (Jatin) — Stage-8 live ceremony HELD (real SM secret + CMK, IAM attach, live shpss_ put+rotate, botocore/urllib3 OFF-DEBUG, festival-safe window) — Founder/console",
       "feature_class": "high-stakes",
       "feature_class_rationale": "auth(HMAC gate)+secrets-custody+connectors+india-compliance(DPDP residency) trigger surfaces; scaffolding carve-out barred (live-credential auth-gate runtime); conservative tie-break holds.",
       "trigger_surfaces_touched": [
@@ -3791,14 +3794,16 @@
       "stage6_remutation": "both CRITICAL gates re-mutated by Rohan on disk: #1 compare_digest->== RED/revert/GREEN; #2 not-found-raise->return\"\" RED(4)/revert/37 GREEN — non-vacuous",
       "stage8_status": "HELD behind named live-provisioning ceremony (Founder/Jatin at console)",
       "commit_authorization": "awaiting Founder \"commit it\"",
-      "committed": false,
-      "named_follow_on": "chore-ts-oauth-app-secret-custody"
+      "committed": true,
+      "named_follow_on": "chore-ts-oauth-app-secret-custody",
+      "merged_via": "0e955fb feat(custody): app-level Shopify HMAC secret custody (PR #19)",
+      "reconcile_note": "State flag was stale (approved/committed=False); product code confirmed merged via PR #19. No live rotation performed."
     },
     {
       "req_id": "chore-ts-oauth-app-secret-custody",
-      "status": "stage-8-held",
+      "status": "merged-on-development",
       "stage": 8,
-      "current_owner": "founder",
+      "current_owner": "platform-devops (Jatin) — Stage-8 live cutover HELD (core-service Fargate + live task-role + rotated SHOPIFY_CLIENT_SECRET into SM) — Founder/console",
       "stage6_verdict": "APPROVE-WITH-CAVEATS",
       "stage6_delegated": true,
       "stage6_decided_by": "rishabhporwal (Founder) via Rohan standing delegation",
@@ -3945,7 +3950,10 @@
         "findings_med": 0,
         "findings_low": 1,
         "bounce": null
-      }
+      },
+      "committed": true,
+      "merged_via": "25a80ff feat(custody): TS OAuth app-secret via platform env-injection (PR #21)",
+      "reconcile_note": "State flag was stale (stage-8-held/awaiting commit); product code (5 TS + 3 CDK) confirmed merged via PR #21. No live cutover performed."
     },
     {
       "req_id": "connector-webhook-intake",
