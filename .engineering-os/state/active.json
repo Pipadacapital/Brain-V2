@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-30T00:10:00Z",
-  "updated_by": "orchestrator — reconcile state to git reality (all reviewed code merged on development)",
+  "updated_at": "2026-05-30T00:40:00Z",
+  "updated_by": "orchestrator — local stack stood up fully functional + point-1 turnkey",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3282,9 +3282,9 @@
     {
       "req_id": "epic-real-auth-supabase",
       "title": "Real authentication (Supabase) — login + signup + onboarding + Google OAuth, Brain-native (EPIC)",
-      "status": "epic-ratified",
+      "status": "slices-cd-merged-local-functional",
       "stage": 1,
-      "current_owner": "founder — slice D Stage-7 gate SIGNED under delegation; awaiting commit authorization + provider-dashboard redirect-URI registration for live e2e",
+      "current_owner": "founder — ONLY remaining: Supabase dashboard config (Site URL http://localhost:3000 + redirect allow-list + mailer) + a real account to complete a live login loop",
       "feature_class": "high-stakes",
       "feature_class_rationale": "5 trigger surfaces (auth, multi-tenancy, pii, secrets-env, connectors); live auth with real consumers; no scaffolding carve-out.",
       "trigger_surfaces_touched": [
@@ -3419,7 +3419,9 @@
         "epic_close_out": "FINAL slice — closes epic-real-auth-supabase (A/B/C/D all built + mechanically verified locally)."
       },
       "founder_ratified_at": "2026-05-26T11:40:00Z",
-      "founder_ratification_note": "Founder-ratified 2026-05-26 (via claude-code hygiene loop). All 5 slices (A,B,C,D,E) merged via PR #3; Stage-6 PASS signed under delegation by Rohan (CTO Advisor) per the slice 12-founder-decision.json artifacts. Ratification is the formal epic-completion act; no new build triggered."
+      "founder_ratification_note": "Founder-ratified 2026-05-26 (via claude-code hygiene loop). All 5 slices (A,B,C,D,E) merged via PR #3; Stage-6 PASS signed under delegation by Rohan (CTO Advisor) per the slice 12-founder-decision.json artifacts. Ratification is the formal epic-completion act; no new build triggered.",
+      "reconcile_note": "STALE FLAG CLEARED: local-vs-live-DB decision already made = LOCAL (migration 01 Founder-binding 2026-05-25; .env wired to brain_dev). Slice C merged 8b0e8dd, Slice D merged 7dfbe73. Local stack verified: auth-gate redirects unauth->/auth/login, sign-in renders, gateway JWT fail-closed, onboarding tables FORCE-RLS fail-closed, onboarding write path works.",
+      "local_stack": "docker compose up -d (postgres+clickhouse+api-gateway+web all healthy); migrations 01..25 + 05a applied; from-scratch reproducible"
     },
     {
       "req_id": "feat-auth-supabase-identity",
