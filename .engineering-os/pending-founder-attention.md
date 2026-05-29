@@ -36,12 +36,15 @@ All "you commit" / "awaiting-founder-commit" / "committed-on-feature-branch" ask
 
 These are NOT resolved by the merges and remain valid asks below:
 
-1. **🚨 Custody Option A vs B** (`CF-C3-SECRETS-INTERIM-1`) — your binary decision. Code is merged; decision still required before Stage-3 LIVE build runs.
-2. **🚨 Real `seal()` implementation** (`CF-C7-CUSTODY-PROOF-1`) — both backings still `NotImplementedError`. Required before any legacy plaintext-DELETE.
+1. ~~**🚨 Custody Option A vs B** (`CF-C3-SECRETS-INTERIM-1`)~~ — ✅ **DECIDED 2026-05-29: Option A — AWS Secrets Manager (ap-south-1).** Correct long-term home; required before brand #2 regardless; activates security-governance WS-1. (Decision-log: `decision-log/2026/05/2026-05-29.jsonl`.)
+2. **🚧 Real `seal()` implementation** (`CF-C7-CUSTODY-PROOF-1`) — now scoped to the **Option-A build slice**: real `aws_secrets_manager_custody.{get,put,seal}` (boto3 + IAM-scoped GetSecretValue + 7-day recovery) + CDK + factory wiring + mocked-boto3 tests. Real AWS provisioning + live token rotation = Founder/Jatin-at-console. Gate still binds: real impl + prod-custody-path vendor-200 + parity GREEN signed per-connector BEFORE any plaintext-DELETE (Shiprocket last).
 3. **🚨 OPEN P0 — live Supabase has zero RLS** — Brain-native RLS rebuild needed (sequenced vs the live legacy app still hitting that DB).
 4. **ℹ️ ARMED tripwire** `CF-C7-DPDP-ERASURE-1` (archive format) — fires at decommission Stage 2 if Aryan can't name a §12-satisfying format.
-5. **📋 Candidate rule** `2026-05-25__verify-the-verifier-mutation-on-gate` — Rohan recommends `/adopt-rule`; 5 occurrences across 4 children.
-6. **Epic-level ratifications still open:** `epic-real-auth-supabase`, `epic-phase2-feature-parity`, `chore-migrate-legacy-to-brain` — constituent children merged, parent ratification is a Founder act.
+5. ~~**📋 Candidate rule** `2026-05-25__verify-the-verifier-mutation-on-gate`~~ — ✅ **ADOPTED 2026-05-26** (durable-rules/2026-05-26__verify-the-verifier-mutation-on-gate.md, status: adopted; now enforced — drove the kill-test discipline on feat-tenancy-rls-live-cutover, its 10th occurrence). **Still-open proposals (separate):** `2026-05-25__pre-stage-working-tree-baseline` and `2026-05-25__verify-legacy-formula-at-stage1-not-slice-table` await your `/adopt-rule` or `/reject-rule`.
+6. **Epic-level ratifications (2026-05-29):**
+   - ✅ `epic-phase2-feature-parity` — **RATIFIED build-complete** (all 8 slices merged-on-development). Live activation rides the migration read-path/RLS Stage-8 cutovers; not independently live.
+   - ⚠️ `epic-real-auth-supabase` — **OPEN.** Children A/C/E merged, but slice-D live e2e still needs **provider-dashboard redirect-URI registration** (Supabase/Google console — a Founder act) before it's complete.
+   - ⚠️ `chore-migrate-legacy-to-brain` — **OPEN (master strangler epic).** Closes only when the held Stage-8 cutovers run (RLS FORCE, connector token-transfer + plaintext-delete, recon, read-flip, decommission) AND `feat-frontend-dashboard-morningbrief` web build is dispositioned (currently `approved`, never built into web).
 
 ### ❓ Genuinely still pending (no merged work)
 - `feat-frontend-dashboard-morningbrief` — mobile-only; never built into web. Still at Stage 8 readiness, no code in `origin/development`.

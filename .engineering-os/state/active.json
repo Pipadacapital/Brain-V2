@@ -2863,9 +2863,15 @@
     {
       "req_id": "epic-phase2-feature-parity",
       "title": "Phase 2 — feature-breadth parity: port the ~40 legacy workspace feature endpoints onto the Brain architecture",
-      "status": "epic-ratified",
+      "status": "epic-build-complete",
       "stage": 1,
       "current_owner": "founder",
+      "epic_build_complete": {
+        "ratified_at": "2026-05-29T15:30:00Z",
+        "ratified_by": "rishabhporwal (Founder)",
+        "basis": "All 8 constituent slices merged-on-development (feat-store-order-fact-layer, feat-pnl-cm-waterfall, feat-rto-cod-economics, feat-marketing-acquisition, feat-cohorts-ltv, feat-catalog-inventory, feat-finance-settings-goals, feat-parity-cleanup-pages).",
+        "scope_note": "Build-complete only. LIVE activation of these parity surfaces rides the migration read-path/RLS Stage-8 cutovers (feat-tenancy-rls-live-cutover + feat-metric-engine read-flip); not independently live. Decision-log: 2026-05-29.jsonl."
+      },
       "surface_to_founder": true,
       "parent_epic": "chore-migrate-legacy-to-brain",
       "epic": true,
