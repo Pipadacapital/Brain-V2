@@ -340,3 +340,19 @@ At the Stage-8 console ceremony for this feature (alongside the parent
 Rotation for this key is a documented MANUAL two-place ceremony (Shopify dashboard + custody) —
 Secrets Manager auto-rotation is FORBIDDEN for it (SM cannot update Shopify's dashboard → would
 break every signature). No action needed now; line this up ahead of cutover.
+
+---
+
+## 2026-05-29 — chore-ts-oauth-app-secret-custody — Stage 6 PASS (delegated APPROVE-WITH-CAVEATS) — Rohan
+
+**Verdict:** APPROVE-WITH-CAVEATS, signed on your behalf under standing delegation (zero hard-rule deviations → delegation valid). The TS Shopify-OAuth env-injection slice is build-complete and verified.
+
+**What I independently re-ran (verify-the-verifier):**
+- Load-bearing CF-TS-NO-AWS-CLIENT-1: injected an `@aws-sdk` import into `boot-assert.ts` → boundary test went RED (named the exact file) → reverted → tree byte-identical (hash `ddf80bc` both sides) → GREEN. Non-vacuous, not a tautology.
+- `provider-config.ts` diff == 0; core-service 262 pass; CDK 49 pass; `cdk synth` shows the `secrets:` mapping via `Fn::ImportValue`, ap-south-1 only, zero `shpss_` literal, zero new SM secret, 1 task-def, IAM scoped to the one secret/CMK ARN (no `*`). All 8 CFs MET. `@paradigm sql`, ₹0/mo.
+
+**Two precise asks for you:**
+1. **Commit (when ready):** give the free-text **"commit it"**, then run the staging command in this run's `pending-founder-commit.md`. It now stages **all 8 files** — the 5 TS files PLUS the **3 CDK files** (`infra/cdk/bin/app.ts`, `core-service-task-def-stack.ts`, its test) that were left unstaged at review (Shreya + Tanvi flagged; I re-confirmed). The TS boundary gate and the CDK `secrets:` mapping it gates must ship in ONE commit. Feature-branch only; no merge without your PR.
+2. **Stage-8 live cutover stays HELD** — needs your authorization for: the full core-service Fargate service + live task-role wiring + provisioning the **rotated** `SHOPIFY_CLIENT_SECRET` into SM `brain/_app/shopify/hmac_secret` (the value is never printed in any artifact) + the live injection smoke. No `cdk deploy` until then.
+
+**Parent closure:** this closes the parent's named TS follow-on at build level; CF-CC-OWNER-1 (core-service stays AWS-SDK-free) is preserved — no Node AWS client was introduced. **Carry-forward LOW:** L1 console.error fatal-boot style (fold into a structured boot logger later; non-blocking).
