@@ -15,3 +15,12 @@ Each pass: container health/restarts, resource usage, error/warn log scan, endpo
 - ℹ️ Expected log noise: `auth verify rejected (missing_token)` + `UNAUTHORIZED` on unauthenticated probes — correct fail-closed behavior, not errors.
 
 **Verification after fix:** `/auth/login` 200, `/auth/sign-up` 200, `/onboarding` (unauth) → `/auth/login`. All containers healthy.
+
+## Pass 2 — 2026-05-29 ~18:01Z — clean
+All 4 containers healthy, 0 restarts. Resources nominal (CH ~949MB, gateway ~177MB, web ~138MB, PG ~27MB). No genuine errors in gateway/web logs. Endpoints OK: gateway /health 200, /auth/login 200, /auth/sign-up 200, /onboarding+/dashboard (unauth) → /auth/login. PG + CH ping OK. No new authenticated-user activity (post-fix; 4c1f… user has not retried). SessionBootstrap fix (231f09c) deployed and stable.
+
+## Pass 3 — 2026-05-29 ~18:21Z — clean
+All 4 healthy, 0 restarts. No genuine errors. Endpoints OK (health 200, login/sign-up 200, onboarding+dashboard→login). PG+CH ping OK. No authed activity. CH mem ~995MB (normal idle merge baseline, not flagged).
+
+## Monitoring stopped — 2026-05-29 ~18:25Z
+Stopped on Founder request after Pass 3. Cron 7469e80f cancelled; no scheduled jobs remain. Summary: 3 passes; 1 real bug found+fixed (no-membership login loop, 231f09c) + 2 clean. Stack left running and healthy.
