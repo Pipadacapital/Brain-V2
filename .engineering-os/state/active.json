@@ -3510,9 +3510,13 @@
     {
       "req_id": "feat-tenancy-rls-live-cutover",
       "title": "Tenancy RLS — live FORCE cutover with legacy-app coexistence",
-      "status": "approved-code-held-ceremony",
+      "status": "merged-on-development",
       "stage": 8,
       "current_owner": "founder",
+      "merged_at": "2026-05-29T00:00:00Z",
+      "merged_via_pr": "15",
+      "merged_via_branch": "chore/stage2-feat-tenancy-rls-live-cutover",
+      "merge_note": "Stage 3-6 code + audit trail merged to development via PR #15 (commits 4a8743f product + 43a8b9c eos). Code-merge ≠ live flip: the LIVE FORCE cutover (the actual OPEN-P0 close) stays HELD per holds_for_stage8 / live_flip below — Founder-at-console Stage 8 only.",
       "parent_epic": "chore-migrate-legacy-to-brain",
       "predecessor": "feat-tenancy-rls-brain-native",
       "run_folder": ".engineering-os/runs/2026-05-26T12-48-53Z__6c7c71__feat-tenancy-rls-live-cutover__rishabhporwal",
@@ -3649,7 +3653,7 @@
       ],
       "live_flip": "HELD — Founder-at-console only (Stage 8); NOT auto-advanced to platform-devops",
       "founder_asks": [
-        "commit it (6 product files to feature branch)",
+        "DONE 2026-05-29 — commit + merge (PR #15 to development)",
         "sign §7 addendum 06b at Stage 7/8 BEFORE STEP 5",
         "set REAL Path-B completion date for granted_until",
         "pick festival-safe window (no Diwali/Republic-Day/EOSS)"
