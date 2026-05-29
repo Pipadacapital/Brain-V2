@@ -740,3 +740,28 @@
 **Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion
 **Open questions:** none — Stage 8 HELD behind named live-provisioning ceremony; TS follow-on named (chore-ts-oauth-app-secret-custody)
 **Next:** Founder "commit it" to commit reviewed code (mechanical cmd in pending-founder-commit.md); Stage 8 (Jatin) held until console ceremony.
+
+## 2026-05-29T18:30:00Z — Rohan (cto-advisor) — chore-ts-oauth-app-secret-custody
+**Stage:** 1 (intake + brainstorm + persona synthesis, autonomous one-pass)
+**Action:** Read technical-context §2/§13, my journal, active.json (HMAC parent entry + CF ledger), the live TS code (provider-config.ts C1 validateShopifyHmac:153 / C2 exchangeShopify:199, requireEnv:76), the parent Stage-2 plan §3 ruling, and the CDK CredentialCustodyStack (appShopifyHmacSecret already provisioned at brain/_app/shopify/hmac_secret, CMK ap-south-1, secret:brain/* IAM prefix, authored-not-deployed). Semantic recall (k=6) — nearest = the parent/grandparent custody slices that NAMED this follow-on; no near-dup that solves it. Branch correct. Ground truth: core-service has NO Dockerfile / NO bootstrap entrypoint / NO deployed task-def yet.
+**Lane:** high-stakes. Surfaces = auth + secrets-custody + connectors + india-compliance. Scaffolding carve-out barred (live-credential auth surface); conservative tie-break moot.
+**Paradigm:** sql (config/crypto/infra I/O; zero ML/LLM). Any LLM/ML decorator at Stage 6 = BOUNCE.
+**Personas spawned (Stage 1):** 1 — secret-injection-boundary-realist:haiku (single dominant dimension: injection-mechanism ⇔ CF-CC-OWNER-1 boundary are the SAME fault line; compliance settled/inherited, no cost path → no 2nd persona). 5 concerns (3 HIGH/2 MED), none "looks good", accepted; all sharpen execution, none re-open the ruling.
+**Decision:** ADVANCE → Stage 2 (Aryan).
+**THE INJECTION RULING — CF-HMAC-TS-OWNER-INJECT-1:** platform env-injection. TS keeps requireEnv('SHOPIFY_CLIENT_SECRET') unchanged + NEVER imports an AWS SDK; CDK task-def secrets: mapping resolves the ap-south-1 SM secret brain/_app/shopify/hmac_secret → the env var. Preserves CF-CC-OWNER-1 (no 2nd AWS client in a 2nd runtime), canon/stack-native, reversible. A direct TS SM read RE-OPENS CF-CC-OWNER-1 = Founder-decision escalation, never a silent flip.
+**Bound CF contract (8, for Aryan):** CF-HMAC-TS-OWNER-INJECT-1 · CF-TS-NO-AWS-CLIENT-1 · CF-TS-FAILFAST-1 (boot-time presence assert, NOT call-time) · CF-TS-HMAC-CONST-1 (timingSafeEqual + existing routine, no duplication) · CF-TS-NEVERLOG-1 (new assert is a new leak surface; negative test) · CF-TS-RESIDENCY-1 (ap-south-1 ARN) · CF-TS-SAME-KEY-1 · CF-TS-INJECT-SYNTH-1 (no deployed container → CDK SYNTH-level gate, not cdk deploy).
+**HELD for Stage 8:** live task-role injection wiring + rotated secret value. No commit/deploy.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, india-commerce-economics, architecture-patterns, verification-before-completion, subagent-orchestration
+**Open questions (inputs for Aryan, not blockers):** (1) where the minimal boot-time config-validation home lives in core-service (no config framework — Single-Primitive); (2) exact synth assertion shape for the secrets: mapping; (3) confirm the AWS-SDK-import grep is bound as a Security/QA test.
+**Escalation:** none fired; trigger armed (a Node AWS SM client proposal re-opens CF-CC-OWNER-1 → Rohan → Founder). NEVER printed the live shpss_ value in any artifact.
+**Next:** Stage 2 — Aryan (architect), binding plan resolving the 8 CFs + the 3 open questions.
+
+## 2026-05-29T18:35:00Z — Rohan (cto-advisor) — chore-ts-oauth-app-secret-custody
+**Stage:** 6 (Final Review + delegated Founder gate)
+**Action:** Final review; verify-the-verifier re-mutation; sign Founder gate under standing delegation.
+**Personas spawned (Stage 1):** secret-injection-boundary-realist:haiku (1)
+**Decision:** APPROVE-WITH-CAVEATS (delegated). All caveats are HELD-Stage-8 + one staging-completeness ask. Not a bounce.
+**Rationale:** All 8 CFs MET; load-bearing CF-TS-NO-AWS-CLIENT-1 re-mutated RED→GREEN with byte-identical tree; provider-config diff==0; 262 TS + 49 CDK green; synth secrets-mapping + residency + same-key + no-wildcard re-confirmed; zero hard-rule deviation so delegation applies; sql/₹0/mo; CF-CC-OWNER-1 preserved.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, india-commerce-economics, architecture-patterns, verification-before-completion, subagent-orchestration
+**Open questions:** none. Staging note: 3 CDK files were unstaged at review (Shreya+Tanvi flagged; Rohan re-confirmed) → commit manifest augmented to stage all 8 in one commit.
+**Next:** Stage 8 readiness (HELD; owner platform-devops/Jatin). Founder authorizes actual commit ("commit it") + Stage-8 live cutover. NEVER printed the live shpss_ value.

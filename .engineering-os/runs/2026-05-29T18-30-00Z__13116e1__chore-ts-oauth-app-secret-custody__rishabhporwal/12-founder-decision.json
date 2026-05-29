@@ -1,0 +1,49 @@
+{
+  "req_id": "chore-ts-oauth-app-secret-custody",
+  "stage": 7,
+  "decision": "APPROVE-WITH-CAVEATS",
+  "decided_by": "rishabhporwal (Founder) via Rohan standing delegation",
+  "decided_at": "2026-05-29T18:35:00Z",
+  "delegation_basis": "Founder standing delegation (MEMORY: feedback_founder_delegates_to_cto_advisor) — Rohan signs every Founder gate on the Founder's behalf. Applied here because the Stage-6 hard-rule deviation check (11-final-review §9) found ZERO deviations: no dependency violation, no Single-Primitive violation, no compliance gap, no paradigm escalation, no gate-skip. Delegation is valid.",
+  "paradigm": "sql",
+  "monthly_cost_inr": 0,
+  "cf_contract_result": {
+    "CF-HMAC-TS-OWNER-INJECT-1": "MET",
+    "CF-TS-NO-AWS-CLIENT-1": "MET",
+    "CF-TS-FAILFAST-1": "MET",
+    "CF-TS-HMAC-CONST-1": "MET",
+    "CF-TS-NEVERLOG-1": "MET",
+    "CF-TS-RESIDENCY-1": "MET",
+    "CF-TS-SAME-KEY-1": "MET",
+    "CF-TS-INJECT-SYNTH-1": "MET"
+  },
+  "rohan_independent_verification": {
+    "re_mutation_load_bearing_gate": "CF-TS-NO-AWS-CLIENT-1: injected @aws-sdk import into boot-assert.ts -> RED (named exact file) -> git checkout -> hash byte-identical (ddf80bcf1c6dd7d221b6eb8643311a0603b4387b before and after) -> GREEN 6/6. Non-vacuity confirmed; not a tautology.",
+    "gates_rerun": [
+      "provider-config.ts diff == 0 (staged + worktree)",
+      "core-service suite: 262 passed | 30 skipped",
+      "boot-assert.test.ts: 11/11 (whitespace/empty/present branches exercised)",
+      "infra/cdk: 49/49",
+      "cdk synth CoreServiceTaskDefStack: secrets via Fn::ImportValue brain-app-shopify-hmac-secret-arn; 0 foreign-region; 0 shpss_ literal; 0 new AWS::SecretsManager::Secret; 1 AWS::ECS::TaskDefinition; IAM every Resource scoped to imported secret/CMK ARN, no '*' wildcard"
+    ]
+  },
+  "caveats": [
+    "Pre-commit: the 3 CDK files (infra/cdk/bin/app.ts, infra/cdk/lib/core-service-task-def-stack.ts, infra/cdk/test/core-service-task-def-stack.test.ts) must be staged with the 5 TS files in ONE commit — see augmented pending-founder-commit.md. The TS boundary gate and the CDK secrets: mapping it gates must ship together.",
+    "All other caveats are HELD-for-Stage-8 (live cutover), not code defects."
+  ],
+  "held_for_stage8": [
+    "Full core-service Fargate service (networking/ALB/autoscaling/ECR image/task-role attach) — this slice ships only the representative task-def carrying the one secrets: mapping.",
+    "Live task-role injection wiring + a deployed core-service container.",
+    "The rotated SHOPIFY_CLIENT_SECRET value provisioned into SM brain/_app/shopify/hmac_secret (grandparent ceremony — never printed).",
+    "Live secrets: injection smoke (substituted at BUILD by the synth-level gate per architect ruling).",
+    "No cdk deploy. No git commit without Founder 'commit it'."
+  ],
+  "parent_closure": "Closes the named TS follow-on of chore-app-hmac-secret-custody at BUILD level (env-injection now backed by an authored CDK secrets: mapping + boot fail-fast + AWS-SDK boundary gate). CF-CC-OWNER-1 preserved (no Node AWS client). Final parent-interim closure completes at the Stage-8 live cutover.",
+  "carry_forward_low": [
+    "L1 — server.ts:350,360 console.error fatal-boot lines (consistent with pre-existing assertBootableAuthConfig pattern); fold into a structured boot logger when adopted. Non-blocking."
+  ],
+  "no_commit_rule": "Code reviewed + approved, NOT committed. Founder must give free-text 'commit it' for the harness to permit the commit. Feature-branch only; no merge to development/release/master without a Founder-driven PR.",
+  "next_stage": 8,
+  "next_owner": "platform-devops (Jatin)",
+  "next_state": "stage-8-held"
+}

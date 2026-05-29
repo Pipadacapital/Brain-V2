@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-29T18:45:00Z",
-  "updated_by": "cto-advisor (Rohan) \u2014 Stage 6 PASS + delegated Founder gate APPROVE",
+  "updated_at": "2026-05-29T18:22:00Z",
+  "updated_by": "qa-agent (Tanvi)",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3793,6 +3793,155 @@
       "commit_authorization": "awaiting Founder \"commit it\"",
       "committed": false,
       "named_follow_on": "chore-ts-oauth-app-secret-custody"
+    },
+    {
+      "req_id": "chore-ts-oauth-app-secret-custody",
+      "status": "stage-8-held",
+      "stage": 8,
+      "current_owner": "founder",
+      "stage6_verdict": "APPROVE-WITH-CAVEATS",
+      "stage6_delegated": true,
+      "stage6_decided_by": "rishabhporwal (Founder) via Rohan standing delegation",
+      "awaiting_founder": "free-text 'commit it' to stage+commit all 8 files (5 TS + 3 CDK) per augmented pending-founder-commit.md; then Stage-8 live-cutover authorization (HELD)",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "auth(Shopify OAuth-callback HMAC + token exchange)+secrets-custody(SHOPIFY_CLIENT_SECRET)+connectors(Shopify OAuth)+india-compliance(DPDP residency ap-south-1, never-log) trigger surfaces; foundational-scaffolding carve-out barred (live-credential auth surface); conservative tie-break moot.",
+      "trigger_surfaces_touched": [
+        "auth",
+        "secrets-custody",
+        "connectors",
+        "india-compliance"
+      ],
+      "paradigm": "sql",
+      "first_pass_paradigm": "sql (config/crypto/infra I/O; ZERO LLM/ML; any LLM/ML @paradigm decorator or new inference runtime at Stage 6 = BOUNCE)",
+      "monthly_cost_inr": 0,
+      "parent": "chore-app-hmac-secret-custody",
+      "grandparent": "feat-credential-custody-aws-sm",
+      "cf_ref": "CF-HMAC-TS-VS-PY-OWNER-1",
+      "named_by": "architect (Aryan) parent Stage-2 plan \u00a73 + active.json named_follow_on",
+      "run_folder": ".engineering-os/runs/2026-05-29T18-30-00Z__13116e1__chore-ts-oauth-app-secret-custody__rishabhporwal",
+      "intake_ts": "2026-05-29T18:30:00Z",
+      "cto_review_ts": "2026-05-29T18:30:00Z",
+      "decision": "ADVANCE",
+      "persona_count": 1,
+      "needs_personas": [],
+      "personas_synthesized": [
+        "secret-injection-boundary-realist:haiku"
+      ],
+      "injection_ruling": "CF-HMAC-TS-OWNER-INJECT-1: platform env-injection. TS keeps requireEnv('SHOPIFY_CLIENT_SECRET') unchanged + NEVER imports an AWS SDK; the container/task-def secrets: mapping (CDK) resolves the ap-south-1 SM secret brain/_app/shopify/hmac_secret into the env var. A Node AWS SM client RE-OPENS CF-CC-OWNER-1 -> Founder-decision escalation, never a silent flip.",
+      "cf_contract": [
+        "CF-HMAC-TS-OWNER-INJECT-1",
+        "CF-TS-NO-AWS-CLIENT-1",
+        "CF-TS-FAILFAST-1",
+        "CF-TS-HMAC-CONST-1",
+        "CF-TS-NEVERLOG-1",
+        "CF-TS-RESIDENCY-1",
+        "CF-TS-SAME-KEY-1",
+        "CF-TS-INJECT-SYNTH-1"
+      ],
+      "held_for_stage8": "Live core-service task-role injection wiring (no deployed core-service container exists; CDK authored-not-deployed) + the rotated SHOPIFY_CLIENT_SECRET value provisioned into Secrets Manager (grandparent ceremony). No commit without Founder 'commit it'; no live cutover.",
+      "dependency": "Rotated SHOPIFY_CLIENT_SECRET (compromised) + SM secret brain/_app/shopify/hmac_secret from parent/grandparent slices. BUILD does not block on them (env-injection keeps TS runtime byte-identical); only the live cutover does. No pre-flight dependency violation.",
+      "escalation": "none-fired; trigger armed (a Node AWS SM client proposal at Stage 2/3 re-opens CF-CC-OWNER-1 -> route to Rohan -> Founder).",
+      "stage2_plan": {
+        "author": "architect (Aryan)",
+        "ts": "2026-05-29T19:10:00Z",
+        "artifact": "06-architecture-plan.md",
+        "paradigm": "sql",
+        "boundary": "TS reader of SHOPIFY_CLIENT_SECRET is process.env; ZERO AWS SDK in apps/core-service/src. CDK task-def secrets: mapping (ap-south-1 SM brain/_app/shopify/hmac_secret -> SHOPIFY_CLIENT_SECRET) injects the value at container start.",
+        "single_primitive_sweep": "clean; mirror gateway readAuthConfig/assertBootableAuthConfig boot-assert pattern (server.ts:60-76); reuse requireEnv + validateShopifyHmac + appShopifyHmacSecret untouched",
+        "handoff": "folded into 06 sec17/17b (small single-file-pair + one CDK construct; no separate 07)",
+        "tracks": {
+          "V": "backend-developer (Vikram) - boot-assert.ts + barrel re-export + gateway boot call + boot-assert.test + no-aws-sdk-boundary.test; provider-config untouched",
+          "J": "platform-devops (Jatin) - core-service-task-def-stack.ts (representative Fargate task-def, ONE secrets: mapping, cross-stack ref to appShopifyHmacSecret, ap-south-1, least-priv) + bin/app.ts register + synth assertions; Tanvi re-asserts synth at Stage 5"
+        },
+        "acceptance_contract": "all 8 CFs -> verifiable artifact -> Stage-4/5/6 bounce condition in 06 sec17b",
+        "held_for_stage8": "live core-service task-role wiring + deployed container + rotated SHOPIFY_CLIENT_SECRET value into SM. No cdk deploy. No commit without Founder 'commit it'. Never print live shpss_ value.",
+        "open_questions": "none-blocking; representative task-def is a scaffold (full Fargate service is Phase-1/Stage-8 infra)"
+      },
+      "next_stage": 6,
+      "next_agent": "cto-advisor",
+      "branch": "chore/intake-chore-ts-oauth-app-secret-custody",
+      "stage3_track_v": {
+        "builder": "backend-developer (Vikram)",
+        "ts": "2026-05-29T14:12:00Z",
+        "status": "complete",
+        "staged_files": [
+          "apps/api-gateway/src/interfaces/server.ts",
+          "apps/core-service/src/__tests__/boot-assert.test.ts",
+          "apps/core-service/src/__tests__/no-aws-sdk-boundary.test.ts",
+          "apps/core-service/src/application/connectors/boot-assert.ts",
+          "apps/core-service/src/application/connectors/index.ts"
+        ],
+        "test_result": "262 passed | 30 skipped (integration, no live DB) | 0 failed",
+        "typecheck": "clean (core-service + api-gateway)",
+        "aws_grep_production_source": "zero matches (exit 1)",
+        "legacy_diff": "zero",
+        "cf_met": [
+          "CF-TS-FAILFAST-1",
+          "CF-TS-NEVERLOG-1",
+          "CF-TS-NO-AWS-CLIENT-1",
+          "CF-TS-HMAC-CONST-1"
+        ],
+        "provider_config_untouched": true
+      },
+      "stage5_qa": {
+        "reviewer": "qa-agent (Tanvi)",
+        "ts": "2026-05-29T18:22:00Z",
+        "verdict": "PASS",
+        "tests": "262 unit / 49 CDK / 17 new tests green",
+        "boundary_gate_non_vacuous": true,
+        "cf_met": [
+          "CF-HMAC-TS-OWNER-INJECT-1",
+          "CF-TS-NO-AWS-CLIENT-1",
+          "CF-TS-FAILFAST-1",
+          "CF-TS-HMAC-CONST-1",
+          "CF-TS-NEVERLOG-1",
+          "CF-TS-RESIDENCY-1",
+          "CF-TS-SAME-KEY-1",
+          "CF-TS-INJECT-SYNTH-1"
+        ],
+        "findings_critical": 0,
+        "findings_high": 0,
+        "findings_med": 0,
+        "findings_low": 1,
+        "bounce": null
+      },
+      "stage6_final_review": {
+        "reviewer": "cto-advisor (Rohan)",
+        "ts": "2026-05-29T18:35:00Z",
+        "verdict": "APPROVE-WITH-CAVEATS",
+        "delegated": true,
+        "decided_by": "rishabhporwal (Founder) via Rohan standing delegation",
+        "artifacts": ["11-final-review.md", "14-retro.md", "12-founder-decision.json"],
+        "paradigm": "sql",
+        "monthly_cost_inr": 0,
+        "cfs_met": 8,
+        "re_mutation": "CF-TS-NO-AWS-CLIENT-1 injected @aws-sdk import into boot-assert.ts -> RED (named exact file) -> git checkout -> hash byte-identical (ddf80bcf1c6dd7d221b6eb8643311a0603b4387b before+after) -> GREEN 6/6. Non-vacuous.",
+        "gates_rerun_by_rohan": [
+          "provider-config.ts diff == 0 (staged+worktree)",
+          "core-service 262 passed | 30 skipped",
+          "boot-assert.test.ts 11/11",
+          "infra/cdk 49/49",
+          "cdk synth CoreServiceTaskDefStack: secrets via Fn::ImportValue brain-app-shopify-hmac-secret-arn; 0 foreign-region; 0 shpss_; 0 new AWS::SecretsManager::Secret; 1 AWS::ECS::TaskDefinition; IAM ARN-scoped no '*' (DescribeSecret auto-added but scoped to same secret ARN, no widening)"
+        ],
+        "hard_rule_deviations": 0,
+        "over_engineering_findings": 0,
+        "drift": "none",
+        "staging_finding": "3 CDK files (infra/cdk/bin/app.ts, core-service-task-def-stack.ts, its test) were unstaged at review; Shreya+Tanvi flagged; Rohan re-confirmed. pending-founder-commit.md augmented to stage all 8 files in one commit. Not a bounce.",
+        "parent_closure": "Closes named TS follow-on of chore-app-hmac-secret-custody at build level. CF-CC-OWNER-1 preserved (no Node AWS client).",
+        "carry_forward_low": "L1 console.error fatal-boot style (consistent with existing assertBootableAuthConfig pattern); fold into structured boot logger later. Non-blocking.",
+        "held_for_stage8": [
+          "full core-service Fargate service (networking/ALB/autoscaling/ECR image/task-role attach)",
+          "live task-role injection wiring + deployed container",
+          "rotated SHOPIFY_CLIENT_SECRET value provisioned into SM brain/_app/shopify/hmac_secret (never printed)",
+          "live secrets: injection smoke",
+          "no cdk deploy; no commit without Founder 'commit it'"
+        ],
+        "findings_critical": 0,
+        "findings_high": 0,
+        "findings_med": 0,
+        "findings_low": 1,
+        "bounce": null
+      }
     }
   ],
   "hygiene_sweep_note": "2026-05-26 sweep: reconciled active.json against actual git state on origin/development. Items whose code-work merged via PRs #1-#5 are now status=merged-on-development; LIVE-prod cutover gates remain held per the original Stage-8 notes; epic parents annotated; pending-founder-attention.md updated in companion edit."
