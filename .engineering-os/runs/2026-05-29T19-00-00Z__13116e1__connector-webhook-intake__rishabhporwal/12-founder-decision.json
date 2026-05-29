@@ -1,0 +1,64 @@
+{
+  "ts": "2026-05-29T23:30:00Z",
+  "req_id": "connector-webhook-intake",
+  "stage": 6,
+  "decision_record": "delegated-founder-gate",
+  "decided_by": "cto-advisor (Rohan)",
+  "authority": "standing Founder delegation (feedback_founder_delegates_to_cto_advisor)",
+  "verdict": "PASS",
+  "recommendation": "APPROVE",
+  "founder_gate": "SIGNED under standing delegation",
+  "hard_rule_deviation": "NONE",
+  "self_sign_permitted": true,
+  "self_sign_rationale": "Hard-rule scan clean: dependency-clean (builds on committed chore-app-hmac-secret-custody seam), NO held cutover executed, NO-LIVE-1 intact (route exported-not-registered, grpc bound 127.0.0.1), Single-Primitive intact, legacy diff==0, DPDP residency intact, NO-HARDCODED-VENDOR grep clean.",
+  "independent_reverification": {
+    "method": "Rohan re-mutated load-bearing CRITICAL invariants on disk, captured output, reverted byte-clean (md5 webhook_servicer.py identical pre/post: df60d31328395a0e6162d1eed689a26c)",
+    "mutation_1_flip_verify_always_true": "RED (9 failed) — reverted clean",
+    "mutation_2_map_before_verify": "RED (2 failed) — reverted clean",
+    "mutation_3_except_reject_to_pass_BOUNCE1": "RED (2 failed, UnboundLocalError propagates) — BOUNCE-1 fix holds under Rohan's hand; reverted clean",
+    "mutation_5_hardcode_shopify_ignore_vendor": "RED (5 failed, _test_token rejected as unknown_vendor) — reverted clean",
+    "mutation_4_anchor_body_hash": "not re-applied this pass (lives in webhook_intake.py; Shreya+Tanvi both RED; structurally sound)",
+    "python_suite_after_reverts": "329 passed, 14 skipped",
+    "gateway_suite_after_reverts": "42 passed",
+    "verify_the_verifier_durable_rule": "discharged — already-adopted rule 2026-05-26__verify-the-verifier-mutation-on-gate fired correctly (Tanvi caught vacuous mutation-3, Maya fixed via dead-code removal, Rohan re-verified RED)"
+  },
+  "plan_binding_confirmed": "All 16 staged files map to bound plan (§17 + §0-GEN); generic POST /webhooks/:vendor + vendor-dispatched registry + connector_identity_map composite PK + grpc.aio internal servicer + receive_webhook push-intake; deleted route.webhook-shopify.* replaced by generic forms; no drift.",
+  "over_engineering_audit": "CLEAN — every file requirement-mapped; only new deps grpcio + grpcio-health-checking (chosen transport, smaller than barred Option B); registry is a selector not a premature framework (zero live Meta/Stripe specs; the spec shape is required by the Founder 100+-sources directive, not speculative); 4 webhook counters reuse existing mechanism.",
+  "single_primitive": "CLEAN — exactly one verify_shopify_hmac (called once); registry selects per-vendor verify fns; no forked ingest path; connector_identity_map string-vendor-discriminated (composite PK), not per-vendor tables; gateway computes zero HMAC.",
+  "paradigm_audit": "sql + io/event-handling on all new modules; zero LLM/ML/inference import; ₹0 recurring; defends %-of-GMV cost model.",
+  "four_tenancy_layers": "PRESENT — JWT N/A (HMAC is the auth, route outside tRPC plugin); service-side workspace derived only post-verify + assert_workspace_allowed backstop; DB RLS via with_workspace in _upsert_event; Kafka envelope keyed workspace_id. One deliberate system-scoped identity-lookup asymmetry surfaced + Shreya-confirmed SAFE (no PII, single-row, identity read post-verify only).",
+  "generalization_review": "PASS — vendor-dispatched registry did not weaken any CRITICAL/HIGH invariant (Shreya re-review PASS); 2nd-test-vendor (_test_token) full ACCEPTED/PARKED/IGNORED/REJECTED matrix GREEN with zero servicer/route/proto edits; unknown/spoofed vendor is the FIRST REJECT branch (strengthened, not weakened).",
+  "upstream_gates": {
+    "stage1_cto": "ADVANCE (Option-C bound; A/B/C non-blocking founder note)",
+    "stage2_architect": "bound + GENERALIZATION REVISION (vendor-dispatched registry, 16 CFs + 2 GEN CFs)",
+    "stage3_dev": "complete (Maya T-GEN-A + Vikram T-GEN-B)",
+    "stage4_security": "PASS + generalization re-review PASS (0 CRIT/HIGH; no invariant weakened)",
+    "stage5_qa": "BOUNCE-1 (mutation 3 vacuous) -> Maya DELTA fix (removed unreachable belt-guard) -> Tanvi DELTA re-review PASS"
+  },
+  "bounce_1_resolution": "Mutation 3 kill test was vacuous (belt-guard absorbed fall-through). Maya removed the structurally-unreachable belt-guard (Option A) and declared secret inside the try block. Mutation 3 now goes RED via UnboundLocalError. Re-verified by Rohan on disk. No security regression (belt-guard was dead code; bare except Exception is exhaustive). This is the already-adopted verify-the-verifier durable rule firing correctly — NOT a new rule-candidate.",
+  "carried_nonblocking": [
+    "MED-1 grpcio floor >=1.68.0 -> raise to >=1.70.0 before Stage-8 (in HELD list)",
+    "MED-2 shop_resolver.py dead code (not imported; staged as provenance) -> delete in Stage-8 prep or fast-follow",
+    "webhook_intake.py v1 vendor coupling (ShopifyAdapter direct import) -> generalize at vendor #2 onboarding (documented, vendor param already generic)",
+    "LOW-1 gateway logs vendor/bodyLength pre-verify (non-PII, bounded) -> informational",
+    "MED-3 out-of-slice Expo @xmldom/xmldom advisories -> mobile-developer"
+  ],
+  "held_stage_8": [
+    "live gRPC server bind (internal-only)",
+    "public ingress + WAF + TLS for POST /webhooks/:vendor",
+    "register vendor webhook subscriptions at real URL",
+    "rotate compromised shpss_ secret (two-place ceremony)",
+    "seed connector_identity_map real Sugandh-Lok row",
+    "raise grpcio floor >=1.70.0 + lockfile pin (Shreya MED-1)",
+    "real vendor test-event round-trip smoke",
+    "botocore/urllib3 DEBUG-off + festival-safe window"
+  ],
+  "committed": false,
+  "commit_status": "PENDING Founder free-text 'commit it' (AskUserQuestion insufficient; harness blocks agent commit). Mechanical command (16 explicit product paths, no git add -A) in 11-final-review.md §13 + pending-founder-commit.md. Jatin makes the chore(eos) audit-trail commit at Stage 8.",
+  "next_step": "Founder says 'commit it' -> commit reviewed code to feat/connector-webhook-intake off development; Stage 8 (Jatin) HELD until console ceremony.",
+  "artifacts": {
+    "final_review": "11-final-review.md",
+    "retro": "14-retro.md",
+    "founder_decision": "12-founder-decision.json"
+  }
+}

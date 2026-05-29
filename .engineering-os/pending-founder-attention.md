@@ -5,6 +5,24 @@
 
 ---
 
+## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `connector-webhook-intake`
+
+**Rohan's verdict: PASS → APPROVE.** Signed the Founder gate on your behalf under standing delegation (hard-rule deviation scan CLEAN). This is the **inbound webhook ingress** that consumes the HMAC-custody seam from `chore-app-hmac-secret-custody` — now generalized (per your "100+ sources" directive) into a **vendor-dispatched registry**: a generic `POST /webhooks/:vendor` at the gateway → internal gRPC → a verify-first/default-deny Python servicer that reads every per-vendor fact (verify fn, secret fn, signature/identity/idempotency/topic headers, allowlist) from `WEBHOOK_VERIFIERS[request.vendor]`. **Shopify is the FIRST registered vendor, not the shape.** Adding vendor #2 is zero core change (proven by a 2nd test-vendor running the full ACCEPTED/PARKED/IGNORED/REJECTED matrix GREEN with zero servicer/route/proto edits). `connector_identity_map` is composite-PK `(vendor, external_identity)` — the integration-extensible-schema posture, not per-vendor tables. `@paradigm sql`, **₹0/mo** (zero LLM/ML). 18 CFs MET; 0 CRITICAL/HIGH at S4/S5/S6; over-engineering audit CLEAN; four-tenancy PRESENT; legacy diff==0. Run folder: `.engineering-os/runs/2026-05-29T19-00-00Z__13116e1__connector-webhook-intake__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
+
+**Independent re-mutation (run by me on disk — captured, reverted byte-clean, md5 of `webhook_servicer.py` identical pre/post):** (1) flip verify→always-True → RED 9-failed; (2) map-before-verify → RED 2-failed; (3) the BOUNCE-1 `except Exception:` REJECT→`pass` → RED 2-failed (`UnboundLocalError` propagates — **the BOUNCE-1 fix holds under my hand**, not just Tanvi's; Maya removed the dead belt-guard and now `secret` is declared inside the try so a fall-through leaves it unbound); (5) hardcode-Shopify-ignore-vendor → RED 5-failed (`_test_token` correctly rejected as `unknown_vendor`). Mutation 4 (anchor→body-hash) lives in the intake module — Shreya+Tanvi both RED + structurally sound, not re-applied this pass. **Full suites after reverts: 329 passed / 14 skipped (Python), 42 passed (gateway).** The verify-first invariants are genuinely test-anchored.
+
+**Stage-5 BOUNCE-1 was the verify-the-verifier durable rule (`2026-05-26`) firing correctly** — Tanvi caught a vacuous mutation-3 kill test (a belt-and-suspenders guard absorbed the fall-through), Maya fixed via dead-code removal, I re-verified RED. The rule is already adopted; **no new rule-proposal** (the auto-candidate rule needs ≥3 distinct runs of a *new* root cause; this is the existing family, and the standing rule worked).
+
+**Two Founder asks:**
+1. **Commit it** — say "commit it" (free text) to commit the reviewed code to a fresh `feat/connector-webhook-intake` branch off `development`. Mechanical command (16 explicit product paths only, **no `git add -A`**) in `…/11-final-review.md §13` + `…/pending-founder-commit.md`. ⚠️ The command re-`git add`s the working-tree versions of `webhook_servicer.py` + `test_webhook_servicer.py` first (the BOUNCE-1 delta sits unstaged on a stale index). Committing the code is **NOT** the live ingress and **NOT** the secret rotation.
+2. **Line up the Stage-8 ceremony prerequisites** (non-blocking now, needed before cutover): public ingress + WAF/TLS for the gateway, the real Shopify webhook subscription URL, the compromised `shpss_…` rotation value, the real `connector_identity_map` Sugandh-Lok row, and a festival-safe window.
+
+**What stays HELD for Stage 8 (Founder/Jatin-at-console — none delegable, none auto-advanced):** live gRPC server bind (internal-only) · public ingress + WAF/TLS for `POST /webhooks/:vendor` · register the vendor webhook subscription at the real URL · **rotate** the compromised `shpss_…` (two-place ceremony; the value at `apps/api-gateway/.env:27` is compromised-by-exposure) · seed `connector_identity_map` with the real Sugandh-Lok row · **raise grpcio floor → `>=1.70.0`** + lockfile pin (Shreya MED-1, known-DoS-line admission) · real vendor test-event round-trip smoke · **botocore/urllib3 DEBUG-off** + **festival-safe window**.
+
+**Carry-forward MED/LOW (non-blocking):** MED-2 `shop_resolver.py` is dead code (not imported; staged as provenance) — delete in Stage-8 prep or a fast-follow. `webhook_intake.py` still hard-wires `ShopifyAdapter` for normalize/manifest (documented v1-single-vendor limitation; the `vendor` param + Kafka topic + `RawEvent.vendor` are already generic — the spec-lookup is the vendor-#2 onboarding task). LOW-1 gateway logs `vendor`/`bodyLength` pre-verify (non-PII, bounded). MED-3 out-of-slice Expo `@xmldom/xmldom` advisories (mobile-developer).
+
+---
+
 ## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `chore-app-hmac-secret-custody`
 
 **Rohan's verdict: PASS → APPROVE.** Signed the Founder gate on your behalf under standing delegation (hard-rule deviation scan clean). Closes the plaintext-secret posture on the **Shopify inbound-webhook HMAC verifier (C3, Python)**: an app-level singleton secret provider (`AppSecretsManagerProvider` + factory + dev/held fallbacks) feeds the **unchanged** `verify_shopify_hmac()` — fail-closed on unretrievable, ap-south-1 residency-asserted, ids-only never-log with botocore-DEBUG suppression, boot/cached (≤1 SM call). CDK adds the representative `brain/_app/shopify/hmac_secret` (CMK-encrypted, RETAIN, authored-NOT-deployed, IAM not widened). `@paradigm sql`, **₹0/mo**. 11/11 CFs MET; 0 CRITICAL/HIGH at S4/S5/S6; over-engineering audit PASS. Run folder: `.engineering-os/runs/2026-05-29T17-00-00Z__47e81e9__chore-app-hmac-secret-custody__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
@@ -340,3 +358,32 @@ At the Stage-8 console ceremony for this feature (alongside the parent
 Rotation for this key is a documented MANUAL two-place ceremony (Shopify dashboard + custody) —
 Secrets Manager auto-rotation is FORBIDDEN for it (SM cannot update Shopify's dashboard → would
 break every signature). No action needed now; line this up ahead of cutover.
+
+---
+
+## 2026-05-29 — connector-webhook-intake — architecture placement decision (NON-BLOCKING; Stage 2 proceeding on default)
+
+**From:** Rohan (cto-advisor), Stage 1 intake.
+**Status:** NON-BLOCKING. Aryan builds the Stage-2 plan on the default; amends only if you override.
+
+WHERE the public Shopify inbound webhook endpoint lives. Ruled at Stage 1:
+
+- **Default = Option C** — thin public receive at api-gateway (raw-body-faithful) → forward the
+  untouched raw body + `X-Shopify-*` headers to ingestion-service → verify
+  (`verify_shopify_hmac` + the app-level secret) + idempotent intake + Kafka produce in Python.
+  Keeps the public surface + rate-limit at the gateway (canon "public → api-gateway only") AND the
+  lone base64/raw-body verifier Single-Primitive in Python alongside the secret provider + ingest_batch.
+
+- **Option A barred** — would duplicate the verifier in Node (Single-Primitive + CF-HMAC-ALGO-DISTINCT-1).
+  The gateway's existing `validateShopifyHmac` is the OAuth-callback verifier (hex/sorted-query) — wrong
+  algorithm for inbound webhooks; reusing it would be a correctness bug.
+
+- **Option B** (ingestion-service grows its own *public* FastAPI listener) — would add a SECOND public
+  front door to a service that is a Kafka worker today: new long-running server + dep + public
+  ingress/TLS/WAF/rate-limit posture, contradicting the gateway-as-sole-public-choke-point invariant.
+  A material, mostly-irreversible expansion of the public attack surface + deploy shape. Surfaced here
+  rather than chosen silently.
+
+**Ask:** ratify Option C, or override to B (accepting the second-front-door tradeoff). No action blocks
+Stage 2. Live deploy + public webhook registration (the Shopify subscription pointing at the real URL) +
+rotation of the compromised `shpss_…` at apps/api-gateway/.env:27 are HELD-Stage-8 regardless.

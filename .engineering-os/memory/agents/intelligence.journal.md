@@ -161,6 +161,57 @@
 - Output: `14 passed in 0.01s` (Track V unchanged)
 **Handoff signal:** READY-FOR-SECURITY-AND-QA-PARALLEL-REVIEW
 
+## 2026-05-29T21:30:00Z — Maya (intelligence-engineer) — connector-webhook-intake (BOUNCE-1 Delta Fix)
+
+**Stage:** 3 (DELTA bounce fix — BOUNCE-1 from Tanvi Stage-5 QA)
+**Service:** ingestion-service
+**Paradigm mix:** sql + io/event-handling (no LLM, no ML; zero marginal cost)
+**Parity:** N/A (no metric formula in this slice; sql+io paradigm throughout)
+
+**Decision (A vs B):** Option A — remove the redundant `if secret is None` belt-guard.
+
+**Reasoning:**
+The belt-guard at lines 252-263 (old numbering per Shreya's review) was dead code. Proof of exhaustiveness: the bare `except Exception:` catches every Python exception without exception (pun intended). The assignment `secret: str = spec.secret_fn(provider)` lives inside the `try` block body. If any exception fires before or during that assignment, the control flow transfers to one of the three except clauses, all of which `return _make_response(OUTCOME_REJECTED, request_id)` — so execution NEVER reaches the post-try block with `secret` unbound or None. The `if secret is None` guard was therefore structurally unreachable. Keeping unreachable dead code is wrong engineering AND it vacuated Mutation 3 — the belt-guard absorbed the fall-through when the bare except was mutated to `pass`, making the kill test pass for the wrong reason (VERIFY-THE-VERIFIER-1 violation).
+
+**Fix applied:**
+- Removed the `secret: str | None = None` pre-initialization before the try.
+- Changed `secret: str | None = None` → `secret: str` declared inside the try as `secret: str = spec.secret_fn(provider)`.
+- Removed the post-try `if secret is None:` guard block entirely.
+- Reinforced the bare `except Exception:` block comment to state it is the load-bearing default-deny catch-all.
+- Updated docstrings in the three mutation-3 kill tests to accurately describe the new kill mechanism: with mutation 3 applied (bare except → pass), `secret` is unbound after fall-through, so `spec.verify_fn(raw_body, signature_header_value, secret)` raises `UnboundLocalError` → test goes RED (pytest ERROR).
+
+**Shreya line-ref shift (note for Shreya's awareness):**
+Shreya's VERIFY-FIRST-1 evidence in 09-security-review.md cited `'secret is None' belt-guard→REJECT(254)` as one of the default-deny branches. That line no longer exists. The VERIFY-FIRST-1 posture is NOT weakened — the dead-code removal eliminates an unreachable branch and promotes the bare `except Exception:` REJECT to the single, independently testable load-bearing default-deny for unexpected exceptions. The other three REJECT paths (unknown vendor, missing sig, AppSecretUnavailableError, HeldAppSecretError) are all unchanged.
+
+**Mutation-3 RED proof (captured output):**
+```
+FAILED tests/unit/test_webhook_servicer.py::TestVerifyFirstStateMachine::test_unexpected_exception_from_secret_rejected
+FAILED tests/unit/test_webhook_servicer.py::TestKillMutations::test_mutation_3_unexpected_exception_rejects_not_accepts
+2 failed, 64 passed in 0.10s
+```
+Error: `UnboundLocalError: cannot access local variable 'secret' where it is not associated with a value` at `webhook_servicer.py:252` (`spec.verify_fn(raw_body, signature_header_value, secret)`).
+
+**All-5-mutations re-run results (each RED, each reverted clean):**
+| # | Mutation | Result | Failures |
+|---|----------|--------|----------|
+| 1 | `verify_fn` → always True | RED | 9 failed |
+| 2 | identity resolver before verify | RED | 2 failed |
+| 3 | `except Exception:` REJECT → `pass` | RED | 2 failed (UnboundLocalError) |
+| 4 | anchor → body hash | RED | 1 failed |
+| 5 | `_get_registry` hardcode Shopify | RED | 5 failed |
+
+**Final full suite (all mutations reverted):** `329 passed, 14 skipped in 0.95s` — green.
+
+**Files touched:**
+- `apps/ingestion-service/src/interfaces/grpc/webhook_servicer.py` — removed `secret: str | None = None` pre-init + `if secret is None` belt-guard block; tightened exception-block comment; changed `secret` annotation to `str` inside try
+- `apps/ingestion-service/tests/unit/test_webhook_servicer.py` — updated docstrings for the 3 mutation-3 kill tests to accurately describe the new kill mechanism
+
+**Verification:**
+- Command: `uv run --no-sync --project apps/ingestion-service pytest apps/ingestion-service/tests/ -q`
+- Output: `329 passed, 14 skipped in 0.95s`
+
+**Next:** READY-FOR-TANVI-DELTA-REVIEW
+
 ## 2026-05-25T08:30:00Z — Maya (intelligence-engineer) — feat-metric-engine-olap-split (Bounce-Fix Part 1)
 **Stage:** 3-bounce-fix
 **Track:** M (metric registry canon lock)
