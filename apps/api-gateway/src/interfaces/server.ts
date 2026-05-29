@@ -33,6 +33,7 @@ import {
 
 import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
+import { assertShopifyOAuthSecretsPresent } from '@brain/core-connectors';
 import { createBrainRouter } from '../application/router.js';
 import { DispatchingDataPlane } from '../infrastructure/dispatching-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
@@ -348,6 +349,16 @@ async function main() {
   if (fatal) {
     // eslint-disable-next-line no-console
     console.error(`FATAL: ${fatal}`);
+    process.exit(1);
+  }
+
+  // CF-TS-FAILFAST-1: missing SHOPIFY_CLIENT_SECRET must surface at process
+  // start, not at the first OAuth callback. The assert is pure — it names the
+  // var in the message, never the value (CF-TS-NEVERLOG-1).
+  const shopifyFatal = assertShopifyOAuthSecretsPresent();
+  if (shopifyFatal) {
+    // eslint-disable-next-line no-console
+    console.error(`FATAL: ${shopifyFatal}`);
     process.exit(1);
   }
 

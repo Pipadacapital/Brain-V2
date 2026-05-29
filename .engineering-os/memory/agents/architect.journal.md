@@ -246,3 +246,15 @@
 **Skills loaded:** architecture-patterns, domain-driven-design, database-design, region-adapter, engineering-discipline.
 **Open questions:** NONE.
 **Next:** @maya (intelligence-engineer T-GEN-A) + @vikram (backend-developer T-GEN-B) — Stage 3 REFACTOR, PARALLEL.
+## 2026-05-29T19:10:00Z — Aryan (architect) — chore-ts-oauth-app-secret-custody
+**Stage:** 2
+**Action:** Produced binding architecture plan (06-architecture-plan.md). Handoff FOLDED into §17/§17b (small).
+**Paradigm:** sql (config/crypto/infra I/O; zero inference — matches Rohan first-pass)
+**Boundary one-liner:** TS reader of SHOPIFY_CLIENT_SECRET = process.env; ZERO AWS SDK in apps/core-service/src; CDK task-def `secrets:` mapping (ap-south-1 SM brain/_app/shopify/hmac_secret -> SHOPIFY_CLIENT_SECRET) injects the value at container start.
+**Tracks emitted:** V (backend-developer/Vikram: boot-assert.ts mirroring server.ts:60-76 + barrel re-export + gateway boot call + 2 tests; provider-config UNTOUCHED) · J (platform-devops/Jatin: representative core-service Fargate task-def stack w/ ONE secrets: mapping cross-stack-ref to appShopifyHmacSecret + ap-south-1 + least-priv + synth assertions; Tanvi re-asserts at Stage 5).
+**Single-Primitive sweep:** clean — mirrored the gateway readAuthConfig/assertBootableAuthConfig boot-assert micro-pattern; reused requireEnv + validateShopifyHmac + appShopifyHmacSecret untouched; rejected a config framework + a Node AWS SM client (latter = Founder escalation, barred by ruling).
+**Acceptance contract:** all 8 CFs -> verifiable artifact -> Stage-4/5/6 bounce condition (§17b). New gate CF-TS-INJECT-SYNTH-1 = Template.fromStack synth assertions (no live container; persona C1).
+**Skills loaded:** architecture-patterns, domain-driven-design, region-adapter, engineering-discipline, verification-before-completion.
+**Over-engineering self-check:** PASS 7/7 (every §17 file requirement-mapped; NO new deps — aws-ecs ships in pinned aws-cdk-lib 2.257.0, NO @aws-sdk in core-service; no observability beyond existing fatal-boot log; tests target the no-AWS gate + fail-fast + never-log + synth mapping; full Fargate service HELD-Stage-8).
+**Open questions:** NONE blocking. Non-blocking: representative task-def is a scaffold; full core-service Fargate service is Phase-1/Stage-8 infra. Rotated shpss_ value provisioned at Stage-8 ceremony (never printed).
+**Next:** @vikram (backend-developer, Track V) + @jatin (platform-devops, Track J) — Stage 3, spawned in PARALLEL.
