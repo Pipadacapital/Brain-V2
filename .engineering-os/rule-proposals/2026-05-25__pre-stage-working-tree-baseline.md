@@ -10,7 +10,7 @@
 | **proposed_by** | `cto-advisor (Rohan)` |
 | **proposed_at** | 2026-05-25T13:46:00Z |
 | **target_scope** | stage-3-developer + stage-5-qa + stage-6-final-review |
-| **status** | proposed |
+| **status** | ADOPTED 2026-05-29 → `.engineering-os/durable-rules/2026-05-29__pre-stage-working-tree-baseline.md` |
 
 ---
 
@@ -100,8 +100,8 @@ absorbed regression is the worse outcome — it ships behind a green count that 
 
 | Field | Value |
 |---|---|
-| **decided_at** | {{DECIDED_AT}} |
-| **decided_by** | rishabh (Founder; agents cannot decide their own rules) |
-| **decision** | {{DECISION}} |
-| **rationale** | {{DECISION_RATIONALE}} |
-| **durable_rule_path** | {{DURABLE_RULE_PATH}} |
+| **decided_at** | 2026-05-29T18:00:00Z |
+| **decided_by** | rishabhporwal (Founder; agents cannot decide their own rules) |
+| **decision** | ADOPTED |
+| **rationale** | ≥3 recurring occurrences of working-tree contamination of a stage's verification/commit set; trivial cost (<1% tokens); protects review integrity under the autonomous accumulate-uncommitted model. |
+| **durable_rule_path** | `.engineering-os/durable-rules/2026-05-29__pre-stage-working-tree-baseline.md` |
