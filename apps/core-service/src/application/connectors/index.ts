@@ -57,6 +57,10 @@ export {
 export { LocalAesGcmCustody } from '../../infrastructure/secrets/local-aesgcm-custody.js'
 export { HeldProductionCustody, NotImplementedCustodyError } from '../../infrastructure/secrets/production-custody.js'
 
+// Boot-time presence assert (CF-TS-FAILFAST-1 / CF-TS-NEVERLOG-1).
+// The gateway boot block calls this alongside assertBootableAuthConfig.
+export { assertShopifyOAuthSecretsPresent } from './boot-assert.js'
+
 // Slice E — connector data ingestion (sync + ACL + normalizers + fact-analytics read).
 export {
   syncConnector,
