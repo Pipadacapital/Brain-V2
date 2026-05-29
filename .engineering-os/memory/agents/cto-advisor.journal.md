@@ -715,3 +715,28 @@
 **Durable rule:** verify-the-verifier (2026-05-26 sub-rule 7) — 11th occurrence; distinctive because the vacuous test was the gate-mutation test itself. No new rule proposed (specialization of existing adopted rule); lesson captured in 14-retro.md.
 **Open questions:** none — escalation NONE fired. Stage-8 ceremony preconditions enumerated (botocore-DEBUG-off, festival-freeze, vendor-200/parity legs, Shiprocket-last DELETE).
 **Next:** Stage 8 readiness (Jatin, platform-devops) — everything live HELD; Founder "commit it" required to commit the reviewed working tree.
+
+## 2026-05-29T17:05:00Z — Rohan (cto-advisor) — chore-app-hmac-secret-custody
+**Stage:** 1 (intake + brainstorm + synthesis, single-session; Agent tool unavailable → personas authored in-session per the established run pattern)
+**Action:** Intake of the CF-CC-SHOPIFY-HMAC-1 follow-up split out of feat-credential-custody-aws-sm (Track C). Read canon §13/§6/§16, journal, state; verified code reality of the secret's consumers.
+**Grounding correction (load-bearing):** stub said verifier=core-service, grounding-note said api-gateway — BOTH partial. Verified THREE consumers of `SHOPIFY_CLIENT_SECRET`: C1 OAuth-callback HMAC (TS core-service `validateShopifyHmac`, hex/sorted-query, workspace context EXISTS), C2 OAuth token exchange (TS core-service), C3 inbound-webhook HMAC (Python ingestion-service `verify_shopify_hmac`, base64/raw-body, secret INJECTED as param, NO workspace context, NO caller/ingress route yet — pure fn awaiting wiring). Canon §3 makes ingestion-service the webhook owner → C3 is Python/ingestion, NOT api-gateway. The "before workspace context" premise is true ONLY of C3.
+**Lane:** high-stakes (auth/HMAC-gate + secrets-custody + connectors + india-compliance/DPDP-residency; scaffolding carve-out BARRED — live-credential auth-gate runtime).
+**Personas spawned (Stage 1):** 2/2 (high-stakes cap; two distinct dimensions) — `webhook-hmac-verification-correctness-realist:haiku` (bounded gate checklist) + `app-level-secret-custody-residency-realist:sonnet` (retrieval-shape/residency/Single-Primitive reasoning). Both ACCEPTED (4+5=9 concerns; 1 CRITICAL fail-open, 5 HIGH, 3 MEDIUM; 0 looks-good, 0 dropped). Declined ai-cost-realist (zero inference) + generic-architecture (Aryan's job).
+**Decision:** ADVANCE → Architect (Aryan) Stage 2. Not CHALLENGE-BACK (buildable+planable once grounding corrected), not KILL (this IS the separate-tracking the parent ruling demanded).
+**CF contract bound (11 new + parent inheritance):** FAILCLOSED-1 (CRIT), VERIFY-THE-VERIFIER-1 (CRIT gate-rule, durable-rule 2026-05-26), ALGO-DISTINCT-1, SINGLE-PRIMITIVE-1 (reuse parent custody, feed existing verifier), RETRIEVAL-SHAPE-1 (default = SM singleton brain/_app/shopify/hmac_secret ap-south-1, boot/cached; env = dev-only fallback via parent's factory flag), TS-VS-PY-OWNER-1 (Aryan RULES the retrieval-owner boundary — the crux), RESIDENCY-1, HOTPATH-CACHE-1 (never per-webhook SM call), ROTATION-MANUAL-1 (FORBID auto-rotation — can't update Shopify dashboard), NEVERLOG-1 (Shreya VETO), EXPOSED-VALUE-ROTATE-1. Inherits parent lazy-boto3/IAM-least-priv/recovery-seal/CDK-authored-not-deployed/no-commit-without-"commit it".
+**First-pass paradigm:** sql (crypto + secret retrieval; ₹0; zero inference).
+**Held for Stage-8 ceremony (Founder/Jatin):** real SM provisioning + CMK, put+ROTATE the live shpss_… value, IAM role creation, AWS account, festival-safe window, the inbound-webhook INGRESS route (separate feature — this slice leaves the seam).
+**Escalation:** NONE fired (Option A already Founder-decided; residency unambiguous; sql/₹0; additive+reversible). One NON-BLOCKING Founder readiness item mirrored: the shpss_… value in apps/api-gateway/.env:27 was observed in tooling → treat as compromised, rotate at cutover.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, llm-gateway, india-commerce-economics, architecture-patterns, verification-before-completion, subagent-orchestration, task-tracker-integration.
+**Open questions (inputs for Aryan, not blockers):** (1) TS-vs-Python retrieval-owner boundary; (2) cold-start fail-closed behavior of the boot fetch; (3) SM key + CMK exact naming; (4) cache TTL + rotation-refresh mechanism.
+**Next:** Architect (Aryan) Stage 2 — binding plan per 05-stage1-synthesis.md §3/§5. Intake artifacts on branch chore/intake-chore-app-hmac-secret-custody (off development).
+
+## 2026-05-29T18:45:00Z — Rohan (cto-advisor) — chore-app-hmac-secret-custody
+**Stage:** 6 (final review + delegated Founder gate)
+**Action:** Final review; re-mutated both CRITICAL gates on disk; signed Stage-7 gate under delegation.
+**Personas spawned (Stage 1):** webhook-hmac-verification-correctness-realist:haiku, app-level-secret-custody-residency-realist:sonnet (both ACCEPTED at intake)
+**Decision:** PASS → APPROVE (delegated)
+**Rationale:** 11/11 CFs MET; 0 CRIT/HIGH at S4/S5/S6; both gates re-mutated by me (compare_digest→== RED/revert/GREEN; not-found-raise→return"" RED×4/revert/GREEN — orchestrator-authored gate proven non-vacuous via 3 corroborating behavioral assertions); 5 Stage-5 gates replicated (263p/14s Py, 35p CDK, shpss_ grep 0); paradigm sql/₹0; over-engineering audit PASS; hard-rule scan clean ⇒ delegated auto-approve.
+**Skills loaded:** engineering-discipline, code-review, cost-routing-paradigms, india-commerce-economics, architecture-patterns, verification-before-completion
+**Open questions:** none — Stage 8 HELD behind named live-provisioning ceremony; TS follow-on named (chore-ts-oauth-app-secret-custody)
+**Next:** Founder "commit it" to commit reviewed code (mechanical cmd in pending-founder-commit.md); Stage 8 (Jatin) held until console ceremony.
