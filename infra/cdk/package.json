@@ -1,0 +1,23 @@
+{
+  "name": "@brain/infra-cdk",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Brain CDK IaC stacks — authored, NOT deployed. Deployment is the HELD Stage-8 Founder/console ceremony.",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "synth": "cdk synth",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.257.0",
+    "constructs": "10.6.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^24.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

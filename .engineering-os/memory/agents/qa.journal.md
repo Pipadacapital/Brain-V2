@@ -312,3 +312,27 @@ Full acceptance contract: 14/14 PASS. Traceability chain complete (01→02→02b
 - Parity gate exit 0; scale field intact (Child-4 non-regression).
 - Secrets grep: CLEAN (all hits assessed — env var refs / enum keys / test fixtures / Phase-0 stub gated behind IS_LOCAL_HARNESS).
 - Parallel review mode: NOT advancing pipeline; returning verdict to orchestrator.
+
+## 2026-05-29T20:00:00Z — Tanvi (qa-agent) — feat-credential-custody-aws-sm
+**Stage:** 5
+**Action:** QA FAIL (BOUNCE to Maya — backend-developer)
+**Test runs:** 56 unit+integration / 22 CDK assertions / 0 contract (no proto changes) / 0 e2e (no web surface)
+**Real-network smoke:** HELD-Stage-8 (honestly declared, not faked — not a bounce)
+**Metric registry parity (TS↔Python):** N/A (paradigm sql, no new metrics)
+**Trace IDs end-to-end:** N/A (no new gRPC/Kafka/LLM path)
+**Operational-readiness:** PASS (env vars documented; no new service entrypoint)
+**Mutation tests on high-stakes:**
+  - Mutation #1 (import-time zero-call, CF-CC-LAZY-1): RED confirmed — non-vacuous
+  - Mutation #2 (fail-closed default, CF-CC-GATE-1): GREEN — VACUOUS (bounce trigger)
+  - Mutation #3 (wrong-region kill, CF-CC-RESIDENCY-1): RED confirmed — non-vacuous
+**Coverage:** 56/56 tests pass; all moto+mutation+factory+validation paths covered; gate #2 test vacuous
+**Bounced to:** backend-developer (Maya)
+**Findings:** must-fix-now: 1 (vacuous gate test #2); LOW carry-forward: 2 (from Shreya: hatchling gap, stale doc path)
+
+### Detail
+- BOUNCE: test_2_fail_closed_default_no_aws_call calls select_custody() with no arg → effective=None → hits `case None | "" | "local":` branch. Mutation targets `case _:` branch. Test never reaches mutated code. Gate stays GREEN → vacuous. Durable rule 2026-05-26: bounce.
+- All other gates: PASS. Mutations #1 and #3 non-vacuous RED confirmed independently.
+- moto matrix 10/10: put/get round-trip, missing→KeyError, upsert idempotent, seal RecoveryWindowInDays=7 asserted, ForceDeleteWithoutRecovery absent, NEVERLOG, workspace isolation.
+- CDK 22/22 + cdk synth: PASS. IAM least-priv exact sets confirmed. No "*/wildcard. Region guard fires on us-east-1.
+- Legacy guard: 0 changes to `legacy project/`.
+- Flakiness: 0 (3 runs identical: 56 passed in 0.45-0.46s).

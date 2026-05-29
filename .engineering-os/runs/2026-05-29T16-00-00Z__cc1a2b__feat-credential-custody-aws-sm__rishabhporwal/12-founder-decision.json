@@ -1,0 +1,27 @@
+{
+  "req_id": "feat-credential-custody-aws-sm",
+  "stage": 7,
+  "decision": "APPROVE",
+  "decided_by": "rishabhporwal (Founder) via Rohan standing delegation",
+  "delegation_basis": "Founder standing delegation to Rohan (CTO Advisor) to sign every Founder gate on the Founder's behalf for the EOS pipeline end-to-end (MEMORY: feedback_founder_delegates_to_cto_advisor). Stage-6 step-9 hard-rule deviation scan is CLEAN (no dependency violation, no Single-Primitive violation, no compliance gap, no paradigm escalation, no un-codified gate-skip), so the delegated auto-approve is in-bounds.",
+  "ts": "2026-05-29T16:00:00Z",
+  "rationale": "Stage-6 PASS. Real boto3 AwsSecretsManagerCustody (get/put/seal) behind a fail-closed Python factory mirroring custody-factory.ts; lazy _client() (zero AWS at import/__init__); ap-south-1 residency assert + refuse-to-start; _validate_id workspace isolation; seal() RecoveryWindowInDays=7 with ForceDeleteWithoutRecovery forbidden (comments only); ids-only NEVERLOG (my grep clean). CDK CredentialCustodyStack authored-NOT-deployed: KMS CMK ap-south-1 + Secrets Manager CMK-encrypted + least-priv IAM (exact 6 SM actions + Tag, 2 KMS, secret:brain/* + CMK ARN, no wildcard). 226 Python tests + 22 CDK assertions + cdk synth clean. @paradigm sql, ZERO LLM/ML, ₹0/mo recurring. BOUNCE-1 (vacuous gate test_2) is REAL-FIXED on disk: test_2 now drives BOTH fail-closed branches under one boto3 spy. I independently RE-MUTATED all 3 load-bearing gates myself on disk (case None -> AWS = RED; case _: -> AWS = RED; residency-assert-removed = RED), reverted each clean (git diff == 0) -- replicates Tanvi's RE-VERIFY. Over-engineering audit PASS. Only the CF-C7 real-seal()/get() leg satisfied; everything live HELD.",
+  "verify_the_verifier": "Rohan re-mutated on disk (durable-rule sub-rule 7, 11th occurrence): mutation A case None->AWS RED via test_2 assertion (i); mutation B case _:->AWS RED via test_2 assertion (ii); mutation C residency-assert-removed RED via test_3 (DID NOT RAISE AwsRegionMismatchError). All reverted, git diff == 0. Full suite on reverted tree 226 passed / 14 skipped. This slice's bounce was the rule's 11th occurrence and was caught inside the gate's OWN test -- the meta-case for re-mutate-don't-re-run.",
+  "commit_authorization": "NOT GRANTED -- nothing committed. pending-founder-commit.md holds the explicit path-scoped commit command. CRITICAL staging note: the BOUNCE-1 test fix + LOW-2 doc fix live in the WORKING TREE (MM/AM); the commit must re-git-add test_aws_secrets_manager_custody.py + custody.py so the committed tree == the reviewed tree. Feature-branch-only rule honored; Founder free-text 'commit it' still required.",
+  "next_stage": 8,
+  "next_owner": "platform-devops",
+  "held_for_stage8": [
+    "Real AWS Secrets Manager + customer-managed KMS CMK provisioning in a real ap-south-1 account",
+    "IAM role creation + least-privilege policy attachment (cdk deploy, Founder/Jatin-at-console)",
+    "Live connector-token rotation into Secrets Manager (real put, real cost)",
+    "CF-C7-CUSTODY-PROOF-1 remaining legs: vendor-200 over the production custody path + parity GREEN",
+    "Legacy-plaintext DELETE point-of-no-return -- gated on ALL CF-C7 legs, per-connector, Shiprocket LAST (no replay)",
+    "botocore/urllib3 DEBUG-loggers-OFF precondition before live activation (Shreya's flagged ceremony precondition)",
+    "Festival-freeze discipline for any live rotation (no Diwali/Republic-Day/EOSS window)"
+  ],
+  "carry_forward_low": [
+    "LOW-1 (tech debt): hatchling pyproject.toml build-target gap (missing [tool.hatch.build.targets.wheel] packages); tests run clean with --no-sync; pre-existing, non-blocking; Maya to fix under WS-1.",
+    "LOW-2 (doc): RESOLVED on disk (custody.py pointer corrected to requirements-draft/ in working tree); commit must capture the working-tree version."
+  ],
+  "stage_8_note": "Stage-8 readiness only. No live AWS, no cdk deploy, no cutover, no DELETE PoNR. This build makes ONLY the CF-C7-CUSTODY-PROOF-1 real-seal()/get() non-NotImplementedError leg satisfiable; the gate stays FIRED until the HELD legs are signed at the ceremony."
+}

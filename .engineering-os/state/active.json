@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-29T14:00:00Z",
-  "updated_by": "cto-advisor (Rohan) — Stage 6 final review",
+  "updated_at": "2026-05-29T11:38:14Z",
+  "updated_by": "cto-advisor (Rohan) — Stage 6 final review PASS / delegated Founder gate APPROVE",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3663,6 +3663,82 @@
         "sign §7 addendum 06b at Stage 7/8 BEFORE STEP 5",
         "set REAL Path-B completion date for granted_until",
         "pick festival-safe window (no Diwali/Republic-Day/EOSS)"
+      ]
+    },
+    {
+      "req_id": "feat-credential-custody-aws-sm",
+      "title": "Real AWS Secrets Manager credential custody (Option A) — replace the NotImplementedError stubs with a production custody backing",
+      "status": "approved-stage8-readiness-held",
+      "stage": 8,
+      "current_owner": "platform-devops (Jatin) — Stage 8 readiness (HELD behind ceremony gates); commit pending Founder \"commit it\"",
+      "stage2_plan_artifact": "06-architecture-plan.md",
+      "stage2_complete_ts": "2026-05-29T17:10:00Z",
+      "builder_tracks": {
+        "track-A-python-backing": "backend-developer (Maya) — aws_secrets_manager_custody real impl + custody_factory.py + held_custody.py + moto matrix + 3 gate mutations",
+        "track-B-cdk": "platform-devops (Jatin) — infra/cdk CredentialCustodyStack (KMS CMK ap-south-1 + least-priv IAM + Secrets Manager posture) authored-NOT-deployed + assertions test",
+        "track-C-rulings": "backend-developer (Maya) — Shopify-HMAC follow-up filed + erasure-path doc"
+      },
+      "parent_epic": "chore-security-governance-hardening-phase",
+      "run_folder": ".engineering-os/runs/2026-05-29T16-00-00Z__cc1a2b__feat-credential-custody-aws-sm__rishabhporwal",
+      "submitted_by": "rishabhporwal",
+      "submitted_at": "2026-05-29T16:00:00Z",
+      "feature_class": "high-stakes",
+      "feature_class_rationale": "Trigger-surface scan fires auth/secrets (vendor OAuth tokens + API keys at rest) + multi-tenancy (secret path keyed by workspace_id) + pii/india-compliance (DPDP residency for credentials-at-rest in ap-south-1 + KMS) + connectors (this custody is the connector-cutover's blocking dependency). Foundational-scaffolding carve-out BARRED (security-critical live-credential runtime). Conservative tie-break moot.",
+      "trigger_surfaces_touched": [
+        "auth",
+        "multi-tenancy",
+        "pii",
+        "india-compliance",
+        "connectors"
+      ],
+      "blocks": [
+        "feat-connector-framework-cutover"
+      ],
+      "dependency_check": "no-violation — feat-connector-framework-cutover (Child 3) shipped the CredentialCustody Protocol + stubs this REPLACES (status awaiting-founder-commit / Stage-8 readiness). chore-security-governance-hardening-phase (WS-1) is the parent this requirement ACTIVATES. This build is additive (replaces stubs with real impl + CDK + mocked-boto3 tests); ZERO live AWS calls; unblocks (does not execute) the CF-C7-CUSTODY-PROOF-1 real-seal() leg.",
+      "intake_decision": "ADVANCE",
+      "cto_review_artifact": "02-cto-advisor-review.md",
+      "cto_review_ts": "2026-05-29T16:00:00Z",
+      "paradigm": "sql",
+      "first_pass_paradigm": "sql (infra/crypto/AWS-API I/O; ZERO LLM/ML; any LLM/ML @paradigm decorator at Stage 6 = BOUNCE)",
+      "persona_count": 2,
+      "needs_personas": [],
+      "personas_synthesized": [
+        "aws-secrets-least-privilege-realist:sonnet",
+        "dpdp-residency-custody-compliance-officer:sonnet"
+      ],
+      "founder_decision_basis": "CF-C3-SECRETS-INTERIM-1 = Option A AWS Secrets Manager ap-south-1 (decided 2026-05-29); do-not-relitigate",
+      "unblocks": "CF-C7-CUSTODY-PROOF-1 (real seal()/get() non-NotImplementedError leg) -> per-connector legacy-plaintext-DELETE PoNR (Shiprocket last)",
+      "cf_contract": [
+        "CF-CC-OWNER-1",
+        "CF-CC-GATE-1",
+        "CF-CC-LAZY-1",
+        "CF-CC-NOREAL-AWS-1",
+        "CF-CC-IAM-LEASTPRIV-1",
+        "CF-CC-SEAL-RECOVERY-1",
+        "CF-CC-RESIDENCY-1",
+        "CF-CC-WS-ISOLATION-1",
+        "CF-CC-NEVERLOG-1",
+        "CF-CC-ERASURE-PATH-1",
+        "CF-CC-SHOPIFY-HMAC-1",
+        "CF-CC-C7-LEG-1",
+        "CF-CC-NO-LIVE-1"
+      ],
+      "held_for_stage8": "Real AWS provisioning, IAM role creation, AWS account/credentials, live token rotation into Secrets Manager, legacy-plaintext DELETE PoNR, and the remaining CF-C7-CUSTODY-PROOF-1 legs (vendor-200 over prod custody path + parity GREEN). CDK authored NOT deployed. No commit without Founder 'commit it'.",
+      "escalation": "none-fired; one NON-BLOCKING Founder readiness item mirrored to pending-founder-attention.md (real AWS account + ap-south-1 enablement + CMK + connector-cutover creds availability is the HELD Stage-8 provisioning prereq — line up ahead of cutover, NOT a blocker on this build).",
+      "next_stage_recommendation": "Stage 8 readiness only. HELD behind ceremony gates: real AWS provisioning + KMS CMK + IAM role creation + live token rotation + CF-C7 vendor-200/parity legs + legacy-plaintext DELETE PoNR (Shiprocket last) + botocore-DEBUG-off precondition + festival-freeze. CDK authored-NOT-deployed. No cdk deploy, no live cutover.",
+      "qa_bounce_ts": "2026-05-29T20:00:00Z",
+      "qa_bounce_reason": "Gate mutation test #2 stays GREEN under its own mutation (case _: branch mutated, test exercises case None branch — invisible). Fix: align mutation target with test's actual code path.",
+      "stage6_review_artifact": "11-final-review.md",
+      "stage6_decision": "PASS",
+      "stage6_complete_ts": "2026-05-29T11:38:14Z",
+      "founder_gate": "APPROVE (delegated to Rohan; decided_by rishabhporwal via standing delegation; 12-founder-decision.json)",
+      "stage6_verify_the_verifier": "Rohan re-mutated 3 load-bearing gates on disk (case None->AWS RED, case _:->AWS RED, residency-removed RED), reverted clean; replicates Tanvi RE-VERIFY; durable-rule 2026-05-26 sub-rule 7 11th occurrence",
+      "stage6_over_engineering_audit": "PASS",
+      "qa_reverify": "PASS — BOUNCE-1 fixed; test_2 drives both fail-closed branches",
+      "commit_authorization": "NOT-GRANTED — pending Founder free-text \"commit it\"; commit must capture WORKING-TREE versions of test_aws_secrets_manager_custody.py + custody.py (BOUNCE-1 + LOW-2 fixes)",
+      "carry_forward_low": [
+        "LOW-1 hatchling uv-sync build-target (non-blocking, Maya/WS-1)",
+        "LOW-2 resolved on disk (commit working tree)"
       ]
     }
   ],

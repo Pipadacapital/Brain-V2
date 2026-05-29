@@ -22,6 +22,13 @@ NEVER log or serialize Credential.content — it contains plaintext secrets.
 
 App-level Shopify HMAC secret (SHOPIFY_CLIENT_SECRET) is a separate custody
 line (config key shopify.app_hmac_secret) under whichever option.
+
+CF-CC-SHOPIFY-HMAC-1: the app-level SHOPIFY_CLIENT_SECRET (Partner-app HMAC secret,
+  no workspace_id) does NOT share this per-workspace custody primitive. It is consumed
+  by the TS webhook verifier BEFORE any webhook arrives, with a different shape and
+  runtime owner. Tracked follow-up: chore-app-hmac-secret-custody (separate requirement
+  stub filed at .engineering-os/requirements-draft/chore-app-hmac-secret-custody.md).
+  DO NOT fold into the per-workspace model.
 """
 
 from __future__ import annotations
