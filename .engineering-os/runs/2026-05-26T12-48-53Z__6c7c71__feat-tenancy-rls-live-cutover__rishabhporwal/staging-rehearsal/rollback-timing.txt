@@ -1,0 +1,19 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.9b (AC7) — Rollback timing capture (live SLO binding)
+Reason: Requires ap-south-1 staging clone.
+
+This file is written during the right-order rollback rehearsal above.
+The measured wall-clock time (R1 start → R3 complete) becomes the
+pre-committed SLO for the live ceremony.
+
+Target: ≤ 60s (per architecture plan §9 ROLLBACK section).
+Actual: TO BE MEASURED AT STAGING-7/8 REHEARSAL.
+
+Template:
+  Rollback start:  <ISO_TS>
+  R1 down.sql complete:  <ISO_TS>
+  R2 down-bypass-audit.sql complete:  <ISO_TS>
+  R3 ALTER ROLE NOBYPASSRLS complete:  <ISO_TS>
+  Total wall-clock: <N> seconds
+  SLO: PASS (≤60s) | FAIL (>60s → investigate before live ceremony)

@@ -1,0 +1,19 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.3 (AC5 partial) — CF-SEC-1 probe GREEN capture (G1)
+Reason: Requires ap-south-1 staging clone + rls_app role created + Brain-native
+        rls-probe.ts compiled + FORCE applied. None of these are available in
+        the Stage-3 build environment (no psql, no staging clone).
+
+Command to run at Stage-7/8 rehearsal (STEP 4):
+  # As rls_app (NOBYPASSRLS) — NOT as postgres.<tenant>
+  DIRECT_URL="postgres://rls_app:<RLS_APP_PASSWORD>@<staging-host>:5432/postgres" \
+  ALPHA_WORKSPACE_ID="<sugandh-lok-uuid>" \
+  BETA_WORKSPACE_ID="<second-workspace-uuid>" \
+  node -e "
+    const {runRlsProbe,formatProbeResult} = require('./apps/core-service/dist/infrastructure/db/rls-probe');
+    runRlsProbe({alphaWorkspaceId:process.env.ALPHA_WORKSPACE_ID, betaWorkspaceId:process.env.BETA_WORKSPACE_ID})
+      .then(r => { console.log(formatProbeResult(r)); process.exit(r.overallVerdict==='GREEN' ? 0 : 1); })
+  " > staging-rehearsal/cf-sec-1-green.txt 2>&1
+
+Expected: overallVerdict=GREEN, crossWorkspace=0, contextless=0

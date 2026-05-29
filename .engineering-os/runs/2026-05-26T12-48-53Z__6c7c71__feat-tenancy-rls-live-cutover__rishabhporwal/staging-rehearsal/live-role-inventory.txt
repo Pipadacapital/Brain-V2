@@ -1,0 +1,31 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.1 (AC2) — live role inventory
+Reason: psql not installed in Stage-3 build environment; local brain_dev not
+        accessible via psql binary. Requires live ap-south-1 staging clone.
+
+Command to run at Stage-7/8 rehearsal (STEP 2.7):
+  psql "$DIRECT_URL" -c "
+    SELECT rolname, rolbypassrls, rolsuper
+    FROM pg_roles
+    WHERE rolname LIKE 'postgres%' OR rolname = 'rls_app'
+    ORDER BY rolname;
+  " > staging-rehearsal/live-role-inventory.txt 2>&1
+
+Expected output shape:
+       rolname        | rolbypassrls | rolsuper
+  --------------------+--------------+----------
+  postgres.<tenant-id>| t            | t
+  rls_app             | f            | f
+
+From legacy project/.env grounding (§3 of architecture plan):
+  LEGACY_ROLNAME = postgres.pavcgecgciamejdcysjx (exact form to be confirmed from pg_roles)
+  rolbypassrls = true (Supabase postgres.<tenant> has BYPASSRLS by default)
+
+CF-CUT-IDENTITY-AUDIT-1 tripwire check to run:
+  NON_RLS_BYPASS_COUNT=$(psql "$DIRECT_URL" -tAc "
+    SELECT count(*) FROM pg_roles
+    WHERE rolname != 'rls_app' AND rolbypassrls = true
+      AND rolname IN (SELECT DISTINCT usename FROM pg_stat_activity WHERE usename IS NOT NULL)
+  ")
+  # Expected: <= 1 (single bypass role — the Supabase postgres.<tenant> role)

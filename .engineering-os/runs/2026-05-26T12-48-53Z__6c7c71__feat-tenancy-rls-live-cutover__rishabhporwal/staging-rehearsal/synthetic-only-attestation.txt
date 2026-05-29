@@ -1,0 +1,21 @@
+SYNTHETIC-ONLY STAGING ATTESTATION
+===================================
+Date:       2026-05-29
+Attested-by: vikram (backend-developer, Stage 3)
+DB:          local brain_dev (real legacy data ETL'd for 3 workspaces 2026-05-26)
+             Host: localhost (127.0.0.1), not ap-south-1 Supabase
+Status:      NOT a live Supabase ap-south-1 clone.
+             Local brain_dev contains real ETL'd data (Rishabh/Sugandhlok workspaces).
+             It is therefore NOT purely synthetic — it is real data on a local dev DB.
+
+STEP 0.5 ASSESSMENT:
+  - Form (a) does not apply: local Postgres, not ap-south-1.
+  - Form (b) does not apply: this is NOT synthetic-only data.
+  - Conclusion: STEP 0.5 CANNOT be rehearsed against local brain_dev.
+                It requires the provisioned ap-south-1 staging clone.
+
+DEFERRED-TO-STAGING-REHEARSAL: See T4 scoping note in 08-developer-report-vikram.md.
+Command to run at Stage-7/8:
+  STAGING_DIRECT_URL="postgres://<staging-direct-url>" psql "$STAGING_DIRECT_URL" \
+    -tAc "SELECT current_setting('TimeZone')"
+  # Expected: Asia/Kolkata or UTC; operator confirms ap-south-1 via Supabase console.

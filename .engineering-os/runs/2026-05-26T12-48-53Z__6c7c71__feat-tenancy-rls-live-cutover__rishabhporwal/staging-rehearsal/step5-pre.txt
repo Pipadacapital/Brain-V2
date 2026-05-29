@@ -1,0 +1,20 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.6a (AC4, AC5) — STEP 5 pre-FORCE legacy HTTP smoke snapshot
+Reason: Requires live legacy Express app served over HTTPS with a real
+        Sugandh-Lok session cookie. Not available in Stage-3 build environment.
+
+Command to run at Stage-7/8 rehearsal:
+  curl -is "$LEGACY_BASE_URL$STEP5_ENDPOINT" \
+    -H "Cookie: $LIVE_SUGANDH_LOK_SESSION" \
+    > staging-rehearsal/step5-pre.txt
+
+STEP5_ENDPOINT binding (§6a procedure):
+  Vikram inspected (read-only) legacy project/backend/src/routes/ and identified:
+    Candidate: GET /api/dashboard/orders (or similar orders list endpoint)
+  The endpoint must:
+    - Return a stable, countable row set
+    - Touch at least one Group-B (connId-FK) table (proves FK-scope bypass)
+    - Require a real session cookie (proves auth path through bypass)
+  Exact endpoint to be confirmed by Vikram after legacy app is accessible over HTTP.
+  Aryan's recommended candidate: GET /api/dashboard/orders?range=last-30-days

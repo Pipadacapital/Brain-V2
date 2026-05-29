@@ -1,0 +1,28 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.9a (AC7) — Rollback right-order capture (G3 gate)
+Reason: Requires ap-south-1 staging clone with FORCE applied + live legacy HTTP endpoint.
+
+Command to run at Stage-7/8 rehearsal:
+  # Record start time
+  START_TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  echo "Rollback start: $START_TS" > staging-rehearsal/rollback-right-order.txt
+
+  # R1 — drop 44-table policies + NO FORCE
+  psql "$DIRECT_URL" --file down.sql >> staging-rehearsal/rollback-right-order.txt 2>&1
+
+  # R2 — drop bypass_query_log
+  psql "$DIRECT_URL" --file down-bypass-audit.sql >> staging-rehearsal/rollback-right-order.txt 2>&1
+
+  # R3 — revoke bypass (AFTER policies gone — no 0-row window)
+  psql "$DIRECT_URL" -c "ALTER ROLE \"$LEGACY_ROLNAME\" NOBYPASSRLS" >> staging-rehearsal/rollback-right-order.txt 2>&1
+
+  # Verify: legacy HTTP smoke STILL GREEN throughout
+  curl -is "$LEGACY_BASE_URL$STEP5_ENDPOINT" -H "Cookie: $LIVE_SUGANDH_LOK_SESSION" \
+    >> staging-rehearsal/rollback-right-order.txt
+
+  END_TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  echo "Rollback end: $END_TS" >> staging-rehearsal/rollback-right-order.txt
+
+Expected: HTTP 200 with same row count throughout. No 0-row window observed.
+          Wall-clock ≤ 60s (SLO bound by rollback-timing.txt).

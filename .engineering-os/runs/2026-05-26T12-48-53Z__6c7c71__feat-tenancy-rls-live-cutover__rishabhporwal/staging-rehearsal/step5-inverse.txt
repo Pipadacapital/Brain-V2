@@ -1,0 +1,27 @@
+DEFERRED-TO-STAGING-REHEARSAL
+==============================
+AC: T4.8 (AC6) — G2 inverse-mutant: FORCE+bypass but drop FORCE on marketing_actions → G2 GREEN, G1 RED
+Reason: Requires live legacy HTTP endpoint + ap-south-1 staging clone.
+
+Command to run at Stage-7/8 rehearsal (K2.inverse):
+  # 1. Apply FORCE + bypass (full STEP 3 + STEP 3.5 + STEP 5):
+  psql "$DIRECT_URL" --file step-a-enable-create.sql
+  psql "$DIRECT_URL" --file step-c-bypass-audit.sql
+  psql "$DIRECT_URL" -c "ALTER ROLE \"$LEGACY_ROLNAME\" BYPASSRLS"
+  psql "$DIRECT_URL" --file step-b-force.sql
+
+  # 2. Drop FORCE on marketing_actions only:
+  psql "$DIRECT_URL" -c "ALTER TABLE marketing_actions NO FORCE ROW LEVEL SECURITY;"
+
+  # 3. Run legacy HTTP smoke → expect STILL GREEN (orders endpoint doesn't touch marketing_actions):
+  curl -is "$LEGACY_BASE_URL$STEP5_ENDPOINT" \
+    -H "Cookie: $LIVE_SUGANDH_LOK_SESSION" \
+    > staging-rehearsal/step5-inverse.txt
+
+  # 4. Run CF-SEC-1 probe as rls_app → expect RED (marketing_actions FORCE missing):
+  # (probe output also captured)
+
+Expected:
+  step5-inverse.txt: HTTP 200, count matches pre-FORCE snapshot (G2 GREEN)
+  cf-sec-1 probe: RED (G1 RED)
+Proves: G2 (no-outage) and G1 (leak) are DISTINCT gates — BOTH required for cutover.
