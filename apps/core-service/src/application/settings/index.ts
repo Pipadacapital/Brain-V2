@@ -18,6 +18,11 @@ export {
   updateFestival,
   deleteFestival,
   resetFestivalDefaults,
+  listMarketingActions,
+  createMarketingAction,
+  updateMarketingAction,
+  deleteMarketingAction,
+  MARKETING_ACTION_TYPES,
 } from './settings-use-cases.js'
 export type {
   CostRow,
@@ -42,4 +47,8 @@ export type {
   GoalPeriod,
   GoalType,
   CampaignIntent,
+  MarketingActionRow,
+  CreateMarketingActionInput,
+  UpdateMarketingActionInput,
+  MarketingActionType,
 } from './settings-use-cases.js'

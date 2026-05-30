@@ -539,6 +539,19 @@ export type InventorySort = 'label' | 'current_inventory' | 'days_left' | 'sell_
 export interface InventoryRow {
   label: string;
   sku: string;
+  // --- Wave-4A parity additions ---
+  brand: string;
+  lead_time_days: number;
+  cost_value_mu: bigint | null;   // null = not set (COGS editor required)
+  price_mu: bigint | null;
+  compare_at_price_mu: bigint | null;
+  qty_l30: bigint;
+  qty_l90: bigint;
+  qty_l180: bigint;
+  qty_l360: bigint;
+  qty_n14ly: bigint;
+  tags: string;
+  // --- original fields ---
   current_inventory: bigint;
   days_left: bigint;            // 999999 = INFINITE (stock but no velocity)
   sell_through_bp: number | null;
@@ -561,6 +574,23 @@ export interface InventoryFilterInput {
   sort?: InventorySort;
   direction?: 'asc' | 'desc';
   status_filter?: InventoryStatus;
+  // Wave-4A additions
+  search?: string;
+  as_of_date?: string;          // YYYY-MM-DD snapshot date (legacy semantics)
+  page?: number;
+  page_size?: number;
+}
+
+// Wave-4A: lead-time mutation contract (MANAGER role).
+export interface InventorySetLeadTimeInput {
+  workspace_id: string;
+  sku: string;
+  lead_time_days: number;       // 0..365; persisted per-SKU
+}
+
+export interface InventorySetLeadTimeResult {
+  sku: string;
+  lead_time_days: number;
 }
 
 export interface FirstProductCascadeRow {
@@ -744,6 +774,45 @@ export interface CalendarReportResult {
 
 export interface CalendarReportFilterInput {
   grain?: CalendarGrain;
+}
+
+// /calendar marketing actions CRUD — parity-38. Manual operator annotations on calendar days.
+// Source 'klaviyo' is read-only (sync-created); CRUD applies to 'manual' rows only.
+export interface MarketingActionRow {
+  id: string;
+  workspace_id: string;
+  action_date: string;   // ISO yyyy-mm-dd
+  action_type: string;
+  action_name: string;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMarketingActionInput {
+  workspace_id: string;
+  action_date: string;
+  action_type: string;
+  action_name: string;
+  notes?: string | null;
+  created_by?: string | null;
+}
+
+export interface UpdateMarketingActionInput {
+  workspace_id: string;
+  action_id: string;
+  action_date?: string;
+  action_type?: string;
+  action_name?: string;
+  notes?: string | null;
+}
+
+export interface ListMarketingActionsResult {
+  workspace_id: string;
+  rows: MarketingActionRow[];
+  total_rows: bigint;
+  data_epoch: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -1257,6 +1326,21 @@ export interface DataPlanePort {
     date_range: DateRange;
     filters?: CalendarReportFilterInput;
   }): Promise<{ result: CalendarReportResult; data_epoch: Date }>;
+
+  // Marketing action CRUD — parity-38. Calendar overlay annotations.
+  listMarketingActions(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: ListMarketingActionsResult; data_epoch: Date }>;
+
+  createMarketingAction(params: CreateMarketingActionInput): Promise<MarketingActionRow>;
+
+  updateMarketingAction(params: UpdateMarketingActionInput): Promise<MarketingActionRow>;
+
+  deleteMarketingAction(params: {
+    workspace_id: string;
+    action_id: string;
+  }): Promise<{ deleted: boolean }>;
 
   // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. Additive read methods
   // on the SAME port (CF-C6-DATA-SEAM-1). NO send/dispatch method is added — Shreya S4.

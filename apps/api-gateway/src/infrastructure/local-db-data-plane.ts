@@ -21,6 +21,12 @@ import {
   readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints, readPnlPeriodGrid,
   readShipmentRows,
 } from '@brain/core-connectors';
+import {
+  listMarketingActions as coreListMarketingActions,
+  createMarketingAction as coreCreateMarketingAction,
+  updateMarketingAction as coreUpdateMarketingAction,
+  deleteMarketingAction as coreDeleteMarketingAction,
+} from '@brain/core-settings';
 import type {
   DataPlanePort,
   KpiSummaryRow,
@@ -59,6 +65,10 @@ import type {
   PnlPeriodRow,
   ShipmentRow,
   ShipmentRowFilters,
+  MarketingActionRow,
+  ListMarketingActionsResult,
+  CreateMarketingActionInput,
+  UpdateMarketingActionInput,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -925,5 +935,78 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
       distinct_statuses: page.distinctStatuses,
       data_epoch: DATA_EPOCH,
     };
+  }
+
+  // Marketing action CRUD — parity-38. Live DB overrides (core-settings use-cases).
+  override async listMarketingActions(p: { workspace_id: string; date_range: { start: string; end: string } }): Promise<{ result: ListMarketingActionsResult; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const rows = await coreListMarketingActions(this.ws, p.date_range.start, p.date_range.end);
+    return {
+      result: {
+        workspace_id: this.ws,
+        rows: rows.map((r) => ({
+          id: r.id,
+          workspace_id: r.workspace_id,
+          action_date: r.action_date,
+          action_type: r.action_type,
+          action_name: r.action_name,
+          notes: r.notes,
+          created_by: r.created_by,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        })),
+        total_rows: BigInt(rows.length),
+        data_epoch: DATA_EPOCH,
+      },
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  override async createMarketingAction(p: CreateMarketingActionInput): Promise<MarketingActionRow> {
+    this.assertWs(p.workspace_id);
+    const row = await coreCreateMarketingAction(p.workspace_id, {
+      action_date: p.action_date,
+      action_type: p.action_type,
+      action_name: p.action_name,
+      notes: p.notes,
+      created_by: p.created_by,
+    });
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      action_date: row.action_date,
+      action_type: row.action_type,
+      action_name: row.action_name,
+      notes: row.notes,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  override async updateMarketingAction(p: UpdateMarketingActionInput): Promise<MarketingActionRow> {
+    this.assertWs(p.workspace_id);
+    const row = await coreUpdateMarketingAction(p.workspace_id, p.action_id, {
+      action_date: p.action_date,
+      action_type: p.action_type,
+      action_name: p.action_name,
+      notes: p.notes,
+    });
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      action_date: row.action_date,
+      action_type: row.action_type,
+      action_name: row.action_name,
+      notes: row.notes,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  override async deleteMarketingAction(p: { workspace_id: string; action_id: string }): Promise<{ deleted: boolean }> {
+    this.assertWs(p.workspace_id);
+    return coreDeleteMarketingAction(p.workspace_id, p.action_id);
   }
 }

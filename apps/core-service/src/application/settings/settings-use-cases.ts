@@ -952,3 +952,175 @@ export async function resetFestivalDefaults(
     throw err
   }
 }
+
+// ---------------------------------------------------------------------------
+// 8. MARKETING ACTIONS CRUD — marketing_actions
+// Operator-logged events (email blasts, promotions, etc.) that overlay the
+// calendar report. Money fields: NONE (no spend on this table — spend lives
+// in connector_order_facts / platform-ads). Source is always 'manual' for
+// operator-created rows; 'klaviyo' is reserved for sync-created rows.
+// ---------------------------------------------------------------------------
+
+export const MARKETING_ACTION_TYPES = [
+  'email_campaign',
+  'sms_campaign',
+  'promotion',
+  'product_launch',
+  'influencer',
+  'ad_creative_change',
+  'external_event',
+  'sale_event',
+] as const
+export type MarketingActionType = (typeof MARKETING_ACTION_TYPES)[number]
+
+export interface MarketingActionRow {
+  id: string
+  workspace_id: string
+  action_date: string   // ISO yyyy-mm-dd
+  action_type: string
+  action_name: string
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateMarketingActionInput {
+  action_date: string
+  action_type: string
+  action_name: string
+  notes?: string | null
+  created_by?: string | null
+}
+
+export interface UpdateMarketingActionInput {
+  action_date?: string
+  action_type?: string
+  action_name?: string
+  notes?: string | null
+}
+
+export async function listMarketingActions(
+  workspaceId: string,
+  dateStart: string,
+  dateEnd: string,
+  runners: DbRunners = defaultRunners,
+): Promise<MarketingActionRow[]> {
+  const fn = 'listMarketingActions'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query<MarketingActionRow>(
+        `SELECT id, workspace_id, action_date::text, action_type, action_name, notes,
+                created_by::text, created_at::text, updated_at::text
+         FROM marketing_actions
+         WHERE workspace_id = $1
+           AND action_date BETWEEN $2::date AND $3::date
+         ORDER BY action_date ASC, created_at ASC`,
+        [workspaceId, dateStart, dateEnd],
+      )
+      log.debug({ fn, workspaceId, count: res.rows.length, duration_ms: Date.now() - t0 }, 'listMarketingActions done')
+      return res.rows
+    })
+  } catch (err) {
+    log.error({ fn, err, workspaceId, duration_ms: Date.now() - t0 }, 'listMarketingActions failed')
+    throw err
+  }
+}
+
+export async function createMarketingAction(
+  workspaceId: string,
+  input: CreateMarketingActionInput,
+  runners: DbRunners = defaultRunners,
+): Promise<MarketingActionRow> {
+  const fn = 'createMarketingAction'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query<MarketingActionRow>(
+        `INSERT INTO marketing_actions
+           (workspace_id, action_date, action_type, action_name, notes, created_by)
+         VALUES ($1, $2::date, $3, $4, $5, $6)
+         RETURNING id, workspace_id, action_date::text, action_type, action_name, notes,
+                   created_by::text, created_at::text, updated_at::text`,
+        [
+          workspaceId,
+          input.action_date,
+          input.action_type,
+          input.action_name,
+          input.notes ?? null,
+          input.created_by ?? null,
+        ],
+      )
+      const row = res.rows[0]
+      if (!row) throw new SettingsError('NOT_FOUND', 'Insert returned no row')
+      log.debug({ fn, workspaceId, id: row.id, duration_ms: Date.now() - t0 }, 'createMarketingAction done')
+      return row
+    })
+  } catch (err) {
+    if (err instanceof SettingsError) throw err
+    log.error({ fn, err, workspaceId, duration_ms: Date.now() - t0 }, 'createMarketingAction failed')
+    throw err
+  }
+}
+
+export async function updateMarketingAction(
+  workspaceId: string,
+  actionId: string,
+  input: UpdateMarketingActionInput,
+  runners: DbRunners = defaultRunners,
+): Promise<MarketingActionRow> {
+  const fn = 'updateMarketingAction'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const sets: string[] = ['updated_at = now()']
+      const vals: unknown[] = [actionId, workspaceId]
+      let idx = 3
+      if (input.action_date !== undefined) { sets.push(`action_date = $${idx}::date`); vals.push(input.action_date); idx++ }
+      if (input.action_type !== undefined) { sets.push(`action_type = $${idx}`); vals.push(input.action_type); idx++ }
+      if (input.action_name !== undefined) { sets.push(`action_name = $${idx}`); vals.push(input.action_name); idx++ }
+      if (input.notes !== undefined) { sets.push(`notes = $${idx}`); vals.push(input.notes); idx++ }
+      const res = await tx.query<MarketingActionRow>(
+        `UPDATE marketing_actions SET ${sets.join(', ')}
+         WHERE id = $1 AND workspace_id = $2
+         RETURNING id, workspace_id, action_date::text, action_type, action_name, notes,
+                   created_by::text, created_at::text, updated_at::text`,
+        vals,
+      )
+      const row = res.rows[0]
+      if (!row) throw new SettingsError('NOT_FOUND', `Marketing action ${actionId} not found in workspace`)
+      log.debug({ fn, workspaceId, id: actionId, duration_ms: Date.now() - t0 }, 'updateMarketingAction done')
+      return row
+    })
+  } catch (err) {
+    if (err instanceof SettingsError) throw err
+    log.error({ fn, err, workspaceId, actionId, duration_ms: Date.now() - t0 }, 'updateMarketingAction failed')
+    throw err
+  }
+}
+
+export async function deleteMarketingAction(
+  workspaceId: string,
+  actionId: string,
+  runners: DbRunners = defaultRunners,
+): Promise<{ deleted: boolean }> {
+  const fn = 'deleteMarketingAction'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query<{ id: string }>(
+        `DELETE FROM marketing_actions WHERE id = $1 AND workspace_id = $2 RETURNING id`,
+        [actionId, workspaceId],
+      )
+      const deleted = (res.rows[0]?.id) != null
+      if (!deleted) throw new SettingsError('NOT_FOUND', `Marketing action ${actionId} not found in workspace`)
+      log.debug({ fn, workspaceId, id: actionId, duration_ms: Date.now() - t0 }, 'deleteMarketingAction done')
+      return { deleted: true }
+    })
+  } catch (err) {
+    if (err instanceof SettingsError) throw err
+    log.error({ fn, err, workspaceId, actionId, duration_ms: Date.now() - t0 }, 'deleteMarketingAction failed')
+    throw err
+  }
+}

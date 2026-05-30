@@ -57,6 +57,8 @@ import type {
   InventoryFilterInput,
   InventorySort,
   InventoryStatus,
+  InventorySetLeadTimeInput,
+  InventorySetLeadTimeResult,
   FirstProductCascadeResult,
   FirstProductCascadeRow,
   FirstProductCascadeFilterInput,
@@ -73,6 +75,10 @@ import type {
   CalendarReportRow,
   CalendarCell,
   CalendarReportFilterInput,
+  MarketingActionRow,
+  ListMarketingActionsResult,
+  CreateMarketingActionInput,
+  UpdateMarketingActionInput,
   LifecycleStatesResult,
   LifecycleBucketRow,
   OrderTimingsResult,
@@ -1331,13 +1337,49 @@ function buildSugandhlokProductPerformance(filters?: ProductFilterInput): Produc
   };
 }
 
-// Inventory seed (counts). qty_l* = units sold in trailing windows.
-const _INVENTORY_SEED = [
-  { label: 'Sugandh Oud Attar 12ml', sku: 'OUD-12', inv: 300n, l30: 30n, l90: 90n, l180: 180n, l360: 300n },
-  { label: 'Rose Mist 50ml', sku: 'ROSE-50', inv: 10n, l30: 30n, l90: 0n, l180: 0n, l360: 300n },
-  { label: 'Musk 10ml', sku: 'MUSK-10', inv: 30n, l30: 0n, l90: 90n, l180: 0n, l360: 0n },
-  { label: 'Sandalwood Soap (Pack of 3)', sku: 'SND-BAR', inv: 1000n, l30: 0n, l90: 0n, l180: 0n, l360: 0n },
-] as const;
+// ---------------------------------------------------------------------------
+// Wave-4A inventory parity: extended 18-column seed.
+// brand, lead_time_days, cost_value_mu, price_mu, compare_at_price_mu,
+// qty_n14ly, tags mirror the legacy 18-field InventoryRow contract.
+// cost_value_mu is null (requires COGS editor to set) — honest-empty.
+// qty_n14ly = units sold in the same 14-day window last year — 0 for new SKUs.
+// ---------------------------------------------------------------------------
+type _InventorySeedRow = {
+  label: string; sku: string; brand: string; inv: bigint;
+  l30: bigint; l90: bigint; l180: bigint; l360: bigint; n14ly: bigint;
+  price_mu: bigint; compare_at_price_mu: bigint | null;
+  lead_time_days: number; tags: string;
+};
+
+const _INVENTORY_SEED: _InventorySeedRow[] = [
+  {
+    label: 'Sugandh Oud Attar 12ml', sku: 'OUD-12', brand: 'Sugandh Lok',
+    inv: 300n, l30: 30n, l90: 90n, l180: 180n, l360: 300n, n14ly: 12n,
+    price_mu: 149900n, compare_at_price_mu: 199900n,
+    lead_time_days: 7, tags: 'attar,oud,bestseller',
+  },
+  {
+    label: 'Rose Mist 50ml', sku: 'ROSE-50', brand: 'Sugandh Lok',
+    inv: 10n, l30: 30n, l90: 0n, l180: 0n, l360: 300n, n14ly: 0n,
+    price_mu: 89900n, compare_at_price_mu: null,
+    lead_time_days: 5, tags: 'rose,mist',
+  },
+  {
+    label: 'Musk 10ml', sku: 'MUSK-10', brand: 'Sugandh Lok',
+    inv: 30n, l30: 0n, l90: 90n, l180: 0n, l360: 0n, n14ly: 0n,
+    price_mu: 69900n, compare_at_price_mu: null,
+    lead_time_days: 10, tags: 'musk',
+  },
+  {
+    label: 'Sandalwood Soap (Pack of 3)', sku: 'SND-BAR', brand: 'Sugandh Lok',
+    inv: 1000n, l30: 0n, l90: 0n, l180: 0n, l360: 0n, n14ly: 0n,
+    price_mu: 49900n, compare_at_price_mu: 59900n,
+    lead_time_days: 14, tags: 'soap,sandalwood',
+  },
+];
+
+// Mutable in-memory lead-time store (reset on server restart — intentional for a loopback stub).
+const _leadTimeOverrides: Map<string, number> = new Map();
 
 const _STATUS_ORDER: Record<InventoryStatus, number> = {
   'Out of stock': 0, 'Restock Soon': 1, 'Healthy': 2, 'Overstocked': 3, 'Severely Overstocked': 4,
@@ -1359,9 +1401,22 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
   let rows: InventoryRow[] = _INVENTORY_SEED.map((s) => {
     const daysLeft = INVENTORY_DAYS_LEFT.formula_ts(s.inv, s.l30, s.l90, s.l180, s.l360) as number;
     const sellThrough = INVENTORY_SELL_THROUGH_BP.formula_ts(s.l360, s.inv) as number | null;
+    const leadTime = _leadTimeOverrides.get(s.sku) ?? s.lead_time_days;
     return {
       label: s.label,
       sku: s.sku,
+      brand: s.brand,
+      lead_time_days: leadTime,
+      // cost_value_mu is null — honest-empty until COGS editor sets it.
+      cost_value_mu: null,
+      price_mu: s.price_mu,
+      compare_at_price_mu: s.compare_at_price_mu,
+      qty_l30: s.l30,
+      qty_l90: s.l90,
+      qty_l180: s.l180,
+      qty_l360: s.l360,
+      qty_n14ly: s.n14ly,
+      tags: s.tags,
       current_inventory: s.inv,
       days_left: BigInt(daysLeft),
       sell_through_bp: sellThrough,
@@ -1371,6 +1426,12 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
 
   if (filters?.status_filter) {
     rows = rows.filter((r) => r.status === filters.status_filter);
+  }
+
+  if (filters?.search) {
+    const q = filters.search.trim().toLowerCase();
+    rows = rows.filter((r) =>
+      r.label.toLowerCase().includes(q) || r.sku.toLowerCase().includes(q));
   }
 
   const reverse = direction === 'desc';
@@ -1384,6 +1445,13 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
     return reverse ? -diff : diff;
   });
 
+  // Pagination (Wave-4A: page/page_size mirrors legacy server-side pagination).
+  const pageSize = filters?.page_size ?? 20;
+  const page = filters?.page ?? 1;
+  const totalRows = BigInt(rows.length);
+  const start = (page - 1) * pageSize;
+  rows = rows.slice(start, start + pageSize);
+
   return {
     workspace_id: SUGANDH_LOK_WORKSPACE_ID,
     period: SUGANDH_LOK_CANONICAL.period,
@@ -1391,9 +1459,14 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
     grain,
     sort,
     direction,
-    total_rows: BigInt(rows.length),
+    total_rows: totalRows,
     rows,
   };
+}
+
+function setLeadTimeLoopback(sku: string, leadTimeDays: number): InventorySetLeadTimeResult {
+  _leadTimeOverrides.set(sku, leadTimeDays);
+  return { sku, lead_time_days: leadTimeDays };
 }
 
 // First-product cascade seed. Cohort assembly already done upstream (deterministic primary
@@ -1614,6 +1687,65 @@ function buildSugandhlokCalendarReport(filters?: CalendarReportFilterInput): Cal
     rows,
     total_rows: BigInt(rows.length),
   };
+}
+
+// In-memory marketing action store (parity-38). Keyed by id.
+class InMemoryMarketingActionStore {
+  private readonly rows = new Map<string, MarketingActionRow>();
+  private counter = 0;
+
+  list(dateStart: string, dateEnd: string): MarketingActionRow[] {
+    return Array.from(this.rows.values())
+      .filter((r) => r.action_date >= dateStart && r.action_date <= dateEnd)
+      .sort((a, b) => a.action_date.localeCompare(b.action_date) || a.created_at.localeCompare(b.created_at));
+  }
+
+  create(p: CreateMarketingActionInput): MarketingActionRow {
+    this.counter++;
+    const id = `action_${this.counter}`;
+    const now = new Date().toISOString();
+    const row: MarketingActionRow = {
+      id,
+      workspace_id: p.workspace_id,
+      action_date: p.action_date,
+      action_type: p.action_type,
+      action_name: p.action_name,
+      notes: p.notes ?? null,
+      created_by: p.created_by ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+    this.rows.set(id, row);
+    return row;
+  }
+
+  update(p: UpdateMarketingActionInput): MarketingActionRow {
+    const existing = this.rows.get(p.action_id);
+    if (!existing || existing.workspace_id !== p.workspace_id) {
+      throw new Error(`NotFound: marketing action ${p.action_id}`);
+    }
+    const updated: MarketingActionRow = {
+      ...existing,
+      action_date: p.action_date ?? existing.action_date,
+      action_type: p.action_type ?? existing.action_type,
+      action_name: p.action_name ?? existing.action_name,
+      notes: p.notes !== undefined ? p.notes : existing.notes,
+      updated_at: new Date().toISOString(),
+    };
+    this.rows.set(p.action_id, updated);
+    return updated;
+  }
+
+  delete(workspaceId: string, actionId: string): boolean {
+    const existing = this.rows.get(actionId);
+    if (!existing || existing.workspace_id !== workspaceId) return false;
+    this.rows.delete(actionId);
+    return true;
+  }
+
+  size(): number {
+    return this.rows.size;
+  }
 }
 
 // In-memory goals write store (the idempotent upsert lands here; the Redis dedup at the
@@ -1870,6 +2002,7 @@ function buildSugandhlokBackfillStatus(): BackfillStatusResult {
 
 export class StubDataPlane implements DataPlanePort {
   private readonly goalStore = new InMemoryGoalStore();
+  private readonly actionStore = new InMemoryMarketingActionStore();
 
   constructor(
     private readonly decisionLog = new InMemoryDecisionLog(),
@@ -2122,6 +2255,56 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { result: buildSugandhlokCalendarReport(params.filters), data_epoch: DATA_EPOCH };
+  }
+
+  // Marketing action CRUD — parity-38. In-memory store for test/stub harness.
+  async listMarketingActions(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: ListMarketingActionsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    const rows = this.actionStore.list(params.date_range.start, params.date_range.end);
+    return {
+      result: {
+        workspace_id: params.workspace_id,
+        rows,
+        total_rows: BigInt(rows.length),
+        data_epoch: DATA_EPOCH,
+      },
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  async createMarketingAction(params: CreateMarketingActionInput): Promise<MarketingActionRow> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return this.actionStore.create(params);
+  }
+
+  async updateMarketingAction(params: UpdateMarketingActionInput): Promise<MarketingActionRow> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    try {
+      return this.actionStore.update(params);
+    } catch {
+      throw new Error(`NotFound: marketing action ${params.action_id}`);
+    }
+  }
+
+  async deleteMarketingAction(params: {
+    workspace_id: string;
+    action_id: string;
+  }): Promise<{ deleted: boolean }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    const deleted = this.actionStore.delete(params.workspace_id, params.action_id);
+    if (!deleted) throw new Error(`NotFound: marketing action ${params.action_id}`);
+    return { deleted: true };
   }
 
   // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. Fail-closed on tenancy.
