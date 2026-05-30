@@ -264,6 +264,125 @@ cogs_mu = MetricDefinition(
     parity_class="shadow_compare",
 )
 
+# ---------------------------------------------------------------------------
+# Waterfall revenue-ladder deduction steps (Wave-1 parity, 2026-05-30)
+# Complete the 16-step CM waterfall to match legacy waterfall.ts exactly.
+# Byte-identical pairs with packages/lib-metrics/src/registry/definitions.ts.
+# ---------------------------------------------------------------------------
+
+# ── Returns (Refunds) ──────────────────────────────────────────────────────
+# Legacy: waterfall.ts "Refunds" = total_returns from Shopify analytics daily.
+# MetricRow column: returns_mu. shadow_compare: Shopify analytics daily comparand.
+def _returns_mu(returns_mu: int) -> int:
+    """Returns in minor units: total Shopify refunds for the period. Passthrough aggregate."""
+    return returns_mu
+
+
+returns_mu = MetricDefinition(
+    id="returns_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_returns_mu,
+    clickhouse_sql="toInt64(returns_mu)",
+    parity_class="shadow_compare",
+)
+
+
+# ── Shipping Outbound Cost ─────────────────────────────────────────────────
+# Shiprocket forward charges + COD charges (NOT shipping_revenue_mu which is Shopify income).
+# Legacy: waterfall.ts:951 — shippingOutbound = forwardCharges + codCharges.
+# Passed as an explicit workspace-scoped input (not in the daily MV — Shiprocket source).
+def _shipping_outbound_mu(forward_charges_mu: int, cod_charges_mu: int) -> int:
+    """Shipping outbound cost = Shiprocket forward charges + COD charges. @paradigm: sql."""
+    return forward_charges_mu + cod_charges_mu
+
+
+shipping_outbound_mu = MetricDefinition(
+    id="shipping_outbound_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_shipping_outbound_mu,
+    clickhouse_sql="toInt64(forward_charges_mu + cod_charges_mu)",
+    parity_class="shadow_compare",
+)
+
+
+# ── Gross Revenue After Deductions ─────────────────────────────────────────
+# Intermediate waterfall subtotal after removing all revenue-side deductions.
+# Legacy: waterfall.ts:985 "Revenue After Tax & Shipping" = revenueAfterTaxShipping
+#   = gross_sales − discounts − refunds − tax − shippingOutbound.
+# NOTE: Brain CM1 uses net_revenue_mu (different base — DDR _ROW_CM1 documents the delta).
+def _gross_revenue_after_deductions_mu(
+    gross_sales_mu: int,
+    total_discount_mu: int,
+    returns_mu: int,
+    total_tax_mu: int,
+    shipping_outbound_mu: int,
+) -> int:
+    """Gross Revenue After Deductions = grossSales − discounts − returns − tax − shippingOutbound.
+
+    @paradigm: sql — integer subtraction, no float.
+    Legacy: waterfall.ts revenueAfterTaxShipping (the CM1 base in the legacy waterfall page).
+    Brain CM1 uses a different base (net_revenue_mu); DDR _ROW_CM1 pins the delta.
+    """
+    return (
+        gross_sales_mu
+        - total_discount_mu
+        - returns_mu
+        - total_tax_mu
+        - shipping_outbound_mu
+    )
+
+
+gross_revenue_after_deductions_mu = MetricDefinition(
+    id="gross_revenue_after_deductions_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_gross_revenue_after_deductions_mu,
+    clickhouse_sql=(
+        "toInt64(gross_sales_mu - total_discount_mu - returns_mu "
+        "- total_tax_mu - shipping_outbound_mu)"
+    ),
+    parity_class="shadow_compare",
+)
+
+
+# ── Founder's Salary ────────────────────────────────────────────────────────
+# Prorated founder monthly salary allocated to the period (workspace setting).
+# Legacy: waterfall.ts:845-864 — allocated as (monthly / daysInMonth) × overlapDays.
+# Passed as an explicit workspace-scoped input (not in the daily MV — from settings).
+def _founder_salary_mu(founder_salary_mu: int) -> int:
+    """Founder's salary: prorated monthly salary for the period. Passthrough."""
+    return founder_salary_mu
+
+
+founder_salary_mu = MetricDefinition(
+    id="founder_salary_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_founder_salary_mu,
+    clickhouse_sql="toInt64(founder_salary_mu)",
+    parity_class="shadow_compare",
+)
+
+
+# ── Net Profit ────────────────────────────────────────────────────────────
+# CM3 minus founder's prorated salary. Legacy: waterfall.ts:993 netProfit = cm3 - founder.
+def _net_profit_mu(cm3_mu: int, founder_salary_mu: int) -> int:
+    """Net Profit = CM3 − Founder's Salary. @paradigm: sql — integer subtraction."""
+    return cm3_mu - founder_salary_mu
+
+
+net_profit_mu = MetricDefinition(
+    id="net_profit_mu",
+    kind="money",
+    unit="mu",
+    formula_py=_net_profit_mu,
+    clickhouse_sql="toInt64(cm3_mu - founder_salary_mu)",
+    parity_class="shadow_compare",
+)
+
+
 # ── Variable Costs (Shipping + Packaging + Website) ───────────────────────
 def _variable_costs_mu(shipping_mu: int, packaging_mu: int, website_charges_mu: int) -> int:
     """Variable costs: shipping + packaging + website charges."""
@@ -1466,15 +1585,21 @@ FX_SHADOW_RATE_INR_PER_USD: int = 8350  # ₹83.50 = 8350 paise per USD
 
 METRIC_REGISTRY: dict[str, MetricDefinition] = {
     # Revenue ladder
-    "gross_sales_mu":            gross_sales_mu,
-    "total_discount_mu":         total_discount_mu,
-    "total_tax_mu":              total_tax_mu,
-    "net_sales_mu":              net_sales_mu,
-    "net_revenue_mu":            net_revenue_mu,
-    "realized_revenue_mu":       realized_revenue_mu,
+    "gross_sales_mu":                       gross_sales_mu,
+    "total_discount_mu":                    total_discount_mu,
+    "total_tax_mu":                         total_tax_mu,
+    "net_sales_mu":                         net_sales_mu,
+    "net_revenue_mu":                       net_revenue_mu,
+    "realized_revenue_mu":                  realized_revenue_mu,
+    # Waterfall revenue-ladder deduction steps (Wave-1 parity, 2026-05-30)
+    "returns_mu":                           returns_mu,
+    "shipping_outbound_mu":                 shipping_outbound_mu,
+    "gross_revenue_after_deductions_mu":    gross_revenue_after_deductions_mu,
+    "founder_salary_mu":                    founder_salary_mu,
+    "net_profit_mu":                        net_profit_mu,
     # Cost components
-    "cogs_mu":                   cogs_mu,
-    "variable_costs_mu":         variable_costs_mu,
+    "cogs_mu":                              cogs_mu,
+    "variable_costs_mu":                    variable_costs_mu,
     # CM waterfall
     "cm1_mu":                    cm1_mu,
     "total_ad_spend_mu":         total_ad_spend_mu,
