@@ -21,19 +21,44 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { cn } from '@/lib/utils.js';
 
 // ── Money helpers ────────────────────────────────────────────────────────────
-// We accept both "12.50" and "12" — store as paise (BIGINT). Empty input ⇒
-// 0 paise (legacy treats 0 / null interchangeably as "unset").
+//
+// Brain money model: cost_mu is BIGINT paise (minor units) stored in DB.
+// NULL means "never set" — excluded from margin math.
+// 0n means an explicit COGS of ₹0 — valid for zero-margin / gifted products.
+// These MUST stay distinct through the full round-trip.
+//
+// UI contract:
+//   - User clears the input (empty string) → save as NULL (unset)
+//   - User types "0" → save as 0n paise (explicit zero)
+//   - User types "12.50" → save as 1250n paise
+//
+// rupeesToPaise: '' → null (unset), valid number → paise bigint, invalid → null (guard)
+// paiseToRupees: null → '' (show empty, not "0"), 0n → '0', N → rupees string
+
+/**
+ * Convert a rupee text-input value to paise.
+ * Returns null for empty input (→ write NULL / unset to DB).
+ * Returns null for invalid input (guard — caller should reject).
+ * Returns 0n for "0" (explicit zero COGS).
+ */
 function rupeesToPaise(input: string): bigint | null {
   const trimmed = input.trim();
-  if (trimmed === '') return 0n;
+  if (trimmed === '') return null;              // empty → NULL (unset), NOT 0
   const n = Number(trimmed);
-  if (!Number.isFinite(n) || n < 0) return null;
+  if (!Number.isFinite(n) || n < 0) return null; // invalid → guard
   return BigInt(Math.round(n * 100));
 }
-function paiseToRupees(paise: bigint | string): string {
+
+/**
+ * Convert a paise value (or string) from the server to a rupee display string.
+ * null (unset) → ''  — input will show placeholder "Not set"
+ * '0' / 0n (explicit) → '0'
+ * N → rupees (integer or 2dp)
+ */
+function paiseToRupees(paise: bigint | string | null): string {
+  if (paise === null) return '';               // unset → empty (show placeholder)
   const n = typeof paise === 'string' ? BigInt(paise) : paise;
-  if (n === 0n) return '';
-  // Show as integer when divisible by 100; otherwise 2 decimals.
+  if (n === 0n) return '0';                    // explicit ₹0 — show '0', not empty
   const rupees = Number(n) / 100;
   return rupees % 1 === 0 ? rupees.toFixed(0) : rupees.toFixed(2);
 }
@@ -65,9 +90,13 @@ type ProductRow = {
   status: string;
   productType: string | null;
   inventoryQty: number | null;
-  costMu: string;                    // paise (BIGINT serialized as string)
+  /**
+   * paise as string (BIGINT wire format). null means "COGS never set".
+   * "0" means an explicit COGS of ₹0.  Both are distinct from each other.
+   */
+  costMu: string | null;
   mrpMu: string;
-  costSet: boolean;
+  costSet: boolean;                  // cost_mu IS NOT NULL (server-computed)
 };
 
 export function ProductCogsContent() {
@@ -118,15 +147,27 @@ export function ProductCogsContent() {
     onSuccess: () => utils.catalog.cogsList.invalidate(),
   });
 
+  // If user has typed something, show that; otherwise show server value.
+  // null costMu → '' (empty input, placeholder "Not set").
+  // "0" costMu → '0' (shows explicit ₹0).
   const getInputValue = (row: ProductRow) =>
     row.id in localCogs ? localCogs[row.id] : paiseToRupees(row.costMu);
 
   const handleSaveRow = (row: ProductRow) => {
-    const paise = rupeesToPaise(getInputValue(row));
-    if (paise === null) return;
+    const inputVal = getInputValue(row);
+    // rupeesToPaise returns null for both "empty" (unset) and "invalid input".
+    // We distinguish them: empty string is always a valid "clear" (→ NULL).
+    // Invalid (non-numeric, negative) is a user error — reject.
+    const trimmed = inputVal.trim();
+    if (trimmed !== '' && (Number.isNaN(Number(trimmed)) || Number(trimmed) < 0)) {
+      // invalid number — do not save
+      return;
+    }
+    const paise = rupeesToPaise(inputVal); // null = empty = unset
     setSavingId(row.id);
     updateMut.mutate(
-      { productId: row.id, costMu: paise.toString() },
+      // null costMu tells the gateway to write NULL to DB (unset)
+      { productId: row.id, costMu: paise != null ? paise.toString() : null },
       { onSettled: () => setSavingId(null) },
     );
   };
@@ -139,31 +180,60 @@ export function ProductCogsContent() {
     if (!data?.rows) return [];
     return data.rows
       .map((r) => {
-        const v = r.id in bulkLocal ? bulkLocal[r.id] : null;
-        if (v === null) return null;
-        const paise = rupeesToPaise(v);
-        if (paise === null) return null;
-        if (paise.toString() === r.costMu) return null;     // no change
-        return { productId: r.id, costMu: paise.toString() };
+        // Only emit a change when the user explicitly edited this row in the bulk sheet.
+        if (!(r.id in bulkLocal)) return null;
+        const v = bulkLocal[r.id];
+        const trimmed = v.trim();
+        // Validate: non-empty, non-numeric, or negative → skip (don't corrupt).
+        if (trimmed !== '' && (Number.isNaN(Number(trimmed)) || Number(trimmed) < 0)) return null;
+        const paise = rupeesToPaise(v);  // null = empty = user wants to unset
+        // Detect no-op: current and new both null (both unset) or same paise value.
+        const currentIsNull = r.costMu === null;
+        const newIsNull = paise === null;
+        if (currentIsNull && newIsNull) return null;                       // both unset
+        if (!currentIsNull && !newIsNull && paise!.toString() === r.costMu) return null; // same value
+        return { productId: r.id, costMu: paise != null ? paise.toString() : null };
       })
-      .filter((x): x is { productId: string; costMu: string } => x != null);
+      .filter((x): x is { productId: string; costMu: string | null } => x != null);
   }, [bulkLocal, data?.rows]);
 
+  /**
+   * "Fill empty" — set all rows that currently have no COGS (costMu IS NULL)
+   * to the specified value.  Already-set rows are NEVER overwritten, matching
+   * legacy behaviour.  Rows the user has already manually edited in this bulk
+   * session are also left alone (their bulkLocal value takes precedence).
+   *
+   * This is intentionally NOT "set ALL" — that would clobber existing COGS and
+   * cause data loss.  An explicit overwrite requires the user to edit each row.
+   */
   const applyBulkSetAll = () => {
     if (!data?.rows) return;
+    const trimmed = bulkSetAll.trim();
+    if (trimmed === '') return;
     const paise = rupeesToPaise(bulkSetAll);
+    // Guard: must be a valid non-negative number.
     if (paise === null) return;
-    const next: Record<string, string> = {};
+    const rupeesStr = paiseToRupees(paise);
+    const next = { ...bulkLocal };
+    let count = 0;
     for (const r of data.rows) {
-      // Only set rows that are currently "not_set" (COGS = 0) to the bulk value
-      // when bulkSetAll is "fill empty"; otherwise apply to everything.
-      next[r.id] = paiseToRupees(paise);
+      // Only fill if COGS is genuinely unset (null from server) AND the user
+      // has not already typed something for this row in the bulk sheet.
+      const serverUnset = r.costMu === null;
+      const userEdited = r.id in next;
+      if (serverUnset && !userEdited) {
+        next[r.id] = rupeesStr;
+        count++;
+      }
     }
     setBulkLocal(next);
+    // If nothing was filled (all already set), that's a no-op — counts 0.
+    void count; // used implicitly by the state update above
   };
 
   const handleBulkSave = async () => {
     if (bulkChanges.length === 0) return;
+    // bulkChanges entries have costMu: string | null (null = unset/clear).
     await bulkMut.mutateAsync({ updates: bulkChanges });
     setBulkLocal({});
     setBulkSetAll('');
@@ -275,7 +345,10 @@ export function ProductCogsContent() {
                   type="text" inputMode="decimal"
                   value={getInputValue(r)}
                   onChange={(e) => setLocalCogs((p) => ({ ...p, [r.id]: e.target.value }))}
-                  placeholder={r.costSet ? '' : '0'}
+                  // "Not set" placeholder when COGS is NULL so user sees the distinction
+                  // from a real value of 0. "0" would be misleading (implying COGS is set).
+                  placeholder={r.costSet ? '' : 'Not set'}
+                  aria-label={`COGS for ${r.title}`}
                   className={cn(INPUT_CLS, !r.costSet && !(r.id in localCogs) && 'border-dashed')}
                 />
               </div>
@@ -323,17 +396,21 @@ export function ProductCogsContent() {
           <SheetHeader>
             <SheetTitle>Bulk edit COGS</SheetTitle>
             <SheetDescription>
-              Edit COGS for the currently-filtered page. Same-value rows are skipped on save.
+              Edit COGS for the currently-filtered page. Only changed rows are
+              saved. Use &quot;Fill empty only&quot; to set a default for products that
+              have no COGS — already-set values are never overwritten.
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4 flex items-center gap-2">
             <input
-              type="text" inputMode="decimal" placeholder="Set all on this page to…"
+              type="text" inputMode="decimal"
+              placeholder="Fill empty only — enter ₹ value…"
+              aria-label="Fill all unset COGS on this page"
               value={bulkSetAll} onChange={(e) => setBulkSetAll(e.target.value)}
               className={cn(INPUT_CLS, 'flex-1')}
             />
-            <Button variant="outline" size="sm" onClick={applyBulkSetAll}>Apply</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setBulkLocal({}); setBulkSetAll(''); }}>
+            <Button variant="outline" size="sm" onClick={applyBulkSetAll}>Fill empty</Button>
+            <Button variant="ghost" size="sm" aria-label="Reset bulk edits" onClick={() => { setBulkLocal({}); setBulkSetAll(''); }}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -349,7 +426,10 @@ export function ProductCogsContent() {
                   <input
                     type="text" inputMode="decimal" value={v}
                     onChange={(e) => setBulkLocal((p) => ({ ...p, [r.id]: e.target.value }))}
-                    placeholder="0" className={INPUT_CLS}
+                    // "Not set" placeholder signals NULL (unset); empty string in input → NULL on save.
+                    placeholder={r.costSet ? '' : 'Not set'}
+                    aria-label={`COGS for ${r.title}`}
+                    className={cn(INPUT_CLS, !r.costSet && !(r.id in bulkLocal) && 'border-dashed')}
                   />
                 </div>
               );

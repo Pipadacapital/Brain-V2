@@ -295,13 +295,65 @@ export interface FactProductRow {
   orders: bigint
   aovMu: bigint | null
 }
+
+export interface ReadProductPerformanceFilters {
+  dateStart?: string   // YYYY-MM-DD inclusive
+  dateEnd?: string     // YYYY-MM-DD inclusive
+  search?: string      // substring match on label
+  sort?: string        // 'cm1' | 'revenue' | 'sold' | 'orders' | 'label' (default: cm1)
+  direction?: 'asc' | 'desc'  // default: desc
+  page?: number        // 1-based
+  pageSize?: number    // default: all rows
+}
+
 export async function readProductPerformance(
   workspaceId: string,
-): Promise<{ rows: FactProductRow[]; totalCm1Mu: bigint }> {
+  filters?: ReadProductPerformanceFilters,
+): Promise<{ rows: FactProductRow[]; totalCm1Mu: bigint; totalUnfilteredRows: number }> {
   if (READ_FROM_CH) {
-    try { return await readProductPerformanceCH(workspaceId) } catch { /* PG fallback */ }
+    try {
+      const r = await readProductPerformanceCH(workspaceId)
+      // CH path doesn't support filters yet — apply them in memory.
+      let chRows = r.rows
+      if (filters?.search?.trim()) {
+        const q = filters.search.trim().toLowerCase()
+        chRows = chRows.filter((row) => row.label.toLowerCase().includes(q))
+      }
+      const totalUnfilteredRows = chRows.length
+      if (filters?.pageSize && filters.pageSize > 0) {
+        const pg = Math.max(1, filters.page ?? 1)
+        const st = (pg - 1) * filters.pageSize
+        chRows = chRows.slice(st, st + filters.pageSize)
+      }
+      return { rows: chRows, totalCm1Mu: r.totalCm1Mu, totalUnfilteredRows }
+    } catch { /* PG fallback */ }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const params: string[] = []
+    const conditions: string[] = ['li.vendor_product_id IS NOT NULL']
+    if (filters?.dateStart) {
+      params.push(filters.dateStart)
+      conditions.push(`o.processed_at >= $${params.length}::date`)
+    }
+    if (filters?.dateEnd) {
+      params.push(filters.dateEnd)
+      conditions.push(`o.processed_at < ($${params.length}::date + interval '1 day')`)
+    }
+    const whereClause = conditions.join(' AND ')
+    const orderCol = (() => {
+      switch (filters?.sort) {
+        case 'revenue': return 'revenue_mu'
+        case 'sold': return 'sold'
+        case 'orders': return 'orders'
+        case 'label': return 'label'
+        default: return 'cm1_mu'
+      }
+    })()
+    const orderDir = filters?.direction === 'asc' ? 'ASC' : 'DESC'
+    const hasDateFilter = filters?.dateStart || filters?.dateEnd
+    const fromJoin = hasDateFilter
+      ? `connector_line_item_facts li JOIN connector_order_facts o ON o.vendor_order_id = li.vendor_order_id AND o.workspace_id = li.workspace_id`
+      : `connector_line_item_facts li`
     const res = await tx.query<{
       label: string | null
       grade: 'A' | 'B' | 'C' | 'F'
@@ -318,10 +370,10 @@ export async function readProductPerformance(
                 COALESCE(sum(li.quantity * COALESCE(pf.cost_mu, 0)), 0) AS cogs_mu,
                 COALESCE(sum(li.quantity), 0) AS sold,
                 count(DISTINCT li.vendor_order_id) AS orders
-           FROM connector_line_item_facts li
+           FROM ${fromJoin}
            LEFT JOIN connector_product_facts pf
              ON pf.workspace_id = li.workspace_id AND pf.vendor_product_id = li.vendor_product_id
-          WHERE li.vendor_product_id IS NOT NULL
+          WHERE ${whereClause}
           GROUP BY li.vendor_product_id
        ),
        ranked AS (
@@ -335,9 +387,10 @@ export async function readProductPerformance(
               WHEN total_cm1 > 0 AND cum_cm1 <= 0.80 * total_cm1 THEN 'A'
               WHEN total_cm1 > 0 AND cum_cm1 <= 0.95 * total_cm1 THEN 'B'
               ELSE 'C' END AS grade
-       FROM ranked ORDER BY cm1_mu DESC LIMIT 200`,
+       FROM ranked ORDER BY ${orderCol} ${orderDir} LIMIT 500`,
+      params,
     )
-    const rows: FactProductRow[] = res.rows.map((r) => {
+    let rows: FactProductRow[] = res.rows.map((r) => {
       const orders = BigInt(r.orders ?? '0')
       const revenue = BigInt(r.revenue_mu ?? '0')
       return {
@@ -351,7 +404,19 @@ export async function readProductPerformance(
       }
     })
     const totalCm1Mu = res.rows.length ? BigInt(res.rows[0].total_cm1 ?? '0') : 0n
-    return { rows, totalCm1Mu }
+    // Apply search filter post-query (label is an aggregate — parameterizing HAVING is complex).
+    if (filters?.search?.trim()) {
+      const q = filters.search.trim().toLowerCase()
+      rows = rows.filter((r) => r.label.toLowerCase().includes(q))
+    }
+    const totalUnfilteredRows = rows.length
+    // Apply pagination post-query (prevents double parameterization issues with LIMIT/OFFSET).
+    if (filters?.pageSize && filters.pageSize > 0) {
+      const page = Math.max(1, filters.page ?? 1)
+      const start = (page - 1) * filters.pageSize
+      rows = rows.slice(start, start + filters.pageSize)
+    }
+    return { rows, totalCm1Mu, totalUnfilteredRows }
   })
 }
 

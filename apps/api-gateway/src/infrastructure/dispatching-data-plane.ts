@@ -17,6 +17,7 @@ import type {
   ResponseKind,
   CreateMarketingActionInput,
   UpdateMarketingActionInput,
+  InventorySetLeadTimeInput,
 } from '../domain/proto-types.js';
 import { LocalDbDataPlane } from './local-db-data-plane.js';
 
@@ -167,5 +168,10 @@ export class DispatchingDataPlane implements DataPlanePort {
   }
   deleteMarketingAction(p: { workspace_id: string; action_id: string }) {
     return this.plane(p.workspace_id).deleteMarketingAction(p);
+  }
+
+  // Wave-4A: lead-time mutation — routed by workspace_id like all other write methods.
+  setLeadTime(p: InventorySetLeadTimeInput) {
+    return this.plane(p.workspace_id).setLeadTime(p);
   }
 }

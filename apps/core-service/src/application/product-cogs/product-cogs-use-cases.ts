@@ -37,9 +37,14 @@ export interface ProductCogsRow {
   status: string
   productType: string | null
   inventoryQty: number | null
-  costMu: bigint                                            // 0 when COGS not set
+  /**
+   * COGS in paise (BIGINT minor units). NULL means the user has never set COGS
+   * for this product ("unset"). A stored value of 0n means an explicit COGS of ₹0.
+   * These must remain distinct: NULL is excluded from margin math; 0 is used as-is.
+   */
+  costMu: bigint | null                                     // null = unset; 0n = explicit ₹0
   mrpMu: bigint                                             // 0 when MRP not synced
-  costSet: boolean                                          // cost_mu > 0
+  costSet: boolean                                          // cost_mu IS NOT NULL
 }
 
 export interface ListResult {
@@ -132,9 +137,12 @@ export async function listProductsForCogs(
         status: r.status ?? '',
         productType: r.product_type,
         inventoryQty: r.inventory_qty,
-        costMu: BigInt(r.cost_mu ?? '0'),
+        // Preserve NULL: a null cost_mu means the user has never set COGS for
+        // this product; do NOT coerce to 0 (that would corrupt margin math).
+        costMu: r.cost_mu != null ? BigInt(r.cost_mu) : null,
         mrpMu: BigInt(r.mrp_mu ?? '0'),
-        costSet: BigInt(r.cost_mu ?? '0') > 0n,
+        // costSet: null IS unset; 0n is an explicit "COGS = ₹0" (valid input).
+        costSet: r.cost_mu != null,
       })),
       total,
       page,
@@ -145,63 +153,94 @@ export async function listProductsForCogs(
 }
 
 /**
- * Update one product's COGS. `costMu = 0n` clears it (legacy treats 0 as unset).
+ * Update one product's COGS.
+ *
+ * - `costMu = null` → write NULL (unset / "not configured").
+ * - `costMu = 0n`   → write 0 (explicit COGS of ₹0, valid for zero-margin products).
+ * - `costMu > 0n`   → normal COGS in paise.
+ *
  * Returns the row count (1 on success; 0 if the product doesn't belong to this
  * workspace — RLS or PK miss).
  */
 export async function updateProductCogs(
   workspaceId: string,
   productId: string,
-  costMu: bigint,
-): Promise<{ updated: boolean; costMu: bigint }> {
-  if (costMu < 0n) throw new Error('cost_mu cannot be negative')
+  costMu: bigint | null,
+): Promise<{ updated: boolean; costMu: bigint | null }> {
+  if (costMu != null && costMu < 0n) throw new Error('cost_mu cannot be negative')
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
-    const res = await tx.query<{ cost_mu: string }>(
+    const res = await tx.query<{ cost_mu: string | null }>(
       `UPDATE public.connector_product_facts
           SET cost_mu = $2, synced_at = synced_at  -- don't change synced_at
         WHERE id = $1
        RETURNING cost_mu::text`,
-      [productId, costMu.toString()],
+      [productId, costMu != null ? costMu.toString() : null],
     )
     const row = res.rows[0]
     return {
       updated: Boolean(row),
-      costMu: BigInt(row?.cost_mu ?? '0'),
+      costMu: row?.cost_mu != null ? BigInt(row.cost_mu) : null,
     }
   })
 }
 
 /**
- * Bulk-update COGS for many products in one transaction. Skips no-op rows
- * (same value), validates non-negative, returns counts. RLS ensures every
- * `id` is in the caller's workspace; mismatches just don't update.
+ * Bulk-update COGS for many products in one transaction.
+ *
+ * Each entry accepts `costMu = null` (unset), `0n` (explicit ₹0), or a positive
+ * paise value. Skips no-op rows (IS NOT DISTINCT FROM), validates non-negative,
+ * returns counts. RLS ensures every `id` is in the caller's workspace.
+ *
+ * Because UNNEST with NULL bigint[] requires explicit casting, rows with NULL
+ * are separated and written via individual UPDATE statements within the same
+ * transaction to keep correctness simple.
  */
 export async function bulkUpdateProductCogs(
   workspaceId: string,
-  updates: Array<{ productId: string; costMu: bigint }>,
+  updates: Array<{ productId: string; costMu: bigint | null }>,
 ): Promise<{ attempted: number; updated: number }> {
   for (const u of updates) {
-    if (u.costMu < 0n) throw new Error('cost_mu cannot be negative')
+    if (u.costMu != null && u.costMu < 0n) throw new Error('cost_mu cannot be negative')
   }
   if (updates.length === 0) return { attempted: 0, updated: 0 }
 
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     let updated = 0
-    // UNNEST keeps the round-trip to one statement even for hundreds of rows.
-    const ids = updates.map((u) => u.productId)
-    const costs = updates.map((u) => u.costMu.toString())
-    const res = await tx.query(
-      `UPDATE public.connector_product_facts AS p
-          SET cost_mu = u.cost_mu
-         FROM (
-           SELECT unnest($1::uuid[])   AS id,
-                  unnest($2::bigint[]) AS cost_mu
-         ) u
-        WHERE p.id = u.id
-          AND p.cost_mu IS DISTINCT FROM u.cost_mu`,
-      [ids, costs],
-    )
-    updated = res.rowCount ?? 0
+
+    // Partition into NULL rows (clear COGS) and numeric rows.
+    const nullRows = updates.filter((u) => u.costMu === null)
+    const numericRows = updates.filter((u) => u.costMu !== null) as Array<{ productId: string; costMu: bigint }>
+
+    // Numeric rows — UNNEST keeps the round-trip to one statement.
+    if (numericRows.length > 0) {
+      const ids = numericRows.map((u) => u.productId)
+      const costs = numericRows.map((u) => (u.costMu as bigint).toString())
+      const res = await tx.query(
+        `UPDATE public.connector_product_facts AS p
+            SET cost_mu = u.cost_mu
+           FROM (
+             SELECT unnest($1::uuid[])   AS id,
+                    unnest($2::bigint[]) AS cost_mu
+           ) u
+          WHERE p.id = u.id
+            AND p.cost_mu IS DISTINCT FROM u.cost_mu`,
+        [ids, costs],
+      )
+      updated += res.rowCount ?? 0
+    }
+
+    // NULL rows — clear COGS (unnest of nullable bigint[] is fragile; do it simply).
+    for (const u of nullRows) {
+      const res = await tx.query(
+        `UPDATE public.connector_product_facts
+            SET cost_mu = NULL
+          WHERE id = $1
+            AND cost_mu IS NOT NULL`,
+        [u.productId],
+      )
+      updated += res.rowCount ?? 0
+    }
+
     return { attempted: updates.length, updated }
   })
 }

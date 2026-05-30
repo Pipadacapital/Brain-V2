@@ -1323,6 +1323,40 @@ function buildSugandhlokProductPerformance(filters?: ProductFilterInput): Produc
     rows = rows.filter((r) => r.label.toLowerCase().includes(q));
   }
 
+  // Multi-column sort honoring the full sort enum.
+  const cmp = (a: ProductRow, b: ProductRow): number => {
+    let diff = 0;
+    switch (sort) {
+      case 'label': diff = a.label.localeCompare(b.label); break;
+      case 'revenue': diff = Number(a.revenue_mu - b.revenue_mu); break;
+      case 'sold': diff = Number(a.sold - b.sold); break;
+      case 'refunded': diff = Number(a.refunded - b.refunded); break;
+      case 'net_quantity': diff = Number(a.net_quantity - b.net_quantity); break;
+      case 'orders': diff = Number(a.orders - b.orders); break;
+      case 'aov': diff = Number((a.aov_mu ?? 0n) - (b.aov_mu ?? 0n)); break;
+      case 'cm1_pct': diff = (a.cm1_pct_bp ?? 0) - (b.cm1_pct_bp ?? 0); break;
+      case 'cm1_total': diff = (a.cm1_total_share_bp ?? 0) - (b.cm1_total_share_bp ?? 0); break;
+      case 'return_rate': diff = (a.return_rate_bp ?? 0) - (b.return_rate_bp ?? 0); break;
+      case 'pareto_grade': {
+        const gradeOrd: Record<string, number> = { A: 3, B: 2, C: 1, F: 0 };
+        diff = (gradeOrd[a.pareto_grade] ?? 0) - (gradeOrd[b.pareto_grade] ?? 0);
+        break;
+      }
+      default: diff = Number(a.cm1_mu - b.cm1_mu);
+    }
+    return direction === 'asc' ? diff : -diff;
+  };
+  rows = [...rows].sort(cmp);
+
+  const totalRowsBeforePage = rows.length;
+  // Apply server-side pagination if requested.
+  const pageSize = filters?.page_size ?? 0;
+  if (pageSize > 0) {
+    const page = Math.max(1, filters?.page ?? 1);
+    const start = (page - 1) * pageSize;
+    rows = rows.slice(start, start + pageSize);
+  }
+
   return {
     workspace_id: SUGANDH_LOK_WORKSPACE_ID,
     period: SUGANDH_LOK_CANONICAL.period,
@@ -1332,7 +1366,7 @@ function buildSugandhlokProductPerformance(filters?: ProductFilterInput): Produc
     sort,
     direction,
     total_cm1_mu: totalCm1,
-    total_rows: BigInt(rows.length),
+    total_rows: BigInt(totalRowsBeforePage),
     rows,
   };
 }
@@ -2526,6 +2560,14 @@ export class StubDataPlane implements DataPlanePort {
       distinct_statuses: [],
       data_epoch: DATA_EPOCH,
     };
+  }
+
+  // Wave-4A: lead-time mutation (MANAGER-gated). In-memory override for the stub plane.
+  async setLeadTime(params: InventorySetLeadTimeInput): Promise<InventorySetLeadTimeResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return setLeadTimeLoopback(params.sku, params.lead_time_days);
   }
 
   getDecisionLog(): InMemoryDecisionLog {

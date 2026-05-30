@@ -126,6 +126,7 @@ export {
   type FactIntegrationRow,
   type FactCogs,
   type FactProductRow,
+  type ReadProductPerformanceFilters,
   type FactMemberRow,
   type FactWorkspaceSettings,
   type FactShipmentAnalytics,

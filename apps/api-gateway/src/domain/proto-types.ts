@@ -1464,6 +1464,15 @@ export interface DataPlanePort {
     distinct_statuses: string[];
     data_epoch: Date;
   }>;
+
+  /**
+   * Wave-4A: per-SKU lead-time mutation. MANAGER-gated.
+   * Persists lead_time_days for a single SKU in the workspace.
+   * In the local/loopback plane this is an in-memory override; in production it
+   * writes to workspace_product_settings or a similar catalog settings table.
+   * CF-C6-DATA-SEAM-1: additive method on the SAME port — no second code path.
+   */
+  setLeadTime(params: InventorySetLeadTimeInput): Promise<InventorySetLeadTimeResult>;
 }
 
 // ---------------------------------------------------------------------------

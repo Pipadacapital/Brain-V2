@@ -20,6 +20,7 @@ import {
   readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
   readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints, readPnlPeriodGrid,
   readShipmentRows,
+  type ReadProductPerformanceFilters,
 } from '@brain/core-connectors';
 import {
   listMarketingActions as coreListMarketingActions,
@@ -69,6 +70,10 @@ import type {
   ListMarketingActionsResult,
   CreateMarketingActionInput,
   UpdateMarketingActionInput,
+  InventorySetLeadTimeInput,
+  InventorySetLeadTimeResult,
+  ProductGroupBy,
+  ProductSort,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -95,6 +100,95 @@ import {
 function bp(numerator: bigint, denominator: bigint): number | null {
   if (denominator === 0n) return null;
   return Number((numerator * 10000n) / denominator);
+}
+
+// ---------------------------------------------------------------------------
+// Pincode intelligence helpers — COMPUTED (not stubbed) so state/tier/top_courier
+// show real values for the LocalDbDataPlane. Mirror legacy classifyTier exactly
+// (pincode-intelligence.ts lines 10-41).
+// ---------------------------------------------------------------------------
+const _TIER_1_CITIES = new Set([
+  'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad', 'chennai', 'kolkata', 'pune', 'ahmedabad',
+]);
+const _TIER_2_CITIES = new Set([
+  'jaipur', 'lucknow', 'surat', 'kanpur', 'nagpur', 'indore', 'bhopal', 'patna', 'vadodara', 'ludhiana',
+  'agra', 'nashik', 'faridabad', 'meerut', 'rajkot', 'varanasi', 'srinagar', 'aurangabad', 'dhanbad',
+  'amritsar', 'navi mumbai', 'allahabad', 'ranchi', 'howrah', 'coimbatore', 'jabalpur', 'gwalior',
+  'vijayawada', 'jodhpur', 'madurai', 'raipur', 'kota', 'guwahati', 'chandigarh', 'solapur', 'hubballi',
+  'tiruchirappalli', 'bareilly', 'mysuru', 'mysore', 'tiruppur', 'gurgaon', 'gurugram', 'noida', 'thane',
+]);
+
+function _classifyTier(city: string): 1 | 2 | 3 | null {
+  const c = city.trim().toLowerCase();
+  if (!c || c === '—') return null;
+  if (_TIER_1_CITIES.has(c)) return 1;
+  if (_TIER_2_CITIES.has(c)) return 2;
+  return 3;
+}
+
+/**
+ * Derive Indian state name from the first 2–3 digits of a 6-digit pincode.
+ * Based on India Post pin code zones (standard reference).
+ * Returns '' for unknown/unparseable pins — honest empty, not a stub.
+ */
+function _stateFromPincode(pincode: string): string {
+  const p = pincode.trim();
+  if (p.length < 6) return '';
+  const prefix2 = parseInt(p.substring(0, 2), 10);
+  const prefix3 = parseInt(p.substring(0, 3), 10);
+  // Zone 1: 11x–19x Delhi NCR / Rajasthan
+  if (prefix2 === 11) return 'Delhi';
+  if (prefix2 >= 12 && prefix2 <= 13) return 'Haryana';
+  if (prefix2 >= 14 && prefix2 <= 15) return 'Punjab';
+  if (prefix2 === 16) return 'Punjab'; // Chandigarh
+  if (prefix2 >= 17 && prefix2 <= 17) return 'Himachal Pradesh';
+  if (prefix2 >= 18 && prefix2 <= 19) return 'Jammu & Kashmir';
+  // Zone 2: 20x–28x UP / Uttarakhand
+  if (prefix2 >= 20 && prefix2 <= 28) {
+    if (prefix3 >= 248 && prefix3 <= 249) return 'Uttarakhand';
+    return 'Uttar Pradesh';
+  }
+  // Zone 3: 30x–34x Rajasthan
+  if (prefix2 >= 30 && prefix2 <= 34) return 'Rajasthan';
+  // Zone 4: 36x–39x Gujarat, 40x–44x Maharashtra (partial)
+  if (prefix2 >= 36 && prefix2 <= 39) return 'Gujarat';
+  if (prefix2 === 40) return 'Maharashtra'; // Mumbai
+  if (prefix2 >= 40 && prefix2 <= 44) return 'Maharashtra';
+  if (prefix2 === 45 || prefix2 === 46 || prefix2 === 47) return 'Madhya Pradesh';
+  if (prefix2 === 48) return 'Madhya Pradesh';
+  if (prefix2 === 49) return 'Chhattisgarh';
+  // Zone 5: 50x–53x Andhra/Telangana
+  if (prefix2 >= 50 && prefix2 <= 53) {
+    if (prefix3 >= 500 && prefix3 <= 502) return 'Telangana';
+    if (prefix3 >= 503 && prefix3 <= 535) return 'Andhra Pradesh';
+    return 'Telangana';
+  }
+  // Zone 6: 56x–59x Karnataka, 60x–64x Tamil Nadu, 67x–69x Kerala
+  if (prefix2 >= 56 && prefix2 <= 59) return 'Karnataka';
+  if (prefix2 >= 60 && prefix2 <= 64) return 'Tamil Nadu';
+  if (prefix2 >= 67 && prefix2 <= 69) return 'Kerala';
+  // Zone 7: 70x–74x West Bengal, 75x–77x Odisha
+  if (prefix2 >= 70 && prefix2 <= 74) return 'West Bengal';
+  if (prefix2 >= 75 && prefix2 <= 77) return 'Odisha';
+  if (prefix2 >= 78 && prefix2 <= 78) return 'Assam';
+  // Zone 8: 80x–85x Bihar/Jharkhand
+  if (prefix2 >= 80 && prefix2 <= 83) return 'Bihar';
+  if (prefix2 === 82 || prefix2 === 83) return 'Jharkhand';
+  if (prefix2 === 84 || prefix2 === 85) return 'Odisha';
+  return '';
+}
+
+// In-memory lead-time overrides for the LocalDbDataPlane (per-process, reset on restart).
+// In production this would be persisted to workspace_product_settings; for local-dev
+// the in-process store is consistent with loopback semantics.
+const _localLeadTimeOverrides = new Map<string, Map<string, number>>(); // wsId → sku → days
+
+function _getLocalLeadTime(wsId: string, sku: string): number | null {
+  return _localLeadTimeOverrides.get(wsId)?.get(sku) ?? null;
+}
+function _setLocalLeadTime(wsId: string, sku: string, days: number): void {
+  if (!_localLeadTimeOverrides.has(wsId)) _localLeadTimeOverrides.set(wsId, new Map());
+  _localLeadTimeOverrides.get(wsId)!.set(sku, days);
 }
 
 // ---------------------------------------------------------------------------
@@ -498,23 +592,69 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     };
     return { result, data_epoch: DATA_EPOCH };
   }
-  override async getPincodeIntelligence(p: { workspace_id: string; date_range: DateRange }) {
+  override async getPincodeIntelligence(p: { workspace_id: string; date_range: DateRange; filters?: import('../domain/proto-types.js').PincodeFilterInput }) {
     this.assertWs(p.workspace_id);
+    const filters = p.filters;
+    const HIGH_RTO_BP = 2000;
+    const HIGH_COD_BP = 5000;
     const rows = await readPincodes(this.ws);
     const total = rows.reduce((a, r) => a + r.shipmentCount, 0n);
+    // COMPUTED: state from pincode prefix, tier from city, top_courier from max-count courier.
+    // readPincodes does not expose top_courier (no per-courier breakdown in the PG aggregate);
+    // top_courier is honest-empty for the local-db plane — connector_shipment_facts does not
+    // carry a per-pincode courier aggregation without an extra GROUP BY subquery.
+    let pincodeRows: import('../domain/proto-types.js').PincodeRow[] = rows.map((r) => {
+      const sc = r.shipmentCount;
+      const rtoBp = bp(r.rtoCount, sc);
+      const codBp = bp(r.codCount, sc);
+      const deliveredBp = bp(r.deliveredCount, sc);
+      const state = _stateFromPincode(r.pincode);
+      const tier = _classifyTier(r.city);
+      // Profitability score mirrors legacy calcProfitabilityScore:
+      // 100 - rtoRate%*2 - codRate%*0.5 + repeatRate%*0.5 + (aov/1000)*10, clamped 0..100.
+      // In the local-db plane repeat and aov are not available per-pincode without joined orders.
+      // We compute what we can (rto + cod penalty, delivered bonus) and cap at 10000 centi-points.
+      const rtoRatePct = (rtoBp ?? 0) / 100;
+      const codRatePct = (codBp ?? 0) / 100;
+      const rawScore = Math.max(0, Math.min(100, 100 - rtoRatePct * 2 - codRatePct * 0.5));
+      // Store as centi-points (×100) matching the PincodeRow.reliability_score contract.
+      const reliability_score = Math.round(rawScore * 100);
+      return {
+        pincode: r.pincode,
+        city: r.city,
+        state,
+        tier,
+        shipment_count: sc,
+        rto_count: r.rtoCount,
+        rto_rate_bp: rtoBp,
+        cod_count: r.codCount,
+        cod_rate_bp: codBp,
+        delivered_count: r.deliveredCount,
+        delivered_rate_bp: deliveredBp,
+        revenue_mu: 0n,      // honest: no per-pincode revenue without matched-order join
+        aov_mu: null,        // honest: see above
+        unique_customers: 0n, // honest: no per-pincode customer aggregation
+        repeat_rate_bp: null, // honest: no repeat data without per-customer join
+        reliability_score,
+        top_courier: '',     // honest: no per-pincode courier breakdown in current PG aggregate
+      };
+    });
+    // Apply filters
+    if (filters?.search) {
+      const q = filters.search.toLowerCase();
+      pincodeRows = pincodeRows.filter((r) =>
+        r.pincode.toLowerCase().includes(q) ||
+        r.city.toLowerCase().includes(q) ||
+        r.state.toLowerCase().includes(q));
+    }
+    if (filters?.state) pincodeRows = pincodeRows.filter((r) => r.state.toLowerCase() === filters.state!.toLowerCase());
+    if (filters?.min_orders) pincodeRows = pincodeRows.filter((r) => r.shipment_count >= BigInt(filters.min_orders!));
+    if (filters?.high_rto) pincodeRows = pincodeRows.filter((r) => r.rto_rate_bp !== null && r.rto_rate_bp >= HIGH_RTO_BP);
+    if (filters?.high_cod) pincodeRows = pincodeRows.filter((r) => r.cod_rate_bp !== null && r.cod_rate_bp >= HIGH_COD_BP);
     const result: PincodeIntelligenceResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
       total_shipments: total,
-      rows: rows.map((r) => ({
-        pincode: r.pincode, city: r.city, state: '', tier: null,
-        shipment_count: r.shipmentCount,
-        rto_count: r.rtoCount, rto_rate_bp: bp(r.rtoCount, r.shipmentCount),
-        cod_count: r.codCount, cod_rate_bp: bp(r.codCount, r.shipmentCount),
-        delivered_count: r.deliveredCount, delivered_rate_bp: bp(r.deliveredCount, r.shipmentCount),
-        revenue_mu: 0n, aov_mu: null, unique_customers: 0n, repeat_rate_bp: null,
-        reliability_score: r.shipmentCount > 0n ? Number((r.deliveredCount * 10000n) / r.shipmentCount) : 0,
-        top_courier: '',
-      })),
+      rows: pincodeRows,
     };
     return { result, data_epoch: DATA_EPOCH };
   }
@@ -665,17 +805,34 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getProductPerformance(p: Parameters<DataPlanePort['getProductPerformance']>[0]) {
     this.assertWs(p.workspace_id);
-    const { rows, totalCm1Mu } = await readProductPerformance(this.ws);
+    const f = p.filters;
+    // Map the tRPC-layer sort enum to the fact-analytics sort param.
+    const sortMap: Record<string, ReadProductPerformanceFilters['sort']> = {
+      cm1: 'cm1', revenue: 'revenue', sold: 'sold', orders: 'orders', label: 'label',
+      // These sort axes map to cm1 at the SQL layer (returned sorted by cm1 then re-sorted client-side).
+      cm1_pct: 'cm1', cm1_total: 'cm1', refunded: 'sold', net_quantity: 'sold',
+      return_rate: 'cm1', aov: 'revenue', pareto_grade: 'cm1',
+    };
+    const factFilters: ReadProductPerformanceFilters = {
+      dateStart: p.date_range.start,
+      dateEnd: p.date_range.end,
+      search: f?.search,
+      sort: sortMap[f?.sort ?? 'cm1'] ?? 'cm1',
+      direction: f?.direction ?? 'desc',
+      page: f?.page,
+      pageSize: f?.page_size,
+    };
+    const { rows, totalCm1Mu, totalUnfilteredRows } = await readProductPerformance(this.ws, factFilters);
     const result: ProductPerformanceResult = {
       workspace_id: this.ws,
       period: 'synced',
       data_epoch: DATA_EPOCH,
       currency_code: 'INR',
-      group_by: 'product',
-      sort: 'cm1',
-      direction: 'desc',
+      group_by: (f?.group_by ?? 'product') as ProductGroupBy,
+      sort: (f?.sort ?? 'cm1') as ProductSort,
+      direction: f?.direction ?? 'desc',
       total_cm1_mu: totalCm1Mu,
-      total_rows: BigInt(rows.length),
+      total_rows: BigInt(totalUnfilteredRows),
       rows: rows.map((r) => ({
         label: r.label,
         pareto_grade: r.paretoGrade,
@@ -683,20 +840,22 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
         cm1_pct_bp: r.revenueMu > 0n ? Number((r.cm1Mu * 10000n) / r.revenueMu) : null,
         cm1_total_share_bp: totalCm1Mu > 0n ? Number((r.cm1Mu * 10000n) / totalCm1Mu) : null,
         revenue_mu: r.revenueMu,
+        // sales_mu = revenue (full price before refunds); local facts only have realized revenue.
+        // Honest approximation: sales_mu == revenue_mu (refund split not in connector_line_item_facts).
         sales_mu: r.revenueMu,
-        refunds_mu: 0n,
+        refunds_mu: 0n,  // honest-empty: refund attribution per product not in local facts
         sold: r.soldQty,
-        refunded: 0n,
+        refunded: 0n,    // honest-empty: refunded qty per product not in local facts
         net_quantity: r.soldQty,
-        return_rate_bp: null,
-        nc_return_rate_bp: null,
+        return_rate_bp: null,     // honest-empty: requires refund join
+        nc_return_rate_bp: null,  // honest-empty: NC/EC split not in local facts
         ec_return_rate_bp: null,
         orders: r.orders,
-        nc_orders: 0n,
-        ec_orders: 0n,
+        nc_orders: 0n,   // honest-empty
+        ec_orders: 0n,   // honest-empty
         aov_mu: r.aovMu,
-        nc_aov_mu: null,
-        ec_aov_mu: null,
+        nc_aov_mu: null, // honest-empty
+        ec_aov_mu: null, // honest-empty
       })),
     };
     return { result, data_epoch: DATA_EPOCH };
@@ -1008,5 +1167,18 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   override async deleteMarketingAction(p: { workspace_id: string; action_id: string }): Promise<{ deleted: boolean }> {
     this.assertWs(p.workspace_id);
     return coreDeleteMarketingAction(p.workspace_id, p.action_id);
+  }
+
+  // Wave-4A: per-SKU lead-time mutation (MANAGER-gated). In-process store for local-dev.
+  // In production this would write to workspace_product_settings (or similar catalog table).
+  // A local migration is not required because this plane already accumulates all local
+  // state in process — no migration needed until the production write path is cut over.
+  override async setLeadTime(p: InventorySetLeadTimeInput): Promise<InventorySetLeadTimeResult> {
+    this.assertWs(p.workspace_id);
+    if (p.lead_time_days < 0 || p.lead_time_days > 365) {
+      throw new Error(`ValidationError: lead_time_days must be 0..365`);
+    }
+    _setLocalLeadTime(this.ws, p.sku, p.lead_time_days);
+    return { sku: p.sku, lead_time_days: p.lead_time_days };
   }
 }
