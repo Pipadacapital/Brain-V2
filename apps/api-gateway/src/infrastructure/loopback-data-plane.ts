@@ -128,10 +128,15 @@ const SUGANDH_LOK_CANONICAL = {
   // Revenue ladder (April 2026)
   gross_sales_mu: 218_000_000n,      // ₹21.8L gross
   total_discount_mu: 12_000_000n,    // ₹1.2L discounts
+  returns_mu: 500_000n,              // ₹5K refunded orders (matches refunded_revenue_mu below)
   net_sales_mu: 206_000_000n,        // gross - discount = ₹20.6L
   total_tax_mu: 18_000_000n,         // ₹1.8L — SUM of per-SKU GST 2.0 (mixed slabs)
   net_net_tax_mu: 188_000_000n,      // net_sales - tax
+  shipping_outbound_mu: 3_000_000n,  // ₹30K outbound shipping charge (= shipping_revenue_mu)
   shipping_revenue_mu: 3_000_000n,   // ₹30K shipping collected
+  // gross_revenue_after_deductions = gross_sales − discounts − returns − tax − shipping_outbound
+  // 218_000_000 − 12_000_000 − 500_000 − 18_000_000 − 3_000_000 = 184_500_000
+  gross_revenue_after_deductions_mu: 184_500_000n, // ₹18.45L — Revenue After Tax & Shipping
   // net_revenue = net_net_tax + shipping = 191_000_000? Seed chosen so the
   // dashboard's existing ₹18.5L net_revenue stays the realized headline:
   net_revenue_mu: 191_000_000n,      // ₹19.1L
@@ -140,6 +145,8 @@ const SUGANDH_LOK_CANONICAL = {
   rto_reversed_revenue_mu: 3_500_000n, // ₹35K RTO-reversed
   refunded_revenue_mu: 500_000n,     // ₹5K refunded
   realized_revenue_mu: 185_000_000n, // ₹18.5L — net_revenue − 6_000_000 reversals
+  // Founder salary (Wave-1 parity): ₹40K/month prorated
+  founder_salary_mu: 4_000_000n,     // ₹40K founder salary (prorated Apr 2026)
   order_count: 1_247n,
   aov_mu: 1_483n,                    // ~₹14.83 mean (display)
   // ---------------------------------------------------------------------
@@ -259,29 +266,74 @@ function buildSugandhlokStoreSummary(): {
 }
 
 /**
- * Sugandh-Lok HONEST CM waterfall — Phase-2 slice-2 (feat-pnl-cm-waterfall).
+ * Sugandh-Lok HONEST CM waterfall — Wave-1 parity (2026-05-30): full 16-step ladder.
  * Derived from SUGANDH_LOK_CANONICAL so /pnl, /waterfall and /dashboard share ONE
- * fact source. The head is realized_revenue (the honest billing base). cm1 SUBTRACTS
- * variable_costs (the slice-2 correction; the prior seed was COGS-only and used the
- * net_revenue head). RTO is NOT folded into CM1 — it is the Brain-native True-CM2.
- * cumulative_mu at each CM subtotal equals that subtotal (the chart invariant).
+ * fact source. Steps follow the legacy waterfall.ts order exactly:
+ *   Gross Sales → Discounts → Refunds → Tax → Shipping →
+ *   Revenue After Tax & Shipping (SUBTOTAL) →
+ *   COGS → Variable Costs → RTO Cost → CM1 (SUBTOTAL) →
+ *   Ad Spend → CM2 (SUBTOTAL) →
+ *   Fixed Cost → CM3 (SUBTOTAL) →
+ *   Founder's Salary → Net Profit (SUBTOTAL)
+ *
+ * cumulative_mu at each step = running total after that step (chart invariant).
+ * Zero-valued steps for inputs not yet connector-sourced (e.g. founder_salary = 0
+ * if not seeded) are expressed as 0n so the ladder always terminates at Net Profit.
+ * CF-C6-RENDER-ONLY-1: zero arithmetic in the render layer — all math is here.
+ * CF-C6-REGISTRY-ONLY-BFF-1: every definition_id is in PNL_WATERFALL_DEFINITION_IDS.
  */
 function buildSugandhlokCmWaterfall(): PnlWaterfallRow[] {
   const c = SUGANDH_LOK_CANONICAL;
   const epoch = DATA_EPOCH;
-  const head = c.realized_revenue_mu;          // 185_000_000
-  const cm1 = head - c.cogs_mu - c.variable_costs_mu;       // 97_000_000
-  const cm2 = cm1 - c.total_ad_spend_mu;                    // 32_000_000
-  const cm3 = cm2 - c.misc_expenses_prorated_mu;            // 28_000_000
+  const curr = 'INR';
+
+  // ── Revenue deduction sub-ladder ──────────────────────────────────────────
+  const grossSales = c.gross_sales_mu;                               // 218_000_000
+  const afterDiscount = grossSales - c.total_discount_mu;            // 206_000_000
+  const afterReturns = afterDiscount - c.returns_mu;                 // 205_500_000
+  const afterTax = afterReturns - c.total_tax_mu;                    // 187_500_000
+  const revenueAfterDeductions = afterTax - c.shipping_outbound_mu;  // 184_500_000 (= gross_revenue_after_deductions_mu)
+
+  // ── Cost deduction ladder ──────────────────────────────────────────────────
+  const afterCogs = revenueAfterDeductions - c.cogs_mu;              // 102_500_000
+  const afterVarCosts = afterCogs - c.variable_costs_mu;             // 96_500_000
+  const afterRto = afterVarCosts - c.rto_cost_mu;                    // 92_020_000
+  // CM1 subtotal: Brain-canonical CM1 = net_revenue − cogs − variable_costs.
+  // Mirrors cm_waterfall_query.py step 10: value_mu and cumulative_mu both reset
+  // to c.cm1_mu (97_000_000), surfacing the DDR delta visually (the walk lands at
+  // 92_020_000 but the subtotal bar resets to the canonical 97_000_000). All
+  // downstream steps restart from this canonical CM1 so cm2/cm3 subtotals stay
+  // consistent with the dashboard KPI seed (cm2_mu=32M, cm3_mu=28M).
+  const cm1 = c.cm1_mu;                                              // 97_000_000 (canonical)
+  const afterAdSpend = cm1 - c.total_ad_spend_mu;                    // 32_000_000 = cm2_mu
+  const cm2 = c.cm2_mu;                                              // 32_000_000
+  const afterFixed = cm2 - c.misc_expenses_prorated_mu;              // 28_000_000 = cm3_mu
+  const cm3 = c.cm3_mu;                                              // 28_000_000
+  const netProfit = cm3 - c.founder_salary_mu;                       // 24_000_000
+
   return [
-    { definition_id: 'net_revenue_mu', label: 'Realized Revenue', value_mu: head, cumulative_mu: head, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cogs_mu', label: 'COGS', value_mu: -c.cogs_mu, cumulative_mu: head - c.cogs_mu, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'variable_costs_mu', label: 'Variable Costs', value_mu: -c.variable_costs_mu, cumulative_mu: cm1, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cm1_mu', label: 'CM1 (Gross Contribution)', value_mu: cm1, cumulative_mu: cm1, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'total_ad_spend_mu', label: 'Ad Spend', value_mu: -c.total_ad_spend_mu, cumulative_mu: cm2, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cm2_mu', label: 'CM2 (After Ads)', value_mu: cm2, cumulative_mu: cm2, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'misc_expenses_prorated_mu', label: 'Fixed Overheads (Prorated)', value_mu: -c.misc_expenses_prorated_mu, cumulative_mu: cm3, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cm3_mu', label: 'CM3 (After Overheads)', value_mu: cm3, cumulative_mu: cm3, currency_code: 'INR', data_epoch: epoch },
+    // ── Gross-to-net deduction sub-ladder ─────────────────────────────────
+    { definition_id: 'gross_sales_mu',                  label: 'Gross Sales',                      value_mu: grossSales,               cumulative_mu: grossSales,               currency_code: curr, data_epoch: epoch },
+    { definition_id: 'total_discount_mu',               label: 'Discounts',                         value_mu: -c.total_discount_mu,     cumulative_mu: afterDiscount,            currency_code: curr, data_epoch: epoch },
+    { definition_id: 'returns_mu',                      label: 'Refunds',                           value_mu: -c.returns_mu,            cumulative_mu: afterReturns,             currency_code: curr, data_epoch: epoch },
+    { definition_id: 'total_tax_mu',                    label: 'Tax',                               value_mu: -c.total_tax_mu,          cumulative_mu: afterTax,                 currency_code: curr, data_epoch: epoch },
+    { definition_id: 'shipping_outbound_mu',            label: 'Shipping',                          value_mu: -c.shipping_outbound_mu,  cumulative_mu: revenueAfterDeductions,   currency_code: curr, data_epoch: epoch },
+    { definition_id: 'gross_revenue_after_deductions_mu', label: 'Revenue After Tax & Shipping',  value_mu: revenueAfterDeductions,   cumulative_mu: revenueAfterDeductions,   currency_code: curr, data_epoch: epoch },
+    // ── Cost ladder ───────────────────────────────────────────────────────
+    { definition_id: 'cogs_mu',                         label: 'COGS',                              value_mu: -c.cogs_mu,               cumulative_mu: afterCogs,                currency_code: curr, data_epoch: epoch },
+    { definition_id: 'variable_costs_mu',               label: 'Variable Costs',                    value_mu: -c.variable_costs_mu,     cumulative_mu: afterVarCosts,            currency_code: curr, data_epoch: epoch },
+    { definition_id: 'rto_cost_mu',                     label: 'RTO Cost',                          value_mu: -c.rto_cost_mu,           cumulative_mu: afterRto,                 currency_code: curr, data_epoch: epoch },
+    // CM1 subtotal resets cumulative to Brain-canonical CM1 (mirrors analytics step 10).
+    { definition_id: 'cm1_mu',                          label: 'CM1',                               value_mu: cm1,                      cumulative_mu: cm1,                      currency_code: curr, data_epoch: epoch },
+    // ── Ad spend ──────────────────────────────────────────────────────────
+    { definition_id: 'total_ad_spend_mu',               label: 'Ad Spend',                          value_mu: -c.total_ad_spend_mu,     cumulative_mu: afterAdSpend,             currency_code: curr, data_epoch: epoch },
+    { definition_id: 'cm2_mu',                          label: 'CM2',                               value_mu: cm2,                      cumulative_mu: cm2,                      currency_code: curr, data_epoch: epoch },
+    // ── Fixed cost ────────────────────────────────────────────────────────
+    { definition_id: 'misc_expenses_prorated_mu',       label: 'Fixed Cost',                        value_mu: -c.misc_expenses_prorated_mu, cumulative_mu: afterFixed,           currency_code: curr, data_epoch: epoch },
+    { definition_id: 'cm3_mu',                          label: 'CM3',                               value_mu: cm3,                      cumulative_mu: cm3,                      currency_code: curr, data_epoch: epoch },
+    // ── Founder salary → Net Profit ───────────────────────────────────────
+    { definition_id: 'founder_salary_mu',               label: "Founder's Salary",                  value_mu: -c.founder_salary_mu,     cumulative_mu: netProfit,                currency_code: curr, data_epoch: epoch },
+    { definition_id: 'net_profit_mu',                   label: 'Net Profit',                        value_mu: netProfit,                cumulative_mu: netProfit,                currency_code: curr, data_epoch: epoch },
   ];
 }
 
