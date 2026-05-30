@@ -92,6 +92,14 @@ import type {
   WorkspaceSettingsResult,
   IntegrationsResult,
   BackfillStatusResult,
+  // Team CRUD mutations (parity-38 feat-parity-w6b):
+  PendingInvitationRow,
+  TeamInviteParams,
+  TeamChangeRoleParams,
+  TeamRemoveMemberParams,
+  TeamRevokeInviteParams,
+  TeamTransferOwnershipParams,
+  TeamMutationResult,
 } from '../domain/proto-types.js';
 import {
   INVENTORY_DAYS_LEFT,
@@ -1952,21 +1960,29 @@ function buildSugandhlokEmailSmsPerformance(filters?: EmailSmsFilterInput): Emai
   };
   const seeds = seedByGroup[groupBy] ?? seedByGroup.campaign;
 
-  const rows: EmailPerfRow[] = seeds.map((s) => ({
-    key: s.key,
-    label: s.label,
-    channel: s.channel,
-    delivered: BigInt(s.delivered),
-    unique_opens: BigInt(s.opens),
-    unique_clicks: BigInt(s.clicks),
-    orders: BigInt(s.orders),
-    revenue_mu: s.revenue_mu,
-    unsubscribes: BigInt(s.unsub),
-    spam_complaints: BigInt(s.spam),
-    open_rate_bp: s.delivered > 0 ? (EMAIL_OPEN_RATE_BP.formula_ts(BigInt(s.opens), BigInt(s.delivered)) as number) : null,
-    click_rate_bp: s.delivered > 0 ? (EMAIL_CLICK_RATE_BP.formula_ts(BigInt(s.clicks), BigInt(s.delivered)) as number) : null,
-    revenue_per_recipient_mu: s.delivered > 0 ? (EMAIL_REVENUE_PER_RECIPIENT_MU.formula_ts(s.revenue_mu, BigInt(s.delivered)) as bigint) : null,
-  }));
+  const rows: EmailPerfRow[] = seeds.map((s) => {
+    const delivered = BigInt(s.delivered);
+    const uniqueOpens = BigInt(s.opens);
+    const revenueMu = s.revenue_mu;
+    return {
+      key: s.key,
+      label: s.label,
+      channel: s.channel,
+      delivered,
+      unique_opens: uniqueOpens,
+      unique_clicks: BigInt(s.clicks),
+      orders: BigInt(s.orders),
+      revenue_mu: revenueMu,
+      unsubscribes: BigInt(s.unsub),
+      spam_complaints: BigInt(s.spam),
+      open_rate_bp: s.delivered > 0 ? (EMAIL_OPEN_RATE_BP.formula_ts(uniqueOpens, delivered) as number) : null,
+      click_rate_bp: s.delivered > 0 ? (EMAIL_CLICK_RATE_BP.formula_ts(BigInt(s.clicks), delivered) as number) : null,
+      revenue_per_recipient_mu: s.delivered > 0 ? (EMAIL_REVENUE_PER_RECIPIENT_MU.formula_ts(revenueMu, delivered) as bigint) : null,
+      revenue_per_unique_open_mu: s.opens > 0 ? revenueMu / uniqueOpens : null,
+      unsubscribe_rate_bp: s.delivered > 0 ? Math.round((s.unsub * 10000) / s.delivered) : null,
+      spam_rate_bp: s.delivered > 0 ? Math.round((s.spam * 10000) / s.delivered) : null,
+    };
+  });
 
   if (groupBy === 'dow') {
     rows.sort((a, b) => a.key.localeCompare(b.key));
@@ -2586,6 +2602,80 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return setLeadTimeLoopback(params.sku, params.lead_time_days);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Team CRUD mutations — stub plane (parity-38 feat-parity-w6b).
+  // The loopback/stub plane uses an in-memory store; Sugandh members are seeded.
+  // ---------------------------------------------------------------------------
+  private readonly _pendingInvitations: PendingInvitationRow[] = [];
+  private _stubMembers = buildSugandhlokMembers().members;
+
+  async listPendingInvitations(params: { workspace_id: string }): Promise<{ invitations: PendingInvitationRow[]; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { invitations: [...this._pendingInvitations], data_epoch: DATA_EPOCH };
+  }
+
+  async teamInviteMember(params: TeamInviteParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const token = crypto.randomUUID();
+    const now = new Date();
+    const expires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    this._pendingInvitations.push({
+      id: crypto.randomUUID(),
+      email: params.invitee_email,
+      role: params.role,
+      token,
+      created_at: now.toISOString(),
+      expires_at: expires.toISOString(),
+    });
+    return { ok: true };
+  }
+
+  async teamChangeRole(params: TeamChangeRoleParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const m = this._stubMembers.find((m) => m.user_id === params.target_user_id);
+    if (!m) return { ok: false, error: 'Member not found' };
+    (m as { role: string }).role = params.new_role;
+    return { ok: true };
+  }
+
+  async teamRemoveMember(params: TeamRemoveMemberParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const idx = this._stubMembers.findIndex((m) => m.user_id === params.target_user_id);
+    if (idx === -1) return { ok: false, error: 'Member not found' };
+    this._stubMembers.splice(idx, 1);
+    return { ok: true };
+  }
+
+  async teamRevokeInvite(params: TeamRevokeInviteParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const idx = this._pendingInvitations.findIndex((i) => i.id === params.invitation_id);
+    if (idx === -1) return { ok: false, error: 'Invitation not found' };
+    this._pendingInvitations.splice(idx, 1);
+    return { ok: true };
+  }
+
+  async teamTransferOwnership(params: TeamTransferOwnershipParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const newOwner = this._stubMembers.find((m) => m.user_id === params.new_owner_user_id);
+    if (!newOwner) return { ok: false, error: 'Target member not found' };
+    const actor = this._stubMembers.find((m) => m.user_id === params.actor_user_id);
+    (newOwner as { role: string }).role = 'OWNER';
+    if (actor) (actor as { role: string }).role = 'MANAGER';
+    return { ok: true };
   }
 
   getDecisionLog(): InMemoryDecisionLog {

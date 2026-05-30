@@ -902,17 +902,21 @@ export type EmailPerfGroupByName = 'campaign' | 'flow' | 'date' | 'channel' | 'd
 export interface EmailPerfRow {
   key: string;
   label: string;
-  channel: string;                  // "email" | "sms" — REPORTING tag, not a send target
+  channel: string;                       // "email" | "sms" — REPORTING tag, not a send target
   delivered: bigint;
   unique_opens: bigint;
   unique_clicks: bigint;
   orders: bigint;
-  revenue_mu: bigint;               // attributed past performance (REPORTING, never a send)
+  revenue_mu: bigint;                    // attributed past performance (REPORTING, never a send)
   unsubscribes: bigint;
   spam_complaints: bigint;
   open_rate_bp: number | null;
   click_rate_bp: number | null;
   revenue_per_recipient_mu: bigint | null;
+  // Restored legacy columns (7 dropped columns — parity-38 fix):
+  revenue_per_unique_open_mu: bigint | null;  // $/unique-open (null when unique_opens=0)
+  unsubscribe_rate_bp: number | null;         // unsub % (null when delivered=0)
+  spam_rate_bp: number | null;               // spam % (null when delivered=0)
 }
 
 export interface EmailSmsPerformanceResult {
@@ -1100,8 +1104,62 @@ export interface WorkspaceMemberRow {
 export interface WorkspaceMembersResult {
   workspace_id: string;
   members: WorkspaceMemberRow[];
-  pending_invitations: number; // count only; invite (write) is deferred this slice.
+  pending_invitations: number;
 }
+
+// ---------------------------------------------------------------------------
+// Team mutation types (parity-38 TEAM CRUD — feat-parity-w6b)
+// invite is honest-deferred on email sending: creates the row + token only.
+// Role-gate: OWNER/MANAGER can invite; only OWNER may transfer ownership or
+// change another OWNER's role; MANAGER cannot remove an OWNER.
+// ---------------------------------------------------------------------------
+
+export interface PendingInvitationRow {
+  id: string;
+  email: string;
+  role: WorkspaceMemberRole;
+  token: string;            // shareable /join/<token> link token
+  created_at: string;       // ISO date
+  expires_at: string;       // ISO date
+}
+
+export interface TeamInviteParams {
+  workspace_id: string;
+  inviter_user_id: string;
+  inviter_role: WorkspaceMemberRole;
+  invitee_email: string;
+  role: WorkspaceMemberRole;
+}
+
+export interface TeamChangeRoleParams {
+  workspace_id: string;
+  actor_user_id: string;
+  actor_role: WorkspaceMemberRole;
+  target_user_id: string;
+  new_role: WorkspaceMemberRole;
+}
+
+export interface TeamRemoveMemberParams {
+  workspace_id: string;
+  actor_user_id: string;
+  actor_role: WorkspaceMemberRole;
+  target_user_id: string;
+}
+
+export interface TeamRevokeInviteParams {
+  workspace_id: string;
+  actor_role: WorkspaceMemberRole;
+  invitation_id: string;
+}
+
+export interface TeamTransferOwnershipParams {
+  workspace_id: string;
+  actor_user_id: string;
+  actor_role: WorkspaceMemberRole;
+  new_owner_user_id: string;
+}
+
+export type TeamMutationResult = { ok: true } | { ok: false; error: string };
 
 export interface WorkspaceSettingsResult {
   workspace_id: string;
@@ -1419,6 +1477,19 @@ export interface DataPlanePort {
   getWorkspaceMembers(params: {
     workspace_id: string;
   }): Promise<{ result: WorkspaceMembersResult; data_epoch: Date }>;
+
+  /** List pending invitations for a workspace (OWNER/MANAGER-gated in router). */
+  listPendingInvitations(params: {
+    workspace_id: string;
+  }): Promise<{ invitations: PendingInvitationRow[]; data_epoch: Date }>;
+
+  // Team CRUD mutations (parity-38 feat-parity-w6b). Role-gated in the router.
+  // Email sending is honest-deferred: invite creates the DB row + token only.
+  teamInviteMember(params: TeamInviteParams): Promise<TeamMutationResult>;
+  teamChangeRole(params: TeamChangeRoleParams): Promise<TeamMutationResult>;
+  teamRemoveMember(params: TeamRemoveMemberParams): Promise<TeamMutationResult>;
+  teamRevokeInvite(params: TeamRevokeInviteParams): Promise<TeamMutationResult>;
+  teamTransferOwnership(params: TeamTransferOwnershipParams): Promise<TeamMutationResult>;
 
   getWorkspaceSettings(params: {
     workspace_id: string;

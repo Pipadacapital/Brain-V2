@@ -20,6 +20,11 @@ import {
   readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
   readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints, readPnlPeriodGrid,
   readShipmentRows,
+  // Team CRUD mutations:
+  listTeamPendingInvitations, inviteTeamMember, changeTeamMemberRole,
+  removeTeamMember, revokeTeamInvite, transferTeamOwnership,
+  // Email/SMS performance:
+  readEmailPerformance,
   type ReadProductPerformanceFilters,
 } from '@brain/core-connectors';
 import {
@@ -74,6 +79,15 @@ import type {
   InventorySetLeadTimeResult,
   ProductGroupBy,
   ProductSort,
+  PendingInvitationRow,
+  TeamInviteParams,
+  TeamChangeRoleParams,
+  TeamRemoveMemberParams,
+  TeamRevokeInviteParams,
+  TeamTransferOwnershipParams,
+  TeamMutationResult,
+  EmailSmsPerformanceResult,
+  EmailPerfRow,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -935,25 +949,42 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getFirstProductCascade(p: Parameters<DataPlanePort['getFirstProductCascade']>[0]) {
     this.assertWs(p.workspace_id);
-    const { rows, totalCohort } = await readFirstProductCascade(this.ws);
+    const obsDays = Math.min(730, Math.max(30, p.filters?.observation_days ?? 365));
+    const { rows, totalCohort } = await readFirstProductCascade(
+      this.ws,
+      p.date_range.start,
+      p.date_range.end,
+      obsDays,
+    );
     const result: FirstProductCascadeResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
-      observation_days: 90,
+      observation_days: obsDays,
       total_cohort_customers: totalCohort,
-      rows: rows.map((r) => ({
-        product_key: r.productKey,
-        product_title: r.productTitle,
-        first_order_customers: r.firstOrderCustomers,
-        customers_with_2nd_order: r.with2nd,
-        customers_with_3rd_order: r.with3rd,
-        customers_with_4th_plus_order: r.with4thPlus,
-        second_order_rate_bp: bp(r.with2nd, r.firstOrderCustomers),
-        third_order_rate_bp: bp(r.with3rd, r.firstOrderCustomers),
-        fourth_plus_rate_bp: bp(r.with4thPlus, r.firstOrderCustomers),
-        additional_order_rate_centi: 0n,
-        average_ltv_revenue_mu: r.avgLtvMu,
-        average_days_to_second_deci: null,
-      })),
+      rows: rows.map((r) => {
+        const n = r.firstOrderCustomers;
+        // additional_order_rate_centi = sum(max(0,ordersInWindow-1)) * 100 / cohortSize (floor)
+        const additionalCenti = n > 0n
+          ? (r.sumAdditionalOrders * 100n) / n
+          : 0n;
+        // average_days_to_second_deci = sum_days * 10 / custs_with_2nd (floor), null if 0
+        const daysDeci = r.customersWith2ndInWindow > 0n
+          ? (r.sumDaysToSecond * 10n) / r.customersWith2ndInWindow
+          : null;
+        return {
+          product_key: r.productKey,
+          product_title: r.productTitle,
+          first_order_customers: n,
+          customers_with_2nd_order: r.with2nd,
+          customers_with_3rd_order: r.with3rd,
+          customers_with_4th_plus_order: r.with4thPlus,
+          second_order_rate_bp: bp(r.with2nd, n),
+          third_order_rate_bp: bp(r.with3rd, n),
+          fourth_plus_rate_bp: bp(r.with4thPlus, n),
+          additional_order_rate_centi: additionalCenti,
+          average_ltv_revenue_mu: r.avgLtvMu,
+          average_days_to_second_deci: daysDeci,
+        };
+      }),
     };
     return { result, data_epoch: DATA_EPOCH };
   }
@@ -1030,9 +1061,50 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     };
     return { result, data_epoch: DATA_EPOCH };
   }
-  override async getEmailSmsPerformance(p: { workspace_id: string; date_range: DateRange }) {
+  override async getEmailSmsPerformance(p: Parameters<DataPlanePort['getEmailSmsPerformance']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyEmailSmsPerformance(this.ws), data_epoch: DATA_EPOCH };
+    const groupBy = (p.filters?.group_by ?? 'campaign') as 'campaign' | 'flow' | 'date' | 'channel' | 'dow';
+    const facts = await readEmailPerformance(this.ws, p.date_range.start, p.date_range.end, groupBy);
+    if (facts.length === 0) {
+      return { result: emptyEmailSmsPerformance(this.ws), data_epoch: DATA_EPOCH };
+    }
+    const rows: EmailPerfRow[] = facts.map((f) => {
+      const openRateBp = f.delivered > 0n ? Number((f.uniqueOpens * 10000n) / f.delivered) : null;
+      const clickRateBp = f.delivered > 0n ? Number((f.uniqueClicks * 10000n) / f.delivered) : null;
+      const revPerRecipient = f.delivered > 0n ? f.revenueMu / f.delivered : null;
+      const revPerUniqueOpen = f.uniqueOpens > 0n ? f.revenueMu / f.uniqueOpens : null;
+      const unsubRateBp = f.delivered > 0n ? Number((f.unsubscribes * 10000n) / f.delivered) : null;
+      const spamRateBp = f.delivered > 0n ? Number((f.spamComplaints * 10000n) / f.delivered) : null;
+      return {
+        key: f.key,
+        label: f.label,
+        channel: f.channel,
+        delivered: f.delivered,
+        unique_opens: f.uniqueOpens,
+        unique_clicks: f.uniqueClicks,
+        orders: f.orders,
+        revenue_mu: f.revenueMu,
+        unsubscribes: f.unsubscribes,
+        spam_complaints: f.spamComplaints,
+        open_rate_bp: openRateBp,
+        click_rate_bp: clickRateBp,
+        revenue_per_recipient_mu: revPerRecipient,
+        revenue_per_unique_open_mu: revPerUniqueOpen,
+        unsubscribe_rate_bp: unsubRateBp,
+        spam_rate_bp: spamRateBp,
+      };
+    });
+    const result: EmailSmsPerformanceResult = {
+      workspace_id: this.ws,
+      period: 'synced',
+      data_epoch: DATA_EPOCH,
+      group_by: groupBy,
+      rows,
+      total_delivered: rows.reduce((s, r) => s + r.delivered, 0n),
+      total_revenue_mu: rows.reduce((s, r) => s + r.revenue_mu, 0n),
+      currency_code: 'INR',
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
 
   // Chart-parity: daily net-sales series (feeds analytics AreaChart).
@@ -1249,5 +1321,66 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     }
     _setLocalLeadTime(this.ws, p.sku, p.lead_time_days);
     return { sku: p.sku, lead_time_days: p.lead_time_days };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Team CRUD mutations — parity-38 feat-parity-w6b.
+  // All run through the fact-analytics use-case functions (withWorkspace scoped).
+  // Role-gate enforcement lives at the router layer; these are DB-only operations.
+  // ---------------------------------------------------------------------------
+
+  override async listPendingInvitations(p: { workspace_id: string }): Promise<{ invitations: PendingInvitationRow[]; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const { invitations } = await listTeamPendingInvitations(this.ws);
+    return {
+      invitations: invitations.map((i) => ({
+        id: i.id,
+        email: i.email,
+        role: i.role as WorkspaceMemberRole,
+        token: i.token,
+        created_at: i.createdAt,
+        expires_at: i.expiresAt,
+      })),
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  override async teamInviteMember(p: TeamInviteParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    const res = await inviteTeamMember({
+      workspaceId: p.workspace_id,
+      inviterUserId: p.inviter_user_id,
+      inviteeEmail: p.invitee_email,
+      role: p.role,
+    });
+    return res;
+  }
+
+  override async teamChangeRole(p: TeamChangeRoleParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return changeTeamMemberRole({
+      workspaceId: p.workspace_id,
+      targetUserId: p.target_user_id,
+      newRole: p.new_role,
+    });
+  }
+
+  override async teamRemoveMember(p: TeamRemoveMemberParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return removeTeamMember({ workspaceId: p.workspace_id, targetUserId: p.target_user_id });
+  }
+
+  override async teamRevokeInvite(p: TeamRevokeInviteParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return revokeTeamInvite({ workspaceId: p.workspace_id, invitationId: p.invitation_id });
+  }
+
+  override async teamTransferOwnership(p: TeamTransferOwnershipParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return transferTeamOwnership({
+      workspaceId: p.workspace_id,
+      actorUserId: p.actor_user_id,
+      newOwnerUserId: p.new_owner_user_id,
+    });
   }
 }

@@ -323,6 +323,8 @@ export async function readShipmentAnalyticsCH(workspaceId: string): Promise<Fact
        toString(count())                                  AS prepaid,
        toString(0)                                        AS charges,
        toString(0)                                        AS rto_charges,
+       toString(0)                                        AS fwd_charges,
+       toString(0)                                        AS cod_charges,
        toString(0)                                        AS cod_rto,
        toString(0)                                        AS cod_total,
        toString(countIf(${STATUS_BUCKET} = 'RTO'))        AS prepaid_rto,
@@ -351,6 +353,8 @@ export async function readShipmentAnalyticsCH(workspaceId: string): Promise<Fact
     prepaidCount: BigInt(r.prepaid ?? '0'),
     totalChargesMu: BigInt(r.charges ?? '0'),
     rtoChargesMu: BigInt(r.rto_charges ?? '0'),
+    forwardChargesMu: BigInt(r.fwd_charges ?? '0'),
+    codChargesMu: BigInt(r.cod_charges ?? '0'),
     codRtoCount: BigInt(r.cod_rto ?? '0'),
     codTotal: BigInt(r.cod_total ?? '0'),
     prepaidRtoCount: BigInt(r.prepaid_rto ?? '0'),
@@ -721,6 +725,10 @@ export async function readFirstProductCascadeCH(
     with3rd: BigInt(r.w3 ?? '0'),
     with4thPlus: BigInt(r.w4 ?? '0'),
     avgLtvMu: BigInt(r.avg_ltv ?? '0'),
+    // CH path does not yet compute these; honest zeros (PG path is the authoritative source).
+    sumAdditionalOrders: 0n,
+    sumDaysToSecond: 0n,
+    customersWith2ndInWindow: BigInt(r.w2 ?? '0'),
   }))
   const totalCohort = out.reduce((a, r) => a + r.firstOrderCustomers, 0n)
   return { rows: out, totalCohort }

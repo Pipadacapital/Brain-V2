@@ -467,6 +467,182 @@ export async function readWorkspaceMembers(
 }
 
 // ---------------------------------------------------------------------------
+// Team CRUD use-cases (parity-38 feat-parity-w6b):
+//   inviteTeamMember / changeTeamRole / removeTeamMember / revokeTeamInvite /
+//   transferTeamOwnership / listTeamPendingInvitations.
+//
+// Role-gate enforced at the ROUTER layer; the DB functions here assume the caller
+// has already validated the actor's role. Every write runs under withWorkspace
+// (RLS scoped to the workspace). Email sending is honest-deferred: invite creates
+// the DB row + an unguessable token only.
+//
+// Invariants enforced by the DB:
+//   - workspace_members.workspace_id FK → workspaces.id ON DELETE CASCADE
+//   - invitations.workspace_id FK → workspaces.id ON DELETE CASCADE
+//   - UNIQUE (workspace_id, user_id) on workspace_members prevents double-add
+// ---------------------------------------------------------------------------
+
+export interface FactPendingInvitationRow {
+  id: string
+  email: string
+  role: string
+  token: string
+  createdAt: string
+  expiresAt: string
+}
+
+export async function listTeamPendingInvitations(
+  workspaceId: string,
+): Promise<{ invitations: FactPendingInvitationRow[] }> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const res = await tx.query<{
+      id: string; email: string; role: string; token: string;
+      created_at: Date; expires_at: Date;
+    }>(
+      `SELECT id, email, role, token::text, created_at, expires_at
+         FROM invitations
+        WHERE workspace_id = $1 AND status = 'PENDING'
+        ORDER BY created_at DESC`,
+      [workspaceId],
+    )
+    return {
+      invitations: res.rows.map((r) => ({
+        id: r.id,
+        email: r.email,
+        role: r.role,
+        token: r.token,
+        createdAt: r.created_at.toISOString(),
+        expiresAt: r.expires_at.toISOString(),
+      })),
+    }
+  })
+}
+
+/** Create an invitation row + shareable token. Email sending is DEFERRED. */
+export async function inviteTeamMember(params: {
+  workspaceId: string
+  inviterUserId: string
+  inviteeEmail: string
+  role: string
+}): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  try {
+    return await withWorkspace(params.workspaceId, async (tx: PoolClient) => {
+      // Idempotent: if a PENDING invite to this email already exists, return it.
+      const existing = await tx.query<{ token: string }>(
+        `SELECT token::text FROM invitations
+          WHERE workspace_id = $1 AND email = $2 AND status = 'PENDING'
+          LIMIT 1`,
+        [params.workspaceId, params.inviteeEmail.toLowerCase()],
+      )
+      if (existing.rows.length > 0) {
+        return { ok: true as const, token: existing.rows[0]!.token }
+      }
+      const res = await tx.query<{ token: string }>(
+        `INSERT INTO invitations (workspace_id, email, role, invited_by_id,
+                                  status, expires_at)
+         VALUES ($1, $2, $3, $4, 'PENDING', now() + interval '7 days')
+         RETURNING token::text`,
+        [params.workspaceId, params.inviteeEmail.toLowerCase(), params.role, params.inviterUserId],
+      )
+      return { ok: true as const, token: res.rows[0]!.token }
+    })
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function changeTeamMemberRole(params: {
+  workspaceId: string
+  targetUserId: string
+  newRole: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await withWorkspace(params.workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query(
+        `UPDATE workspace_members SET role = $1, updated_at = now()
+          WHERE workspace_id = $2 AND user_id = $3`,
+        [params.newRole, params.workspaceId, params.targetUserId],
+      )
+      if ((res.rowCount ?? 0) === 0) throw new Error('Member not found')
+    })
+    return { ok: true }
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function removeTeamMember(params: {
+  workspaceId: string
+  targetUserId: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await withWorkspace(params.workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query(
+        `DELETE FROM workspace_members
+          WHERE workspace_id = $1 AND user_id = $2`,
+        [params.workspaceId, params.targetUserId],
+      )
+      if ((res.rowCount ?? 0) === 0) throw new Error('Member not found')
+    })
+    return { ok: true }
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function revokeTeamInvite(params: {
+  workspaceId: string
+  invitationId: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await withWorkspace(params.workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query(
+        `UPDATE invitations SET status = 'REVOKED', updated_at = now()
+          WHERE workspace_id = $1 AND id = $2 AND status = 'PENDING'`,
+        [params.workspaceId, params.invitationId],
+      )
+      if ((res.rowCount ?? 0) === 0) throw new Error('Pending invitation not found')
+    })
+    return { ok: true }
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+/** Transfer ownership: promote new owner to OWNER, demote current actor to MANAGER. */
+export async function transferTeamOwnership(params: {
+  workspaceId: string
+  actorUserId: string
+  newOwnerUserId: string
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await withWorkspace(params.workspaceId, async (tx: PoolClient) => {
+      // Verify new owner is a member.
+      const newOwnerRes = await tx.query<{ role: string }>(
+        `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+        [params.workspaceId, params.newOwnerUserId],
+      )
+      if (newOwnerRes.rows.length === 0) throw new Error('Target member not found')
+      // Promote new owner.
+      await tx.query(
+        `UPDATE workspace_members SET role = 'OWNER', updated_at = now()
+          WHERE workspace_id = $1 AND user_id = $2`,
+        [params.workspaceId, params.newOwnerUserId],
+      )
+      // Demote the current actor to MANAGER.
+      await tx.query(
+        `UPDATE workspace_members SET role = 'MANAGER', updated_at = now()
+          WHERE workspace_id = $1 AND user_id = $2`,
+        [params.workspaceId, params.actorUserId],
+      )
+    })
+    return { ok: true }
+  } catch (e: unknown) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Workspace settings — the real workspace row (readable under withWorkspace via
 // ws_self_isolation). The local-dev schema doesn't store plan/timezone/region, so
 // those are honest India defaults (NOT a Sugandh seed).
@@ -511,6 +687,8 @@ export interface FactShipmentAnalytics {
   prepaidCount: bigint
   totalChargesMu: bigint
   rtoChargesMu: bigint
+  forwardChargesMu: bigint  // sum(shipping_charges_mu) WHERE NOT RTO
+  codChargesMu: bigint      // sum(cod_amount_mu) — COD remittance charges
   codRtoCount: bigint
   codTotal: bigint
   prepaidRtoCount: bigint
@@ -531,6 +709,8 @@ export async function readShipmentAnalytics(workspaceId: string): Promise<FactSh
          count(*) FILTER (WHERE NOT is_cod)::text prepaid,
          COALESCE(sum(shipping_charges_mu),0)::text charges,
          COALESCE(sum(shipping_charges_mu) FILTER (WHERE status_bucket='RTO'),0)::text rto_charges,
+         COALESCE(sum(shipping_charges_mu) FILTER (WHERE status_bucket<>'RTO'),0)::text fwd_charges,
+         COALESCE(sum(cod_amount_mu),0)::text cod_charges,
          count(*) FILTER (WHERE is_cod AND status_bucket='RTO')::text cod_rto,
          count(*) FILTER (WHERE is_cod)::text cod_total,
          count(*) FILTER (WHERE NOT is_cod AND status_bucket='RTO')::text prepaid_rto,
@@ -555,6 +735,8 @@ export async function readShipmentAnalytics(workspaceId: string): Promise<FactSh
       prepaidCount: BigInt(r.prepaid ?? '0'),
       totalChargesMu: BigInt(r.charges ?? '0'),
       rtoChargesMu: BigInt(r.rto_charges ?? '0'),
+      forwardChargesMu: BigInt(r.fwd_charges ?? '0'),
+      codChargesMu: BigInt(r.cod_charges ?? '0'),
       codRtoCount: BigInt(r.cod_rto ?? '0'),
       codTotal: BigInt(r.cod_total ?? '0'),
       prepaidRtoCount: BigInt(r.prepaid_rto ?? '0'),
@@ -1049,43 +1231,114 @@ export interface FactCascadeRow {
   with3rd: bigint
   with4thPlus: bigint
   avgLtvMu: bigint
+  // Restored: additional orders sum and days-to-second (parity-38 feat-parity-w6b)
+  sumAdditionalOrders: bigint   // sum(max(0, ordersInWindow-1)) over cohort (centi base)
+  sumDaysToSecond: bigint       // sum of days first→second over custs with >=2 orders in window
+  customersWith2ndInWindow: bigint  // count of custs with >=2 orders in observation window
 }
-export async function readFirstProductCascade(workspaceId: string): Promise<{ rows: FactCascadeRow[]; totalCohort: bigint }> {
+
+/** Read first-product cascade facts, honoring date range + observation window.
+ *
+ * @param workspaceId  workspace to query (RLS scoped)
+ * @param from         cohort window start (first order processedAt >= from)
+ * @param to           cohort window end (first order processedAt <= to)
+ * @param observationDays  observation window days after `to` (default 365, clamped 30..730)
+ */
+export async function readFirstProductCascade(
+  workspaceId: string,
+  from?: string,
+  to?: string,
+  observationDays?: number,
+): Promise<{ rows: FactCascadeRow[]; totalCohort: bigint }> {
   if (READ_FROM_CH) {
     try { return await readFirstProductCascadeCH(workspaceId) } catch { /* PG fallback */ }
   }
+  const obsDays = Math.min(730, Math.max(30, observationDays ?? 365))
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // Build date bounds for the WHERE clauses.
+    // cohort = first order processedAt in [from, to]
+    // observation_end = to + observationDays days (orders counted through this bound)
+    const dateFilter = from && to
+      ? `AND o.processed_at >= $1::date AND o.processed_at < $2::date + interval '1 day'`
+      : ''
+    const obsEndExpr = to
+      ? `$2::date + interval '${obsDays} days'`
+      : `now() + interval '${obsDays} days'`
+    const params: string[] = from && to ? [from, to] : []
+
     const res = await tx.query<Record<string, string>>(
+      // first_order: each customer's first non-cancelled order within the cohort window.
+      // first_prod: primary first product picked by HIGHEST LINE REVENUE (qty*unit_price DESC),
+      //   ties broken by vendor_product_id ASC nulls last, then vendor_line_id ASC — matches legacy.
+      // cust_orders: per-customer order count and LTV bounded to [first_order_time, observation_end].
+      // days2nd: calendar days from first to second order for customers with >=2 orders in window.
       `WITH first_order AS (
-         SELECT DISTINCT ON (customer_ref) customer_ref, vendor_order_id
-           FROM connector_order_facts
-          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
-          ORDER BY customer_ref, processed_at, vendor_order_id
+         SELECT DISTINCT ON (o.customer_ref) o.customer_ref, o.vendor_order_id,
+                o.processed_at AS first_order_time
+           FROM connector_order_facts o
+          WHERE o.customer_ref IS NOT NULL AND ${CANCELLED}
+                ${dateFilter}
+          ORDER BY o.customer_ref, o.processed_at, o.vendor_order_id
        ),
        first_prod AS (
          SELECT DISTINCT ON (fo.customer_ref) fo.customer_ref,
-                li.vendor_product_id pid, COALESCE(pf.title, li.title) title
+                li.vendor_product_id AS pid, COALESCE(pf.title, li.title, '(unknown)') AS title
            FROM first_order fo
-           JOIN connector_line_item_facts li ON li.vendor = 'SHOPIFY' AND li.vendor_order_id = fo.vendor_order_id
-           LEFT JOIN connector_product_facts pf ON pf.vendor_product_id = li.vendor_product_id
-          WHERE li.vendor_product_id IS NOT NULL
-          ORDER BY fo.customer_ref, li.vendor_line_id
+           JOIN connector_line_item_facts li
+             ON li.vendor_order_id = fo.vendor_order_id
+            AND li.vendor_product_id IS NOT NULL
+           LEFT JOIN connector_product_facts pf
+             ON pf.vendor_product_id = li.vendor_product_id
+          ORDER BY fo.customer_ref,
+                   li.quantity * li.unit_price_mu DESC,
+                   li.vendor_product_id ASC NULLS LAST,
+                   li.vendor_line_id ASC
        ),
-       cust AS (
-         SELECT customer_ref, count(*) orders, sum(${NET_EXPR}) ltv
-           FROM connector_order_facts
-          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
-          GROUP BY customer_ref
+       cust_orders AS (
+         SELECT fo.customer_ref,
+                count(*) FILTER (
+                  WHERE o.processed_at >= fo.first_order_time
+                    AND o.processed_at <= fo.first_order_time + (interval '1 day' * ${obsDays})
+                ) AS cnt_in_window,
+                COALESCE(sum(o.gross_sales_mu - o.total_discount_mu)
+                  FILTER (
+                    WHERE o.processed_at >= fo.first_order_time
+                      AND o.processed_at <= fo.first_order_time + (interval '1 day' * ${obsDays})
+                  ), 0) AS ltv_in_window
+           FROM first_order fo
+           JOIN connector_order_facts o
+             ON o.customer_ref = fo.customer_ref AND ${CANCELLED}
+          GROUP BY fo.customer_ref
+       ),
+       days_to_2nd AS (
+         SELECT fo.customer_ref,
+                EXTRACT(epoch FROM (
+                  MIN(o.processed_at) FILTER (
+                    WHERE o.processed_at > fo.first_order_time
+                      AND o.processed_at <= fo.first_order_time + (interval '1 day' * ${obsDays})
+                  ) - fo.first_order_time
+                )) / 86400.0 AS days2
+           FROM first_order fo
+           JOIN connector_order_facts o
+             ON o.customer_ref = fo.customer_ref AND ${CANCELLED}
+          GROUP BY fo.customer_ref, fo.first_order_time
        )
        SELECT fp.pid,
-              max(fp.title) title,
-              count(*)::text first_customers,
-              count(*) FILTER (WHERE c.orders >= 2)::text w2,
-              count(*) FILTER (WHERE c.orders >= 3)::text w3,
-              count(*) FILTER (WHERE c.orders >= 4)::text w4,
-              COALESCE(avg(c.ltv),0)::bigint::text avg_ltv
-         FROM first_prod fp JOIN cust c ON c.customer_ref = fp.customer_ref
-        GROUP BY fp.pid ORDER BY count(*) DESC LIMIT 100`,
+              max(fp.title)                                   AS title,
+              count(*)::text                                  AS first_customers,
+              count(*) FILTER (WHERE co.cnt_in_window >= 2)::text AS w2,
+              count(*) FILTER (WHERE co.cnt_in_window >= 3)::text AS w3,
+              count(*) FILTER (WHERE co.cnt_in_window >= 4)::text AS w4,
+              COALESCE(avg(co.ltv_in_window),0)::bigint::text AS avg_ltv,
+              COALESCE(sum(GREATEST(0, co.cnt_in_window::bigint - 1)), 0)::text AS sum_additional,
+              COALESCE(sum(d2.days2) FILTER (WHERE d2.days2 IS NOT NULL AND co.cnt_in_window >= 2), 0)::text AS sum_days,
+              count(*) FILTER (WHERE co.cnt_in_window >= 2)::text AS custs_with_2nd
+         FROM first_prod fp
+         JOIN cust_orders co ON co.customer_ref = fp.customer_ref
+         LEFT JOIN days_to_2nd d2 ON d2.customer_ref = fp.customer_ref
+        GROUP BY fp.pid
+        ORDER BY count(*) DESC LIMIT 100`,
+      params,
     )
     const rows = res.rows.map((r) => ({
       productKey: r.pid,
@@ -1095,6 +1348,9 @@ export async function readFirstProductCascade(workspaceId: string): Promise<{ ro
       with3rd: BigInt(r.w3 ?? '0'),
       with4thPlus: BigInt(r.w4 ?? '0'),
       avgLtvMu: BigInt(r.avg_ltv ?? '0'),
+      sumAdditionalOrders: BigInt(r.sum_additional ?? '0'),
+      sumDaysToSecond: BigInt(r.sum_days ?? '0'),
+      customersWith2ndInWindow: BigInt(r.custs_with_2nd ?? '0'),
     }))
     const totalCohort = rows.reduce((a, r) => a + r.firstOrderCustomers, 0n)
     return { rows, totalCohort }
@@ -1575,6 +1831,103 @@ export async function readCalendarReport(workspaceId: string, grain: 'day' | 'we
       orders: BigInt(r.orders ?? '0'),
       newCustomers: BigInt(r.new_customers ?? '0'),
       spendMu: spendByPeriod.get(r.period) ?? 0n,
+    }))
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Email/SMS performance — aggregated from connector_email_send_facts.
+// Groups by the requested dimension; returns honest empty when no rows exist.
+// Parity-38 feat-parity-w6b: de-stub the local-db plane's getEmailSmsPerformance.
+// ---------------------------------------------------------------------------
+
+export interface FactEmailPerfRow {
+  key: string
+  label: string
+  channel: string
+  delivered: bigint
+  uniqueOpens: bigint
+  uniqueClicks: bigint
+  orders: bigint
+  revenueMu: bigint
+  unsubscribes: bigint
+  spamComplaints: bigint
+}
+
+type EmailGroupBy = 'campaign' | 'flow' | 'date' | 'channel' | 'dow'
+
+export async function readEmailPerformance(
+  workspaceId: string,
+  from: string,
+  to: string,
+  groupBy: EmailGroupBy,
+): Promise<FactEmailPerfRow[]> {
+  // Group key / label / GROUP BY expressions — all hardcoded strings, not user input.
+  const GROUP_DEFS: Record<EmailGroupBy, { keyExpr: string; labelExpr: string; groupByExpr: string }> = {
+    campaign: {
+      keyExpr: `'c:' || vendor_resource_id`,
+      labelExpr: `max(name)`,
+      groupByExpr: `source_type, vendor_resource_id`,
+    },
+    flow: {
+      keyExpr: `'f:' || vendor_resource_id`,
+      labelExpr: `max(name)`,
+      groupByExpr: `source_type, vendor_resource_id`,
+    },
+    date: {
+      keyExpr: `'d:' || to_char(send_date, 'YYYY-MM-DD')`,
+      labelExpr: `to_char(min(send_date), 'YYYY-MM-DD')`,
+      groupByExpr: `send_date`,
+    },
+    channel: {
+      keyExpr: `'ch:' || channel`,
+      labelExpr: `upper(max(channel))`,
+      groupByExpr: `channel`,
+    },
+    dow: {
+      keyExpr: `'w:' || EXTRACT(dow FROM send_date)::text`,
+      labelExpr: `to_char(min(send_date), 'Dy')`,
+      groupByExpr: `EXTRACT(dow FROM send_date)`,
+    },
+  }
+  const g = GROUP_DEFS[groupBy]
+
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    const sourceFilter = groupBy === 'campaign'
+      ? `AND source_type = 'campaign'`
+      : groupBy === 'flow'
+        ? `AND source_type = 'flow'`
+        : ''
+
+    const res = await tx.query<Record<string, string>>(
+      `SELECT ${g.keyExpr}            AS row_key,
+              ${g.labelExpr}          AS row_label,
+              max(channel)            AS channel,
+              sum(delivered)::text    AS delivered,
+              sum(unique_opens)::text AS unique_opens,
+              sum(unique_clicks)::text AS unique_clicks,
+              sum(orders)::text       AS orders,
+              sum(revenue_mu)::text   AS revenue_mu,
+              sum(unsubscribes)::text AS unsubscribes,
+              sum(spam_complaints)::text AS spam_complaints
+         FROM connector_email_send_facts
+        WHERE send_date >= $1::date AND send_date <= $2::date
+              ${sourceFilter}
+        GROUP BY ${g.groupByExpr}
+        ORDER BY sum(revenue_mu) DESC`,
+      [from, to],
+    )
+    return res.rows.map((r) => ({
+      key: r.row_key ?? '',
+      label: r.row_label ?? '',
+      channel: r.channel ?? 'email',
+      delivered: BigInt(r.delivered ?? '0'),
+      uniqueOpens: BigInt(r.unique_opens ?? '0'),
+      uniqueClicks: BigInt(r.unique_clicks ?? '0'),
+      orders: BigInt(r.orders ?? '0'),
+      revenueMu: BigInt(r.revenue_mu ?? '0'),
+      unsubscribes: BigInt(r.unsubscribes ?? '0'),
+      spamComplaints: BigInt(r.spam_complaints ?? '0'),
     }))
   })
 }

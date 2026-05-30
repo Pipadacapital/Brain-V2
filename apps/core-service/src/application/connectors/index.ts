@@ -142,4 +142,15 @@ export {
   type FactDailySalesRow,
   type FactDailyAcquisitionRow,
   type FactDistGraphPoint,
+  // Team CRUD mutations (parity-38 feat-parity-w6b):
+  listTeamPendingInvitations,
+  inviteTeamMember,
+  changeTeamMemberRole,
+  removeTeamMember,
+  revokeTeamInvite,
+  transferTeamOwnership,
+  type FactPendingInvitationRow,
+  // Email/SMS performance read (parity-38):
+  readEmailPerformance,
+  type FactEmailPerfRow,
 } from './sync/index.js'

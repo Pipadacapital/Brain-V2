@@ -16,12 +16,54 @@ import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 import { formatBpPercent } from '@/interfaces/components/marketing/format-ratio.js';
 
+/** Format bigint minor-unit amount to 4-decimal ratio like legacy $/recipient. */
+function formatRatio4dp(mu: bigint | null, currency: string): string {
+  if (mu === null) return '—';
+  // minor-units ÷ 100 (paise→rupees) with 4 decimals, matching legacy .toFixed(4)
+  return (Number(mu) / 100).toFixed(4);
+}
+
+/** Preset date-range buttons matching legacy DateRangeFilter. */
+function DatePresets({ onApply }: { onApply: (from: string, to: string) => void }) {
+  const today = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const presets: Array<{ label: string; days: number }> = [
+    { label: 'Yesterday', days: 1 },
+    { label: '7D', days: 7 },
+    { label: '30D', days: 30 },
+    { label: '90D', days: 90 },
+    { label: '1Y', days: 365 },
+  ];
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      {presets.map((p) => {
+        const to = p.label === 'Yesterday'
+          ? fmt(new Date(today.getTime() - 86400000))
+          : fmt(today);
+        const from = fmt(new Date(today.getTime() - p.days * 86400000));
+        return (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => onApply(from, to)}
+            className="px-2 py-1 text-xs border border-border rounded bg-background text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+          >
+            {p.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Group-by options — labels match legacy: 'By ...' prefix, flow has '(daily)' qualifier,
+// ordering: campaign / flow / date / channel / dow. Channel column stays as an enhancement.
 const GROUP_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'campaign', label: 'Campaign' },
-  { value: 'flow', label: 'Flow' },
-  { value: 'channel', label: 'Channel' },
-  { value: 'date', label: 'Date' },
-  { value: 'dow', label: 'Day of week' },
+  { value: 'campaign', label: 'By campaign' },
+  { value: 'flow',     label: 'By flow (daily)' },
+  { value: 'date',     label: 'By date' },
+  { value: 'channel',  label: 'By channel' },
+  { value: 'dow',      label: 'By day of week' },
 ];
 
 type GroupBy = 'campaign' | 'flow' | 'date' | 'channel' | 'dow';
@@ -55,10 +97,13 @@ export function EmailSmsContent() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Email &amp; SMS Performance</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">reporting on past campaign &amp; flow performance (read-only)</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Email &amp; SMS</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Klaviyo campaign &amp; flow performance. Rates use delivered as denominator where noted.
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <DatePresets onApply={(from, to) => { void setDateStart(from); void setDateEnd(to); }} />
           <label htmlFor="es-group" className="sr-only">Group by</label>
           <select id="es-group" value={validGroup} onChange={(e) => setGroupBy(e.target.value)} className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground">
             {GROUP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -73,7 +118,7 @@ export function EmailSmsContent() {
 
       {q.isLoading && (
         <div aria-busy="true" aria-label="Loading email/SMS performance" className="space-y-2">
-          {Array.from({ length: 5 }, (_, i) => <div key={i} className="h-9 bg-gray-100 rounded animate-pulse" aria-hidden="true" />)}
+          {Array.from({ length: 5 }, (_, i) => <div key={i} className="h-9 bg-muted rounded animate-pulse" aria-hidden="true" />)}
         </div>
       )}
 
@@ -84,38 +129,94 @@ export function EmailSmsContent() {
       {q.data && (() => {
         const rows = q.data.rows;
         const r = q.data.result;
+        const cc = r.currency_code;
         return (
           <>
             <div className="sr-only">Data as of {new Date(q.data.data_epoch).toISOString()}. Request ID: {q.data.request_id}</div>
 
-            <section className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">Totals</h2>
+            <section className="bg-card rounded-lg border p-6 space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <Stat label="Total delivered" value={q.data.total_delivered.toString()} />
-                <Stat label="Total revenue" value={formatMoney(q.data.total_revenue_mu, r.currency_code)} />
-                <Stat label="Grouped by" value={validGroup} />
+                <Stat label="Total revenue" value={formatMoney(q.data.total_revenue_mu, cc)} />
+                <Stat label="Grouped by" value={GROUP_OPTIONS.find((o) => o.value === validGroup)?.label ?? validGroup} />
               </div>
-              <p className="text-xs text-muted-foreground">Performance reporting on already-sent campaigns and flows. Brain does not send — this is past-performance analytics only.</p>
             </section>
 
-            <section className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900">Performance</h2>
+            <section className="bg-card rounded-lg border p-6 space-y-4">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px]">
+                {/* 13 columns matching legacy: Name / Delivered / Opens (raw) / Open % /
+                    Clicks (raw) / Revenue / $/recipient / $/unique-open / Orders /
+                    Unsub / Unsub % / Spam / Spam % — Channel is an extra column (UI enhancement). */}
+                <table className="w-full min-w-[1100px]">
                   <thead>
-                    <tr>{['Name', 'Channel', 'Delivered', 'Open', 'Click', 'Orders', 'Revenue', 'Rev/recipient'].map((h, i) => <th key={h} className={`pb-2 text-xs font-medium text-gray-500 ${i <= 1 ? 'text-left' : 'text-right'}`}>{h}</th>)}</tr>
+                    <tr>
+                      {[
+                        ['Name', 'left'],
+                        ['Channel', 'left'],
+                        ['Delivered', 'right'],
+                        ['Opens', 'right'],
+                        ['Open %', 'right'],
+                        ['Clicks', 'right'],
+                        ['Revenue', 'right'],
+                        ['$/recipient', 'right'],
+                        ['$/unique-open', 'right'],
+                        ['Orders', 'right'],
+                        ['Unsub', 'right'],
+                        ['Unsub %', 'right'],
+                        ['Spam', 'right'],
+                        ['Spam %', 'right'],
+                      ].map(([h, align]) => (
+                        <th key={h} className={`pb-2 text-xs font-medium text-muted-foreground text-${align} px-2 first:pl-0 last:pr-0`}>{h}</th>
+                      ))}
+                    </tr>
                   </thead>
                   <tbody>
-                    {rows.map((row) => (
-                      <tr key={row.key} className="border-t border-gray-100">
-                        <td className="py-2 text-sm font-medium">{row.label}</td>
-                        <td className="py-2 text-sm text-muted-foreground uppercase">{row.channel}</td>
-                        <td className="py-2 text-sm tabular-nums text-right">{row.delivered.toString()}</td>
-                        <td className="py-2 text-sm tabular-nums text-right">{formatBpPercent(row.open_rate_bp)}</td>
-                        <td className="py-2 text-sm tabular-nums text-right">{formatBpPercent(row.click_rate_bp)}</td>
-                        <td className="py-2 text-sm tabular-nums text-right">{row.orders.toString()}</td>
-                        <td className="py-2 text-sm tabular-nums text-right">{formatMoney(row.revenue_mu, r.currency_code)}</td>
-                        <td className="py-2 text-sm tabular-nums text-right">{row.revenue_per_recipient_mu === null ? '—' : formatMoney(row.revenue_per_recipient_mu, r.currency_code)}</td>
+                    {rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={14} className="py-8 text-center text-sm text-muted-foreground">
+                          No email/SMS data for this period.
+                        </td>
+                      </tr>
+                    ) : rows.map((row) => (
+                      <tr key={row.key} className="border-t border-border">
+                        <td className="py-2 text-sm font-medium px-2 pl-0">{row.label}</td>
+                        <td className="py-2 text-sm text-muted-foreground uppercase px-2">{row.channel}</td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {row.delivered.toLocaleString()}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {row.unique_opens.toLocaleString()}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {formatBpPercent(row.open_rate_bp)}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {row.unique_clicks.toLocaleString()}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {formatMoney(row.revenue_mu, cc)}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {formatRatio4dp(row.revenue_per_recipient_mu, cc)}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {formatRatio4dp(row.revenue_per_unique_open_mu, cc)}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {row.orders.toLocaleString()}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {row.unsubscribes.toLocaleString()}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {formatBpPercent(row.unsubscribe_rate_bp)}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2">
+                          {row.spam_complaints.toLocaleString()}
+                        </td>
+                        <td className="py-2 text-sm tabular-nums text-right px-2 pr-0">
+                          {formatBpPercent(row.spam_rate_bp)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -131,7 +232,7 @@ export function EmailSmsContent() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="space-y-0.5">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="text-base font-semibold text-foreground tabular-nums">{value}</div>
     </div>

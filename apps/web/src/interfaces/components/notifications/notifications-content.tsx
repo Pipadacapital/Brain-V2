@@ -10,7 +10,7 @@
 // optional on each row). The "unread" tab + badge re-fetch on every mutation
 // for an honest count.
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Bell, Check, CheckCheck, Mail, UserPlus, UserMinus,
@@ -40,6 +40,7 @@ import { Button } from '@/interfaces/components/ui/button.js';
 import { cn } from '@/lib/utils.js';
 
 // Icon per NotificationType — falls back to the generic bell.
+// Legacy SHOPIFY_* keys are aliased so existing DB rows map correctly.
 const TYPE_ICONS: Record<string, typeof Bell> = {
   WORKSPACE_INVITE:       Mail,
   INVITE_ACCEPTED:        Check,
@@ -48,6 +49,8 @@ const TYPE_ICONS: Record<string, typeof Bell> = {
   ROLE_CHANGED:           ArrowLeftRight,
   CONNECTOR_CONNECTED:    Plug,
   CONNECTOR_DISCONNECTED: PlugZap,
+  SHOPIFY_CONNECTED:      Plug,     // legacy alias
+  SHOPIFY_DISCONNECTED:   PlugZap,  // legacy alias (was PlugX, closest is PlugZap)
   SYNC_COMPLETED:         RefreshCw,
   SYNC_FAILED:            AlertTriangle,
   SYSTEM:                 Info,
@@ -56,16 +59,20 @@ const TYPE_ICONS: Record<string, typeof Bell> = {
 export function NotificationsContent() {
   const router = useRouter();
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+  const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [isPending, startTransition] = useTransition();
   const utils = trpc.useUtils();
 
   const enabled = Boolean(isAuthenticated);
+  // Workspace-scoped: pass workspaceId to list/unreadCount so the page mirrors
+  // legacy per-workspace scoping (workspace rows + globals). Limit = 50 matches legacy.
   const { data, isLoading, error } = trpc.notifications.list.useQuery(
-    { filter, limit: 200 },
+    { filter, limit: 50, workspaceId: workspaceId ?? null },
     { enabled },
   );
   const { data: unreadData } = trpc.notifications.unreadCount.useQuery(
-    undefined,
+    { workspaceId: workspaceId ?? null },
     { enabled, refetchInterval: 60_000 },
   );
 
@@ -106,7 +113,9 @@ export function NotificationsContent() {
 
   const handleClick = (n: { id: string; read: boolean; actionUrl: string | null }) => {
     if (!n.read) markRead.mutate({ id: n.id });
-    if (n.actionUrl) router.push(n.actionUrl);
+    if (n.actionUrl) {
+      startTransition(() => { router.push(n.actionUrl!); });
+    }
   };
 
   return (
@@ -124,7 +133,7 @@ export function NotificationsContent() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => markAll.mutate()}
+            onClick={() => markAll.mutate({ workspaceId: workspaceId ?? null })}
             disabled={markAll.isPending}
           >
             <CheckCheck className="mr-1.5 h-4 w-4" />
@@ -186,6 +195,7 @@ export function NotificationsContent() {
                   key={n.id}
                   type="button"
                   onClick={() => handleClick(n)}
+                  disabled={isPending}
                   className={cn(
                     'flex w-full items-start gap-4 px-5 py-4 text-left transition-colors hover:bg-muted/50',
                     !n.read && 'bg-primary/[0.03]',

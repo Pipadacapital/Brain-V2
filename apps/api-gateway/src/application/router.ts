@@ -2373,10 +2373,14 @@ export function createBrainRouter(
   });
 
   // -------------------------------------------------------------------
-  // team router — workspace tier, requireRole(ANALYST). READ-ONLY.
-  // Phase-2 slice-10 (feat-parity-cleanup-pages): workspace member list.
-  // 🚨 PII: member email/name. READ-only, workspace-scoped, ANALYST-gated, fail-closed.
-  //    Member invite (which emails a person, ADMIN-gated) is DEFERRED — NO mutation here.
+  // team router — workspace tier.
+  // Phase-2 parity-38 feat-parity-w6b: full CRUD (invite/changeRole/remove/revokeInvite/transfer).
+  // 🚨 PII: member email/name. Reads ANALYST-gated, writes MANAGER/OWNER-gated.
+  // Role invariants (per legacy):
+  //   - OWNER/MANAGER can invite; only OWNER can change/remove another OWNER's role.
+  //   - MANAGER cannot remove an OWNER.
+  //   - Only OWNER can transfer ownership.
+  // Email SENDING is honest-deferred: invite creates the DB row + token only.
   // -------------------------------------------------------------------
   const teamRouter = router({
     /** Workspace members + pending-invitation count. requireRole(ANALYST). READ. */
@@ -2396,6 +2400,112 @@ export function createBrainRouter(
         request_id: ctx.requestId,
       };
     }),
+
+    /** List pending invitations. requireRole(MANAGER). READ. */
+    pendingInvitations: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'MANAGER')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `team.pendingInvitations requires MANAGER role. request_id=${ctx.requestId}`,
+        });
+      }
+      const result = await dataPlane.listPendingInvitations({ workspace_id: ctx.workspaceId });
+      return { invitations: result.invitations, data_epoch: result.data_epoch, request_id: ctx.requestId };
+    }),
+
+    /** Invite a new member (creates DB row + token; email is honest-deferred). requireRole(MANAGER). */
+    invite: workspaceProc
+      .input(z.object({
+        email: z.string().email(),
+        role: z.enum(['MANAGER', 'ANALYST', 'VIEWER']),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: `team.invite requires MANAGER role. request_id=${ctx.requestId}` });
+        }
+        const res = await dataPlane.teamInviteMember({
+          workspace_id: ctx.workspaceId,
+          inviter_user_id: ctx.identity.sub,
+          inviter_role: ctx.claim.workspaceRole as import('../domain/proto-types.js').WorkspaceMemberRole,
+          invitee_email: input.email,
+          role: input.role,
+        });
+        return { ...res, request_id: ctx.requestId };
+      }),
+
+    /** Change a member's role. OWNER can change anyone; MANAGER cannot change an OWNER. requireRole(MANAGER). */
+    changeRole: workspaceProc
+      .input(z.object({
+        user_id: z.string().uuid(),
+        new_role: z.enum(['MANAGER', 'ANALYST', 'VIEWER']),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: `team.changeRole requires MANAGER role. request_id=${ctx.requestId}` });
+        }
+        const res = await dataPlane.teamChangeRole({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: ctx.identity.sub,
+          actor_role: ctx.claim.workspaceRole as import('../domain/proto-types.js').WorkspaceMemberRole,
+          target_user_id: input.user_id,
+          new_role: input.new_role,
+        });
+        return { ...res, request_id: ctx.requestId };
+      }),
+
+    /** Remove a member. MANAGER cannot remove an OWNER. requireRole(MANAGER). */
+    removeMember: workspaceProc
+      .input(z.object({ user_id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: `team.removeMember requires MANAGER role. request_id=${ctx.requestId}` });
+        }
+        // Fetch target role to enforce the MANAGER-cannot-remove-OWNER rule.
+        const membersResult = await dataPlane.getWorkspaceMembers({ workspace_id: ctx.workspaceId });
+        const target = membersResult.result.members.find((m) => m.user_id === input.user_id);
+        if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: `Member not found. request_id=${ctx.requestId}` });
+        if (target.role === 'OWNER' && ctx.claim.workspaceRole !== 'OWNER') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: `MANAGER cannot remove an OWNER. request_id=${ctx.requestId}` });
+        }
+        const res = await dataPlane.teamRemoveMember({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: ctx.identity.sub,
+          actor_role: ctx.claim.workspaceRole as import('../domain/proto-types.js').WorkspaceMemberRole,
+          target_user_id: input.user_id,
+        });
+        return { ...res, request_id: ctx.requestId };
+      }),
+
+    /** Revoke a pending invitation. requireRole(MANAGER). */
+    revokeInvite: workspaceProc
+      .input(z.object({ invitation_id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'MANAGER')) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: `team.revokeInvite requires MANAGER role. request_id=${ctx.requestId}` });
+        }
+        const res = await dataPlane.teamRevokeInvite({
+          workspace_id: ctx.workspaceId,
+          actor_role: ctx.claim.workspaceRole as import('../domain/proto-types.js').WorkspaceMemberRole,
+          invitation_id: input.invitation_id,
+        });
+        return { ...res, request_id: ctx.requestId };
+      }),
+
+    /** Transfer ownership to another member. requireRole(OWNER) — OWNER-only. */
+    transferOwnership: workspaceProc
+      .input(z.object({ new_owner_user_id: z.string().uuid() }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.claim.workspaceRole !== 'OWNER') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: `team.transferOwnership is OWNER-only. request_id=${ctx.requestId}` });
+        }
+        const res = await dataPlane.teamTransferOwnership({
+          workspace_id: ctx.workspaceId,
+          actor_user_id: ctx.identity.sub,
+          actor_role: 'OWNER',
+          new_owner_user_id: input.new_owner_user_id,
+        });
+        return { ...res, request_id: ctx.requestId };
+      }),
   });
 
   // -------------------------------------------------------------------
