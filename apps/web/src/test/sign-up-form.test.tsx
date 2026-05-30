@@ -35,12 +35,27 @@ beforeEach(() => {
 });
 
 describe('SignUpForm — real Supabase signUp', () => {
-  it('renders email, password, repeat-password + sign-up button', () => {
+  it('renders email, password, repeat-password + sign-up button (legacy Card design)', () => {
     render(<SignUpForm />);
-    expect(screen.getByLabelText(/work email/i)).toBeInTheDocument();
+    // Legacy labels: "Email", "Password", "Repeat Password"
+    expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/repeat password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign up/i })).toBeInTheDocument();
+    // Legacy button copy: "Sign up"
+    expect(screen.getByRole('button', { name: /^sign up$/i })).toBeInTheDocument();
+  });
+
+  it('renders legacy Card heading "Sign up" and description "Create a new account"', () => {
+    render(<SignUpForm />);
+    // CardTitle text — use data-slot selector to disambiguate from the submit button
+    expect(screen.getByText('Sign up', { selector: '[data-slot="card-title"]' })).toBeInTheDocument();
+    expect(screen.getByText(/create a new account/i)).toBeInTheDocument();
+  });
+
+  it('renders "Login" link back to /auth/login', () => {
+    render(<SignUpForm />);
+    const link = screen.getByRole('link', { name: /^login$/i });
+    expect(link).toHaveAttribute('href', '/auth/login');
   });
 
   it('POSITIVE: matching passwords → signUp called with emailRedirectTo, routes to success', async () => {
@@ -48,10 +63,10 @@ describe('SignUpForm — real Supabase signUp', () => {
     render(<SignUpForm />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'new@brand.com');
+    await user.type(screen.getByLabelText(/^email$/i), 'new@brand.com');
     await user.type(screen.getByLabelText(/^password$/i), 'realpassword');
     await user.type(screen.getByLabelText(/repeat password/i), 'realpassword');
-    await user.click(screen.getByRole('button', { name: /sign up/i }));
+    await user.click(screen.getByRole('button', { name: /^sign up$/i }));
 
     await waitFor(() => {
       expect(signUpMock).toHaveBeenCalledWith({
@@ -67,10 +82,10 @@ describe('SignUpForm — real Supabase signUp', () => {
     render(<SignUpForm />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'new@brand.com');
+    await user.type(screen.getByLabelText(/^email$/i), 'new@brand.com');
     await user.type(screen.getByLabelText(/^password$/i), 'realpassword');
     await user.type(screen.getByLabelText(/repeat password/i), 'different');
-    await user.click(screen.getByRole('button', { name: /sign up/i }));
+    await user.click(screen.getByRole('button', { name: /^sign up$/i }));
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent(/passwords do not match/i);
@@ -86,10 +101,10 @@ describe('SignUpForm — real Supabase signUp', () => {
     render(<SignUpForm />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'new@brand.com');
+    await user.type(screen.getByLabelText(/^email$/i), 'new@brand.com');
     await user.type(screen.getByLabelText(/^password$/i), 'realpassword');
     await user.type(screen.getByLabelText(/repeat password/i), 'realpassword');
-    await user.click(screen.getByRole('button', { name: /sign up/i }));
+    await user.click(screen.getByRole('button', { name: /^sign up$/i }));
 
     await waitFor(() => {
       const alert = screen.getByRole('alert');
@@ -116,10 +131,10 @@ describe('SignUpForm — PII client log negative test (CF-C6-PII-CLIENT-1)', () 
     render(<SignUpForm />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'new@brand.com');
+    await user.type(screen.getByLabelText(/^email$/i), 'new@brand.com');
     await user.type(screen.getByLabelText(/^password$/i), 'secretpassword');
     await user.type(screen.getByLabelText(/repeat password/i), 'secretpassword');
-    await user.click(screen.getByRole('button', { name: /sign up/i }));
+    await user.click(screen.getByRole('button', { name: /^sign up$/i }));
 
     const allCalls = [
       ...consoleSpy.mock.calls,

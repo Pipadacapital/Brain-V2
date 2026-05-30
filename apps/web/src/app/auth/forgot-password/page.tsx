@@ -12,14 +12,8 @@ export const metadata: Metadata = {
 
 export default function AuthForgotPasswordPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm space-y-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Reset your password</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Enter your email and we&apos;ll send you a reset link.
-          </p>
-        </div>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
         <ForgotPasswordForm />
       </div>
     </div>

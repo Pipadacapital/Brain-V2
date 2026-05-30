@@ -30,10 +30,18 @@ beforeEach(() => {
 });
 
 describe('UpdatePasswordForm — real Supabase updateUser', () => {
-  it('renders new-password field + save button', () => {
+  it('renders new-password field + save button (legacy Card design)', () => {
     render(<UpdatePasswordForm />);
+    // Legacy label: "New password"
     expect(screen.getByLabelText(/new password/i)).toBeInTheDocument();
+    // Legacy button copy: "Save new password"
     expect(screen.getByRole('button', { name: /save new password/i })).toBeInTheDocument();
+  });
+
+  it('renders legacy Card heading "Reset Your Password" and description', () => {
+    render(<UpdatePasswordForm />);
+    expect(screen.getByText('Reset Your Password')).toBeInTheDocument();
+    expect(screen.getByText(/please enter your new password below/i)).toBeInTheDocument();
   });
 
   it('POSITIVE: updateUser({ password }) → navigates to /dashboard', async () => {

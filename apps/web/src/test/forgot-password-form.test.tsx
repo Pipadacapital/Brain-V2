@@ -21,10 +21,24 @@ beforeEach(() => {
 });
 
 describe('ForgotPasswordForm — real Supabase reset', () => {
-  it('renders email + send button', () => {
+  it('renders email + send button (legacy Card design)', () => {
     render(<ForgotPasswordForm />);
-    expect(screen.getByLabelText(/work email/i)).toBeInTheDocument();
+    // Legacy label: "Email" (not "Work email")
+    expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
+    // Legacy button copy: "Send reset email"
     expect(screen.getByRole('button', { name: /send reset email/i })).toBeInTheDocument();
+  });
+
+  it('renders legacy Card heading "Reset Your Password" and description', () => {
+    render(<ForgotPasswordForm />);
+    expect(screen.getByText('Reset Your Password')).toBeInTheDocument();
+    expect(screen.getByText(/type in your email/i)).toBeInTheDocument();
+  });
+
+  it('renders "Login" link back to /auth/login', () => {
+    render(<ForgotPasswordForm />);
+    const link = screen.getByRole('link', { name: /^login$/i });
+    expect(link).toHaveAttribute('href', '/auth/login');
   });
 
   it('POSITIVE: resetPasswordForEmail called with redirectTo, shows success state', async () => {
@@ -32,7 +46,7 @@ describe('ForgotPasswordForm — real Supabase reset', () => {
     render(<ForgotPasswordForm />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'reset@brand.com');
+    await user.type(screen.getByLabelText(/^email$/i), 'reset@brand.com');
     await user.click(screen.getByRole('button', { name: /send reset email/i }));
 
     await waitFor(() => {
@@ -40,8 +54,10 @@ describe('ForgotPasswordForm — real Supabase reset', () => {
         redirectTo: 'http://localhost:3000/auth/update-password',
       });
     });
+    // Legacy success Card: "Check Your Email" heading + description
     await waitFor(() => {
-      expect(screen.getByText(/check your email/i)).toBeInTheDocument();
+      expect(screen.getByText('Check Your Email')).toBeInTheDocument();
+      expect(screen.getByText(/password reset instructions sent/i)).toBeInTheDocument();
     });
   });
 
@@ -52,7 +68,7 @@ describe('ForgotPasswordForm — real Supabase reset', () => {
     render(<ForgotPasswordForm />);
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'reset@brand.com');
+    await user.type(screen.getByLabelText(/^email$/i), 'reset@brand.com');
     await user.click(screen.getByRole('button', { name: /send reset email/i }));
 
     await waitFor(() => {
@@ -61,7 +77,7 @@ describe('ForgotPasswordForm — real Supabase reset', () => {
       expect(alert).not.toHaveTextContent(/AuthApiError/);
     });
     // Stays on the form (no success state).
-    expect(screen.queryByText(/instructions sent/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Check Your Email')).not.toBeInTheDocument();
   });
 
   it('form has noValidate', () => {
