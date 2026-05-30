@@ -526,11 +526,14 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
 
   // RTO analytics from Shiprocket shipment facts. revenue_lost_to_rto = 0 (legacy
   // never persisted the shipment→order key — documented in connector-pipeline-gaps).
+  // connected=true when there are any shipment facts for this workspace.
   override async getRtoAnalytics(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
     const s = await readShipmentAnalytics(this.ws);
+    const connected = s.totalShipments > 0n;
     const result: RtoAnalyticsResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      connected,
       total_shipments: s.totalShipments,
       rto_count: s.rtoCount,
       rto_rate_bp: bp(s.rtoCount, s.totalShipments),
@@ -541,36 +544,102 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
         { payment_method: 'Prepaid', rto_count: s.prepaidRtoCount, rto_cost_mu: 0n, revenue_lost_mu: 0n },
       ],
       by_courier: s.byCourier.map((c) => ({ courier_name: c.courierName, rto_count: c.rtoCount, rto_cost_mu: 0n, revenue_lost_mu: 0n })),
+      by_product: [], // Shopify-enrichment table requires order→shipment mapping (deferred)
     };
     return { result, data_epoch: DATA_EPOCH };
   }
   // COD vs Prepaid: order counts/revenue from order facts; RTO rates from shipments.
-  override async getCodPrepaid(p: { workspace_id: string; date_range: DateRange }) {
+  // Computes effective revenue, fees and break-even mirroring loopback-data-plane formula.
+  // Fee defaults: ₹30 COD fee/order, ₹80 return shipping/RTO, 2% gateway fee.
+  override async getCodPrepaid(p: {
+    workspace_id: string;
+    date_range: DateRange;
+    fee_overrides?: import('../domain/proto-types.js').CodPrepaidFeeOverrides;
+  }) {
     this.assertWs(p.workspace_id);
     const cp = await readCodPrepaid(this.ws);
     const s = await readShipmentAnalytics(this.ws);
     const codRto = bp(s.codRtoCount, s.codTotal);
     const prepaidRto = bp(s.prepaidRtoCount, s.prepaidTotal);
+    const connected = s.totalShipments > 0n || cp.codOrders + cp.prepaidOrders > 0n;
+    // Fee assumptions
+    const COD_FEE_DEFAULT = 3000n;       // ₹30 per order
+    const RETURN_SHIP_DEFAULT = 8000n;   // ₹80 per RTO
+    const GATEWAY_FEE_BP_DEFAULT = 200;  // 2%
+    const codFeePerOrder = p.fee_overrides?.cod_fee_per_order_mu ?? COD_FEE_DEFAULT;
+    const returnShipping = p.fee_overrides?.return_shipping_per_rto_mu ?? RETURN_SHIP_DEFAULT;
+    const gatewayFeeBp = p.fee_overrides?.gateway_fee_bp ?? GATEWAY_FEE_BP_DEFAULT;
+    // Effective revenue = gross - RTO-loss - fees (integer FLOOR, mirrors loopback)
+    const codRtoBp = codRto ?? 0;
+    const prepaidRtoBp = prepaidRto ?? 0;
+    const codSurvived = cp.codGrossMu - (cp.codGrossMu * BigInt(codRtoBp)) / 10000n;
+    const prepaidSurvived = cp.prepaidGrossMu - (cp.prepaidGrossMu * BigInt(prepaidRtoBp)) / 10000n;
+    const codRtoCount = s.codRtoCount;
+    const prepaidRtoCount = s.prepaidRtoCount;
+    const codFeeTotal = cp.codOrders * codFeePerOrder;
+    const gatewayFeeTotal = (cp.prepaidGrossMu * BigInt(gatewayFeeBp)) / 10000n;
+    const codReturnShip = codRtoCount * returnShipping;
+    const prepaidReturnShip = prepaidRtoCount * returnShipping;
+    const effCod = codSurvived - codFeeTotal - codReturnShip;
+    const effPrepaid = prepaidSurvived - gatewayFeeTotal - prepaidReturnShip;
+    const codFeeTotalRow = codFeeTotal + codReturnShip;
+    const prepaidFeeTotalRow = gatewayFeeTotal + prepaidReturnShip;
+    // Break-even (FULL legacy formula)
+    const aov = cp.aovMu ?? 0n;
+    const restocking = 0n;
+    const denom = aov + returnShipping + restocking;
+    const pgFee = (aov * BigInt(gatewayFeeBp)) / 10000n;
+    const numScaled =
+      aov * BigInt(prepaidRtoBp) +
+      (codFeePerOrder - pgFee) * 10000n +
+      BigInt(prepaidRtoBp) * (returnShipping + restocking);
+    const breakeven = denom > 0n ? Number(numScaled / denom) : null;
+    const appliedOverrides: import('../domain/proto-types.js').CodPrepaidFeeOverrides = {
+      cod_fee_per_order_mu: codFeePerOrder,
+      return_shipping_per_rto_mu: returnShipping,
+      gateway_fee_bp: gatewayFeeBp,
+    };
     const result: CodPrepaidResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      connected,
       cod_orders: cp.codOrders,
       prepaid_orders: cp.prepaidOrders,
       cod_realization_rate_bp: codRto === null ? null : 10000 - codRto,
       cod_rto_rate_bp: codRto,
       prepaid_rto_rate_bp: prepaidRto,
-      effective_revenue_cod_mu: cp.codGrossMu,
-      effective_revenue_prepaid_mu: cp.prepaidGrossMu,
-      prepaid_premium_mu: 0n,
+      effective_revenue_cod_mu: effCod,
+      effective_revenue_prepaid_mu: effPrepaid,
+      prepaid_premium_mu: effPrepaid - effCod,
       average_order_value_mu: cp.aovMu,
-      breakeven_cod_rto_rate_bp: null,
+      breakeven_cod_rto_rate_bp: breakeven,
       breakeven_note: null,
+      fee_overrides: appliedOverrides,
       comparison: [
-        { payment_method: 'COD', orders: cp.codOrders, gross_revenue_mu: cp.codGrossMu, rto_rate_bp: codRto, effective_revenue_mu: cp.codGrossMu, fee_total_mu: 0n, net_revenue_per_order_mu: cp.codOrders > 0n ? cp.codGrossMu / cp.codOrders : null },
-        { payment_method: 'Prepaid', orders: cp.prepaidOrders, gross_revenue_mu: cp.prepaidGrossMu, rto_rate_bp: prepaidRto, effective_revenue_mu: cp.prepaidGrossMu, fee_total_mu: 0n, net_revenue_per_order_mu: cp.prepaidOrders > 0n ? cp.prepaidGrossMu / cp.prepaidOrders : null },
+        {
+          payment_method: 'COD',
+          orders: cp.codOrders,
+          gross_revenue_mu: cp.codGrossMu,
+          rto_rate_bp: codRto,
+          effective_revenue_mu: effCod,
+          fee_total_mu: codFeeTotalRow,
+          net_revenue_mu: effCod - codFeeTotalRow,
+          net_revenue_per_order_mu: cp.codOrders > 0n ? effCod / cp.codOrders : null,
+        },
+        {
+          payment_method: 'Prepaid',
+          orders: cp.prepaidOrders,
+          gross_revenue_mu: cp.prepaidGrossMu,
+          rto_rate_bp: prepaidRto,
+          effective_revenue_mu: effPrepaid,
+          fee_total_mu: prepaidFeeTotalRow,
+          net_revenue_mu: effPrepaid - prepaidFeeTotalRow,
+          net_revenue_per_order_mu: cp.prepaidOrders > 0n ? effPrepaid / cp.prepaidOrders : null,
+        },
       ],
     };
     return { result, data_epoch: DATA_EPOCH };
   }
+  // Logistics: sums forward/cod charges from shipment facts (not hardcoded 0).
   override async getLogistics(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
     const s = await readShipmentAnalytics(this.ws);
@@ -583,8 +652,8 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
       rto_rate_bp: bp(s.rtoCount, s.totalShipments),
       cod_count: s.codCount,
       prepaid_count: s.prepaidCount,
-      forward_charges_mu: 0n,
-      cod_charges_mu: 0n,
+      forward_charges_mu: s.forwardChargesMu,   // summed from DB — not hardcoded 0
+      cod_charges_mu: s.codChargesMu,            // summed from DB — not hardcoded 0
       rto_charges_mu: s.rtoChargesMu,
       total_shiprocket_charges_mu: s.totalChargesMu,
       average_shipping_charge_per_shipment_mu: s.totalShipments > 0n ? s.totalChargesMu / s.totalShipments : null,

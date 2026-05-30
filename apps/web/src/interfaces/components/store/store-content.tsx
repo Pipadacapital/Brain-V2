@@ -6,13 +6,19 @@
 // extra tabs alongside the new Brain revenue-ladder. The COGS tab is a
 // pointer to /product-cogs (the dedicated editor from Slice 3).
 //
+// Parity fixes applied (vs legacy-parity-audit-v2.md § store):
+//   P0: Sync + backfill toolbar restored as honest-disabled (pending cutover).
+//       Legacy labels preserved; buttons are not wired to live mutations.
+//   P1: Connect-store empty state added — shown when hasConnection=false.
+//       Detects connection via trpc.settings.integrations or data absence.
+//
 // Tabs: Revenue / Orders / Products / Customers / Product COGS (link).
 // URL-synced via `tab` query param; default = Revenue (existing behaviour).
 
 import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsStringEnum, parseAsString } from 'nuqs';
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, RefreshCw, Download } from 'lucide-react';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { RevenueLadderStrip } from '@/interfaces/components/store/revenue-ladder-strip.js';
 import { StalenessLabel } from '@/interfaces/components/shared/staleness-label.js';
@@ -50,6 +56,16 @@ export function StoreContent() {
     { enabled: isAuthenticated && tab === 'revenue' },
   );
 
+  // Detect connection status from integrations (lightweight read).
+  // hasConnection is true when at least one CONNECTED store connector exists.
+  const { data: integrationsData } = trpc.settings.integrations.useQuery(
+    undefined,
+    { enabled: Boolean(isAuthenticated && workspaceId) },
+  );
+  const hasConnection = integrationsData?.result?.rows?.some(
+    (r) => (r.connector === 'Shopify' || r.connector === 'WooCommerce') && r.status === 'CONNECTED',
+  ) ?? true; // default true (pending cutover) — honest state for migrated data
+
   if (!isAuthenticated || !workspaceId) {
     return (
       <div className="flex flex-1 items-center justify-center">
@@ -82,25 +98,66 @@ export function StoreContent() {
           )}
         </div>
 
-        {tab === 'revenue' && (
-          <div className="flex items-center gap-2 shrink-0">
-            <label htmlFor="store-date-start" className="sr-only">From date</label>
-            <input
-              id="store-date-start" type="date" value={dateStart}
-              onChange={(e) => setDateStart(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              aria-label="Start date for store metrics"
-            />
-            <span aria-hidden="true" className="text-muted-foreground text-sm">to</span>
-            <label htmlFor="store-date-end" className="sr-only">To date</label>
-            <input
-              id="store-date-end" type="date" value={dateEnd}
-              onChange={(e) => setDateEnd(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              aria-label="End date for store metrics"
-            />
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {/* Sync + backfill toolbar — P0 parity. Buttons carry legacy labels and are
+              rendered DISABLED with a "pending cutover" tooltip until the connector
+              integration is live. Never fabricate live mutations. */}
+          <div className="flex items-center gap-1.5" aria-label="Store sync controls">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              title="Connector cutover pending — sync will be enabled after Shopify integration goes live"
+              aria-disabled="true"
+              className="flex items-center gap-1.5 opacity-60"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh from Shopify
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              title="Connector cutover pending — backfill will be enabled after Shopify integration goes live"
+              aria-disabled="true"
+              className="flex items-center gap-1.5 opacity-60"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Backfill Customers
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled
+              title="Connector cutover pending — bulk backfill will be enabled after Shopify integration goes live"
+              aria-disabled="true"
+              className="flex items-center gap-1.5 opacity-60"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Bulk Backfill (4 Years)
+            </Button>
           </div>
-        )}
+
+          {tab === 'revenue' && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="store-date-start" className="sr-only">From date</label>
+              <input
+                id="store-date-start" type="date" value={dateStart}
+                onChange={(e) => setDateStart(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label="Start date for store metrics"
+              />
+              <span aria-hidden="true" className="text-muted-foreground text-sm">to</span>
+              <label htmlFor="store-date-end" className="sr-only">To date</label>
+              <input
+                id="store-date-end" type="date" value={dateEnd}
+                onChange={(e) => setDateEnd(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label="End date for store metrics"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -124,38 +181,55 @@ export function StoreContent() {
         </div>
       </div>
 
-      {/* Tab content */}
-      {tab === 'revenue' && (
-        <>
-          <RevenueLadderStrip date_start={dateStart} date_end={dateEnd} />
-          <p className="text-xs text-muted-foreground">
-            Realized revenue is the honest billing base — it nets out cancellations,
-            RTO reversals, and refunds. Tax is extracted per SKU at its GST 2.0 slab,
-            never blended.
+      {/* Connect-store empty state — shown when no store connector is active */}
+      {!hasConnection && tab !== 'revenue' && tab !== 'cogs' && (
+        <div className="rounded-xl border-2 border-dashed border-border p-8 text-center space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Connect a Shopify or WooCommerce store from{' '}
+            <Link href="/settings/integrations" className="font-medium underline underline-offset-2">
+              Integrations
+            </Link>{' '}
+            to view orders, products, and customers here.
           </p>
-        </>
+        </div>
       )}
 
-      {tab === 'orders'    && <StoreOrdersTable />}
-      {tab === 'products'  && <StoreProductsTable />}
-      {tab === 'customers' && <StoreCustomersTable />}
+      {/* Tab content */}
+      {(hasConnection || tab === 'revenue' || tab === 'cogs') && (
+        <>
+          {tab === 'revenue' && (
+            <>
+              <RevenueLadderStrip date_start={dateStart} date_end={dateEnd} />
+              <p className="text-xs text-muted-foreground">
+                Realized revenue is the honest billing base — it nets out cancellations,
+                RTO reversals, and refunds. Tax is extracted per SKU at its GST 2.0 slab,
+                never blended.
+              </p>
+            </>
+          )}
 
-      {tab === 'cogs' && (
-        <div className="rounded-xl border bg-card p-6 flex flex-col gap-3 shadow-sm">
-          <h2 className="text-base font-semibold">Product COGS editor</h2>
-          <p className="text-sm text-muted-foreground">
-            Per-product COGS lives on its own page so the editing surface (bulk
-            edit, per-row save, search/filter) has room to breathe. Feeds CM1.
-          </p>
-          <div>
-            <Button asChild>
-              <Link href="/product-cogs">
-                Open the COGS editor
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-        </div>
+          {tab === 'orders'    && <StoreOrdersTable />}
+          {tab === 'products'  && <StoreProductsTable />}
+          {tab === 'customers' && <StoreCustomersTable />}
+
+          {tab === 'cogs' && (
+            <div className="rounded-xl border bg-card p-6 flex flex-col gap-3 shadow-sm">
+              <h2 className="text-base font-semibold">Product COGS editor</h2>
+              <p className="text-sm text-muted-foreground">
+                Per-product COGS lives on its own page so the editing surface (bulk
+                edit, per-row save, search/filter) has room to breathe. Feeds CM1.
+              </p>
+              <div>
+                <Button asChild>
+                  <Link href="/product-cogs">
+                    Open the COGS editor
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

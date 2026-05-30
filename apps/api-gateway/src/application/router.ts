@@ -958,8 +958,17 @@ export function createBrainRouter(
       return { analytics: result.result, data_epoch: result.data_epoch, request_id: ctx.requestId };
     }),
 
-    /** COD vs prepaid economics + break-even. requireRole(ANALYST). */
-    codPrepaid: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
+    /** COD vs prepaid economics + break-even. requireRole(ANALYST).
+     * Optional fee overrides drive the break-even what-if (P1 parity):
+     *   cod_fee_per_order_mu  — COD handling fee (paise, default 3000 = ₹30)
+     *   return_shipping_per_rto_mu — return freight per RTO (paise, default 8000 = ₹80)
+     *   gateway_fee_bp        — prepaid gateway % in bp (default 200 = 2%)
+     */
+    codPrepaid: workspaceProc.input(dateInput.extend({
+      cod_fee_per_order_mu: z.bigint().optional(),
+      return_shipping_per_rto_mu: z.bigint().optional(),
+      gateway_fee_bp: z.number().int().min(0).max(10000).optional(),
+    })).query(async ({ ctx, input }) => {
       if (!requireRole(ctx.claim, 'ANALYST')) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -969,6 +978,11 @@ export function createBrainRouter(
       const result = await dataPlane.getCodPrepaid({
         workspace_id: ctx.workspaceId,
         date_range: { start: input.date_start, end: input.date_end },
+        fee_overrides: {
+          cod_fee_per_order_mu: input.cod_fee_per_order_mu,
+          return_shipping_per_rto_mu: input.return_shipping_per_rto_mu,
+          gateway_fee_bp: input.gateway_fee_bp,
+        },
       });
       assertLogisticsDefinitionId('cod_realization_rate_bp');
       assertLogisticsDefinitionId('breakeven_cod_rto_rate_bp');

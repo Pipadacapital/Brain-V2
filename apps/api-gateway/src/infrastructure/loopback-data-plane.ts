@@ -394,6 +394,7 @@ function buildSugandhlokRtoAnalytics(): RtoAnalyticsResult {
     period: c.period,
     data_epoch: DATA_EPOCH,
     currency_code: c.currency_code,
+    connected: true,
     total_shipments: c.total_shipments,
     rto_count: c.rto_orders,
     rto_rate_bp: _ratioBp(c.rto_orders, c.total_shipments), // 224/1247 = 1796bp
@@ -409,40 +410,53 @@ function buildSugandhlokRtoAnalytics(): RtoAnalyticsResult {
       { courier_name: 'Delhivery', rto_count: 120n, rto_cost_mu: 2_400_000n, revenue_lost_mu: 18_000_000n },
       { courier_name: 'Bluedart', rto_count: 104n, rto_cost_mu: 2_080_000n, revenue_lost_mu: 15_200_000n },
     ],
+    by_product: [], // Shopify enrichment deferred (no mapped-order join in loopback seed)
   };
 }
 
-function buildSugandhlokCodPrepaid(): CodPrepaidResult {
+function buildSugandhlokCodPrepaid(feeOverrides?: import('../domain/proto-types.js').CodPrepaidFeeOverrides): CodPrepaidResult {
   const c = SUGANDH_LOK_CANONICAL;
   const totalOrders = c.cod_orders + c.prepaid_orders;            // 1000
   const totalGross = c.gross_revenue_cod_mu + c.gross_revenue_prepaid_mu; // 150_000_000
   const aov = totalOrders > 0n ? totalGross / totalOrders : 0n;   // 150000
   const codRtoBp = _ratioBp(c.cod_rto, c.cod_orders) ?? 0;        // 2250
   const prepaidRtoBp = _ratioBp(c.prepaid_rto, c.prepaid_orders) ?? 0; // 500
+  // Fee assumptions — defaults match legacy (₹30 COD fee, ₹80 return shipping, 2% gateway).
+  const codFeePerOrder = feeOverrides?.cod_fee_per_order_mu ?? c.cod_fee_mu;
+  const returnShipping = feeOverrides?.return_shipping_per_rto_mu ?? c.return_shipping_mu;
+  const gatewayFeeBp = feeOverrides?.gateway_fee_bp ?? c.gateway_fee_bp;
   // Effective revenue (integer FLOOR), mirrors the use-case.
   const codSurvived = c.gross_revenue_cod_mu - (c.gross_revenue_cod_mu * BigInt(codRtoBp)) / 10000n;
   const prepaidSurvived =
     c.gross_revenue_prepaid_mu - (c.gross_revenue_prepaid_mu * BigInt(prepaidRtoBp)) / 10000n;
-  const codFeeTotal = c.cod_orders * c.cod_fee_mu;
-  const gatewayFeeTotal = (c.gross_revenue_prepaid_mu * BigInt(c.gateway_fee_bp)) / 10000n;
-  const codReturnShip = c.cod_rto * c.return_shipping_mu;
-  const prepaidReturnShip = c.prepaid_rto * c.return_shipping_mu;
+  const codFeeTotal = c.cod_orders * codFeePerOrder;
+  const gatewayFeeTotal = (c.gross_revenue_prepaid_mu * BigInt(gatewayFeeBp)) / 10000n;
+  const codReturnShip = c.cod_rto * returnShipping;
+  const prepaidReturnShip = c.prepaid_rto * returnShipping;
   const effCod = codSurvived - codFeeTotal - codReturnShip;
   const effPrepaid = prepaidSurvived - gatewayFeeTotal - prepaidReturnShip;
+  const codFeeTotalRow = codFeeTotal + codReturnShip;
+  const prepaidFeeTotalRow = gatewayFeeTotal + prepaidReturnShip;
   // Break-even (FULL legacy formula) — single final FLOOR-to-bp.
   const restocking = 0n;
-  const denom = aov + c.return_shipping_mu + restocking;
-  const pgFee = (aov * BigInt(c.gateway_fee_bp)) / 10000n;
+  const denom = aov + returnShipping + restocking;
+  const pgFee = (aov * BigInt(gatewayFeeBp)) / 10000n;
   const numScaled =
     aov * BigInt(prepaidRtoBp) +
-    (c.cod_fee_mu - pgFee) * 10000n +
-    BigInt(prepaidRtoBp) * (c.return_shipping_mu + restocking);
+    (codFeePerOrder - pgFee) * 10000n +
+    BigInt(prepaidRtoBp) * (returnShipping + restocking);
   const breakeven = denom > 0n ? Number(numScaled / denom) : null; // 500bp
+  const appliedOverrides: import('../domain/proto-types.js').CodPrepaidFeeOverrides = {
+    cod_fee_per_order_mu: codFeePerOrder,
+    return_shipping_per_rto_mu: returnShipping,
+    gateway_fee_bp: gatewayFeeBp,
+  };
   return {
     workspace_id: SUGANDH_LOK_WORKSPACE_ID,
     period: c.period,
     data_epoch: DATA_EPOCH,
     currency_code: c.currency_code,
+    connected: true,
     cod_orders: c.cod_orders,
     prepaid_orders: c.prepaid_orders,
     cod_realization_rate_bp: _ratioBp(c.cod_delivered, c.cod_orders), // 7650
@@ -454,6 +468,7 @@ function buildSugandhlokCodPrepaid(): CodPrepaidResult {
     average_order_value_mu: aov,
     breakeven_cod_rto_rate_bp: breakeven,
     breakeven_note: null,
+    fee_overrides: appliedOverrides,
     comparison: [
       {
         payment_method: 'COD',
@@ -461,7 +476,8 @@ function buildSugandhlokCodPrepaid(): CodPrepaidResult {
         gross_revenue_mu: c.gross_revenue_cod_mu,
         rto_rate_bp: codRtoBp,
         effective_revenue_mu: effCod,
-        fee_total_mu: codFeeTotal + codReturnShip,
+        fee_total_mu: codFeeTotalRow,
+        net_revenue_mu: effCod - codFeeTotalRow,
         net_revenue_per_order_mu: c.cod_orders > 0n ? effCod / c.cod_orders : null,
       },
       {
@@ -470,7 +486,8 @@ function buildSugandhlokCodPrepaid(): CodPrepaidResult {
         gross_revenue_mu: c.gross_revenue_prepaid_mu,
         rto_rate_bp: prepaidRtoBp,
         effective_revenue_mu: effPrepaid,
-        fee_total_mu: gatewayFeeTotal + prepaidReturnShip,
+        fee_total_mu: prepaidFeeTotalRow,
+        net_revenue_mu: effPrepaid - prepaidFeeTotalRow,
         net_revenue_per_order_mu: c.prepaid_orders > 0n ? effPrepaid / c.prepaid_orders : null,
       },
     ],
@@ -2125,11 +2142,12 @@ export class StubDataPlane implements DataPlanePort {
   async getCodPrepaid(params: {
     workspace_id: string;
     date_range: DateRange;
+    fee_overrides?: import('../domain/proto-types.js').CodPrepaidFeeOverrides;
   }): Promise<{ result: CodPrepaidResult; data_epoch: Date }> {
     if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
-    return { result: buildSugandhlokCodPrepaid(), data_epoch: DATA_EPOCH };
+    return { result: buildSugandhlokCodPrepaid(params.fee_overrides), data_epoch: DATA_EPOCH };
   }
 
   async getLogistics(params: {

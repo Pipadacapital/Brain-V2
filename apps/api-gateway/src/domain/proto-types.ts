@@ -163,11 +163,19 @@ export interface RtoByCourierRow {
   revenue_lost_mu: bigint;
 }
 
+/** Optional Shopify-enrichment row (top-50 RTO products). Gated: only when non-empty. */
+export interface RtoByProductRow {
+  product_title: string;
+  quantity: bigint;
+  revenue_lost_mu: bigint;
+}
+
 export interface RtoAnalyticsResult {
   workspace_id: string;
   period: string;
   data_epoch: Date;
   currency_code: string;
+  connected: boolean;               // true when Shiprocket connector is active
   total_shipments: bigint;
   rto_count: bigint;
   rto_rate_bp: number | null;       // registry rto_rate_bp
@@ -175,6 +183,7 @@ export interface RtoAnalyticsResult {
   revenue_lost_to_rto_mu: bigint;   // registry rto_revenue_lost_mu
   by_payment_method: RtoByPaymentMethodRow[];
   by_courier: RtoByCourierRow[];
+  by_product: RtoByProductRow[];    // optional Shopify enrichment; may be empty
 }
 
 export interface CodPrepaidSegmentRow {
@@ -184,7 +193,15 @@ export interface CodPrepaidSegmentRow {
   rto_rate_bp: number | null;
   effective_revenue_mu: bigint;
   fee_total_mu: bigint;
+  net_revenue_mu: bigint;           // effective_revenue − fee_total
   net_revenue_per_order_mu: bigint | null;
+}
+
+/** Fee-assumption overrides for the COD vs Prepaid what-if calculator. */
+export interface CodPrepaidFeeOverrides {
+  cod_fee_per_order_mu?: bigint;    // default ₹30 (3000 paise)
+  return_shipping_per_rto_mu?: bigint; // default ₹80 (8000 paise)
+  gateway_fee_bp?: number;           // default 200 bp (2%)
 }
 
 export interface CodPrepaidResult {
@@ -192,6 +209,7 @@ export interface CodPrepaidResult {
   period: string;
   data_epoch: Date;
   currency_code: string;
+  connected: boolean;               // true when Shiprocket + order connectors are active
   cod_orders: bigint;
   prepaid_orders: bigint;
   cod_realization_rate_bp: number | null;      // registry cod_realization_rate_bp
@@ -203,6 +221,7 @@ export interface CodPrepaidResult {
   average_order_value_mu: bigint | null;       // registry aov_mu
   breakeven_cod_rto_rate_bp: number | null;    // registry breakeven_cod_rto_rate_bp
   breakeven_note: string | null;
+  fee_overrides: CodPrepaidFeeOverrides;       // echoes the applied overrides
   comparison: CodPrepaidSegmentRow[];
 }
 
@@ -1229,6 +1248,7 @@ export interface DataPlanePort {
   getCodPrepaid(params: {
     workspace_id: string;
     date_range: DateRange;
+    fee_overrides?: CodPrepaidFeeOverrides;
   }): Promise<{ result: CodPrepaidResult; data_epoch: Date }>;
 
   getLogistics(params: {

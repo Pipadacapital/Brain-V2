@@ -56,7 +56,7 @@ export class DispatchingDataPlane implements DataPlanePort {
   getRtoAnalytics(p: { workspace_id: string; date_range: DateRange }) {
     return this.plane(p.workspace_id).getRtoAnalytics(p);
   }
-  getCodPrepaid(p: { workspace_id: string; date_range: DateRange }) {
+  getCodPrepaid(p: Parameters<DataPlanePort['getCodPrepaid']>[0]) {
     return this.plane(p.workspace_id).getCodPrepaid(p);
   }
   getLogistics(p: { workspace_id: string; date_range: DateRange }) {
