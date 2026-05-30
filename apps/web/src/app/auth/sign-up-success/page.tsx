@@ -5,7 +5,13 @@
 // CF-C6-PII-CLIENT-1 / CF-C6-PERF-A11Y-1.
 
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/interfaces/components/ui/card.js';
 
 export const metadata: Metadata = {
   title: 'Confirm your email — Brain',
@@ -13,18 +19,22 @@ export const metadata: Metadata = {
 
 export default function AuthSignUpSuccessPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-sm space-y-6 text-center">
-        <h1 className="text-xl font-semibold text-gray-900">Check your email</h1>
-        <p className="text-sm text-gray-600">
-          We sent you a confirmation link. Click it to activate your account, then sign in.
-        </p>
-        <Link
-          href="/auth/login"
-          className="inline-block py-2 px-4 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
-        >
-          Back to sign in
-        </Link>
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl">Thank you for signing up!</CardTitle>
+              <CardDescription>Check your email to confirm</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                You&apos;ve successfully signed up. Please check your email to confirm your account
+                before signing in.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

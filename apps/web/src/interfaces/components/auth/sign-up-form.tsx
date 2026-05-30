@@ -19,8 +19,23 @@ import { useState, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createSupabaseBrowserClient } from '@/infrastructure/supabase/client.js';
+import { cn } from '@/lib/utils.js';
+import { Button } from '@/interfaces/components/ui/button.js';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/interfaces/components/ui/card.js';
+import { Input } from '@/interfaces/components/ui/input.js';
+import { Label } from '@/interfaces/components/ui/label.js';
 
-export function SignUpForm() {
+interface SignUpFormProps {
+  className?: string;
+}
+
+export function SignUpForm({ className }: SignUpFormProps) {
   const emailId = useId();
   const passwordId = useId();
   const repeatId = useId();
@@ -66,76 +81,77 @@ export function SignUpForm() {
   };
 
   return (
-    <div className="bg-white py-8 px-6 shadow rounded-lg space-y-6">
-      <form onSubmit={handleSubmit} aria-label="Sign up form" noValidate className="space-y-6">
-        <div className="space-y-1">
-          <label htmlFor={emailId} className="block text-sm font-medium text-gray-700">
-            Work email
-          </label>
-          <input
-            id={emailId}
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            aria-describedby={error ? errorId : undefined}
-            aria-invalid={error ? 'true' : undefined}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor={passwordId} className="block text-sm font-medium text-gray-700">
-            Password
-          </label>
-          <input
-            id={passwordId}
-            type="password"
-            autoComplete="new-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor={repeatId} className="block text-sm font-medium text-gray-700">
-            Repeat password
-          </label>
-          <input
-            id={repeatId}
-            type="password"
-            autoComplete="new-password"
-            required
-            value={repeatPassword}
-            onChange={(e) => setRepeatPassword(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
-        </div>
-
-        {error && (
-          <p id={errorId} role="alert" aria-live="assertive" className="text-sm text-red-600">
-            {error}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {isLoading ? 'Creating account…' : 'Sign up'}
-        </button>
-      </form>
-
-      <p className="text-sm text-center text-gray-600">
-        Already have an account?{' '}
-        <Link href="/auth/login" className="font-medium text-blue-600 hover:text-blue-700">
-          Sign in
-        </Link>
-      </p>
+    <div className={cn('flex flex-col gap-6', className)}>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Sign up</CardTitle>
+          <CardDescription>Create a new account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={handleSubmit}
+            aria-label="Sign up form"
+            noValidate
+          >
+            <div className="flex flex-col gap-6">
+              <div className="grid gap-2">
+                <Label htmlFor={emailId}>Email</Label>
+                <Input
+                  id={emailId}
+                  type="email"
+                  placeholder="m@example.com"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-describedby={error ? errorId : undefined}
+                  aria-invalid={error ? 'true' : undefined}
+                />
+              </div>
+              <div className="grid gap-2">
+                <div className="flex items-center">
+                  <Label htmlFor={passwordId}>Password</Label>
+                </div>
+                <Input
+                  id={passwordId}
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <div className="flex items-center">
+                  <Label htmlFor={repeatId}>Repeat Password</Label>
+                </div>
+                <Input
+                  id={repeatId}
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={repeatPassword}
+                  onChange={(e) => setRepeatPassword(e.target.value)}
+                />
+              </div>
+              {error && (
+                <p id={errorId} role="alert" aria-live="assertive" className="text-sm text-red-500">
+                  {error}
+                </p>
+              )}
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? 'Creating an account...' : 'Sign up'}
+              </Button>
+            </div>
+            <div className="mt-4 text-center text-sm">
+              Already have an account?{' '}
+              <Link href="/auth/login" className="underline underline-offset-4">
+                Login
+              </Link>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

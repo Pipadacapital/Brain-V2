@@ -15,6 +15,8 @@ import type {
   DateRange,
   GoalUpsertInput,
   ResponseKind,
+  CreateMarketingActionInput,
+  UpdateMarketingActionInput,
 } from '../domain/proto-types.js';
 import { LocalDbDataPlane } from './local-db-data-plane.js';
 
@@ -148,5 +150,22 @@ export class DispatchingDataPlane implements DataPlanePort {
   }
   getPnlPeriodGrid(p: Parameters<DataPlanePort['getPnlPeriodGrid']>[0]) {
     return this.plane(p.workspace_id).getPnlPeriodGrid(p);
+  }
+  getShipmentRows(p: Parameters<DataPlanePort['getShipmentRows']>[0]) {
+    return this.plane(p.workspace_id).getShipmentRows(p);
+  }
+
+  // Marketing action CRUD — parity-38.
+  listMarketingActions(p: Parameters<DataPlanePort['listMarketingActions']>[0]) {
+    return this.plane(p.workspace_id).listMarketingActions(p);
+  }
+  createMarketingAction(p: CreateMarketingActionInput) {
+    return this.plane(p.workspace_id).createMarketingAction(p);
+  }
+  updateMarketingAction(p: UpdateMarketingActionInput) {
+    return this.plane(p.workspace_id).updateMarketingAction(p);
+  }
+  deleteMarketingAction(p: { workspace_id: string; action_id: string }) {
+    return this.plane(p.workspace_id).deleteMarketingAction(p);
   }
 }

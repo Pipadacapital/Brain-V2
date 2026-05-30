@@ -41,6 +41,18 @@ export function SessionBootstrap({ children }: { children: React.ReactNode }) {
     refetchOnWindowFocus: false,
   });
 
+  // auth.session is the workspace (authed) tier — it fails closed (UNAUTHORIZED) for a
+  // VERIFIED user who simply has no membership yet. That is NOT an invalid session: such
+  // a user must be routed to /onboarding, not signed out (otherwise they loop
+  // login → shell → UNAUTHORIZED → signout → login). When the session query errors,
+  // probe the identity-tier user.me (works without a workspace) to tell the two apart.
+  const onboardingProbe = trpc.user.me.useQuery(undefined, {
+    enabled: query.isError,
+    retry: false,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
   useEffect(() => {
     if (query.data) {
       dispatch(
@@ -62,19 +74,28 @@ export function SessionBootstrap({ children }: { children: React.ReactNode }) {
   }, [query.data, dispatch]);
 
   useEffect(() => {
-    // Protected route + unresolvable session → re-authenticate. Sign out first
-    // so the middleware doesn't bounce the (now-invalid) cookie straight back.
-    if (query.isError) {
-      void (async () => {
-        try {
-          await createSupabaseBrowserClient().auth.signOut();
-        } catch {
-          /* best-effort — redirect regardless */
-        }
-        window.location.assign("/login?error=session");
-      })();
+    if (!query.isError) return;
+    // Wait for the identity probe to settle before deciding.
+    if (onboardingProbe.isLoading) return;
+
+    // Verified identity with no workspace yet → onboarding, NOT re-auth.
+    if (onboardingProbe.data?.needsOnboarding) {
+      window.location.assign("/onboarding");
+      return;
     }
-  }, [query.isError]);
+
+    // Genuinely unresolvable session (identity probe also failed, i.e. invalid/expired
+    // token) → re-authenticate. Sign out first so the middleware doesn't bounce the
+    // (now-invalid) cookie straight back.
+    void (async () => {
+      try {
+        await createSupabaseBrowserClient().auth.signOut();
+      } catch {
+        /* best-effort — redirect regardless */
+      }
+      window.location.assign("/login?error=session");
+    })();
+  }, [query.isError, onboardingProbe.isLoading, onboardingProbe.data, onboardingProbe.isError]);
 
   if (query.isError) return <LoadingScreen />; // redirecting
   if (!isAuthenticated) return <LoadingScreen />; // resolving / not yet hydrated

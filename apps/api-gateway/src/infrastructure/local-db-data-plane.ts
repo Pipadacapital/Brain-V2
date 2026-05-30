@@ -19,7 +19,14 @@ import {
   readShipmentAnalytics, readPincodes, readCodPrepaid, readCohorts, readLtv,
   readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
   readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints, readPnlPeriodGrid,
+  readShipmentRows,
 } from '@brain/core-connectors';
+import {
+  listMarketingActions as coreListMarketingActions,
+  createMarketingAction as coreCreateMarketingAction,
+  updateMarketingAction as coreUpdateMarketingAction,
+  deleteMarketingAction as coreDeleteMarketingAction,
+} from '@brain/core-settings';
 import type {
   DataPlanePort,
   KpiSummaryRow,
@@ -45,6 +52,8 @@ import type {
   LogisticsResult,
   PincodeIntelligenceResult,
   CohortMatrixResult,
+  CohortMetric,
+  CohortMode,
   LtvSummaryResult,
   DistributionsResult,
   OrderTimingsResult,
@@ -54,6 +63,12 @@ import type {
   DailySalesRow,
   DailyAcquisitionRow,
   PnlPeriodRow,
+  ShipmentRow,
+  ShipmentRowFilters,
+  MarketingActionRow,
+  ListMarketingActionsResult,
+  CreateMarketingActionInput,
+  UpdateMarketingActionInput,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -80,6 +95,44 @@ import {
 function bp(numerator: bigint, denominator: bigint): number | null {
   if (denominator === 0n) return null;
   return Number((numerator * 10000n) / denominator);
+}
+
+// ---------------------------------------------------------------------------
+// Cohort mode transforms — mirrors loopback _applyCohortMode exactly so the
+// local-DB plane and the stub produce identical shapes given the same inputs.
+// incr[] is PER-CUSTOMER incremental values (already divided by newCustomers).
+// Exported for direct unit testing.
+// ---------------------------------------------------------------------------
+export function applyCohortMode(
+  metric: string,
+  mode: string,
+  firstOrderPer: bigint,   // per-customer first-order value
+  firstOrderRPer: bigint,  // per-customer realized first-order value
+  cacPer: bigint,          // per-customer CAC (0n if unknown)
+  incrPer: bigint[],       // per-customer incremental m[0..11]
+): bigint[] {
+  if (metric === 'cm3' || metric === 'revenue') {
+    const fo = metric === 'cm3' ? firstOrderRPer : firstOrderPer;
+    if (mode === 'incr') return [...incrPer];
+    if (mode === 'post') {
+      if (metric === 'cm3') return [...incrPer];
+      let s = 0n; return incrPer.map((v) => (s += v));
+    }
+    if (mode === 'cumulative') { let s = fo; return incrPer.map((v) => (s += v)); }
+    if (mode === 'pct') {
+      const denom = (fo < 0n ? -fo : fo) > 0n ? (fo < 0n ? -fo : fo) : 1n;
+      let s = fo; return incrPer.map((v) => { s += v; return (s * 10000n) / denom; });
+    }
+    if (mode === 'ltvcac') {
+      const denom = cacPer > 0n ? cacPer : 1n;
+      let s = fo; return incrPer.map((v) => { s += v; return (s * 10000n) / denom; });
+    }
+  } else {
+    // repeat / repurchase — only 'post' makes sense; cumulative/pct/ltvcac disabled by UI
+    if (mode === 'post') { let s = 0n; return incrPer.map((v) => (s += v)); }
+    return [...incrPer];
+  }
+  return [...incrPer];
 }
 
 export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
@@ -483,33 +536,103 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     };
     return { result, data_epoch: DATA_EPOCH };
   }
-  // Cohorts — acquisition-month cohorts; m[] = cumulative net revenue. CAC/payback
-  // are null (ad spend is not cohort-attributed in the connector facts — honest).
+  // Cohorts — acquisition-month cohorts. Reads cumulative net-revenue totals from
+  // readCohorts, then applies metric/mode/date-range transforms so the UI selectors
+  // actually change the numbers (P0 correctness fix).
+  //
+  // readCohorts returns m[] as CUMULATIVE TOTALS (not per-customer). This method:
+  //   1. Filters to cohorts whose acquisition month falls within date_range.
+  //   2. Converts cumulative→incremental, then divides by newCustomers.
+  //   3. Applies metric branching (revenue=net; cm3=net honest; repeat/repurchase=rr90-based).
+  //   4. Applies mode transform via applyCohortMode.
+  //   5. Leaves CAC/payback null — ad spend not cohort-attributed in connector facts (honest).
   override async getCohortMatrix(p: Parameters<DataPlanePort['getCohortMatrix']>[0]) {
     this.assertWs(p.workspace_id);
-    const cohorts = await readCohorts(this.ws);
+    const allCohorts = await readCohorts(this.ws);
+    const metric = p.filters?.metric ?? 'cm3';
+    const mode = p.filters?.mode ?? 'post';
+
+    // 1. Date-range filter: include cohort months in [start_yyyy_mm, end_yyyy_mm].
+    const startYM = (p.date_range?.start ?? '').substring(0, 7); // 'YYYY-MM'
+    const endYM   = (p.date_range?.end   ?? '').substring(0, 7);
+    const cohorts = allCohorts.filter((c) => {
+      if (startYM && c.cohortMonth < startYM) return false;
+      if (endYM   && c.cohortMonth > endYM)   return false;
+      return true;
+    });
+
+    // 2. Aggregate summary values.
     const totalNew = cohorts.reduce((a, c) => a + c.newCustomers, 0n);
     let rrWeighted = 0n;
-    for (const c of cohorts) if (c.rr90Bp !== null) rrWeighted += BigInt(c.rr90Bp) * c.newCustomers;
+    for (const c of cohorts) {
+      if (c.rr90Bp !== null) rrWeighted += BigInt(c.rr90Bp) * c.newCustomers;
+    }
+
+    // 3. Build per-cohort rows with metric+mode applied.
+    const rows = cohorts.map((c) => {
+      const n = c.newCustomers;
+
+      // c.m[] is CUMULATIVE TOTALS from readCohorts; recover incremental.
+      // incr[0] = cum[0]; incr[i] = cum[i] - cum[i-1].
+      const cumTotal = c.m;
+      const incrTotal: bigint[] = cumTotal.map((v, i) =>
+        i === 0 ? v : v - (cumTotal[i - 1] ?? 0n),
+      );
+
+      // Per-customer first-order value (M0 incremental ÷ newCustomers).
+      const foIncrPer = n > 0n ? (incrTotal[0] ?? 0n) / n : 0n;
+      // Realized = gross first-order (no separate realized field in readCohorts — honest equal).
+      const foRPer = foIncrPer;
+
+      // Per-customer incremental array keyed on the selected metric.
+      let incrPer: bigint[];
+      if (metric === 'cm3' || metric === 'revenue') {
+        // Both map to net revenue (honest: COGS not available per-cohort in connector facts).
+        incrPer = incrTotal.map((v) => (n > 0n ? v / n : 0n));
+      } else if (metric === 'repeat') {
+        // Only have rr90Bp (90-day repeat rate). Put it in M1, 0 elsewhere.
+        const rr90PerBp = c.rr90Bp !== null ? BigInt(c.rr90Bp) : 0n;
+        incrPer = Array<bigint>(12).fill(0n);
+        incrPer[0] = rr90PerBp; // bp units — UI will render as % for repeat/repurchase
+      } else {
+        // repurchase: same treatment as repeat (honest — order-count per customer not in readCohorts).
+        const rr90PerBp = c.rr90Bp !== null ? BigInt(c.rr90Bp) : 0n;
+        incrPer = Array<bigint>(12).fill(0n);
+        incrPer[0] = rr90PerBp;
+      }
+
+      // CAC not available (ad spend not cohort-attributed in connector facts).
+      const cacPer = 0n;
+
+      // Apply the mode transform.
+      const mRow = applyCohortMode(metric, mode, foIncrPer, foRPer, cacPer, incrPer);
+
+      // cohort_ltv_mu = per-customer cumulative net revenue at M12 (sum of all incr).
+      const ltvPer = n > 0n ? (cumTotal[11] ?? 0n) / n : 0n;
+
+      return {
+        cohort_month: c.cohortMonth,
+        new_customers: n,
+        cac_mu: null as bigint | null,
+        rr90_bp: c.rr90Bp,
+        payback_centimonths: null as number | null,
+        first_order_cm3_mu: foIncrPer,
+        first_order_realized_cm3_mu: foRPer,
+        cohort_ltv_mu: ltvPer,
+        ltv_cac_bp: null as number | null,
+        m: mRow,
+      };
+    });
+
     const result: CohortMatrixResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
-      metric: 'revenue', mode: 'cumulative',
+      metric: metric as CohortMatrixResult['metric'],
+      mode: mode as CohortMatrixResult['mode'],
       average_cac_mu: null,
       avg_90day_repeat_bp: totalNew > 0n ? Number(rrWeighted / totalNew) : null,
       average_payback_centimonths: null,
       new_customers: totalNew,
-      rows: cohorts.map((c) => ({
-        cohort_month: c.cohortMonth,
-        new_customers: c.newCustomers,
-        cac_mu: null,
-        rr90_bp: c.rr90Bp,
-        payback_centimonths: null,
-        first_order_cm3_mu: c.m[0] ?? 0n,
-        first_order_realized_cm3_mu: c.m[0] ?? 0n,
-        cohort_ltv_mu: c.m[11] ?? 0n,
-        ltv_cac_bp: null,
-        m: c.m,
-      })),
+      rows,
     };
     return { result, data_epoch: DATA_EPOCH };
   }
@@ -761,5 +884,129 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
       currencyCode: r.currencyCode,
     }));
     return { rows, currency_code, data_epoch: DATA_EPOCH };
+  }
+
+  override async getShipmentRows(p: Parameters<DataPlanePort['getShipmentRows']>[0]) {
+    this.assertWs(p.workspace_id);
+    const page = await readShipmentRows(
+      this.ws,
+      {
+        search: p.filters.search,
+        statuses: p.filters.statuses,
+        channelNames: p.filters.channel_names,
+        payment: p.filters.payment,
+        mapping: p.filters.mapping,
+        rtoOnly: p.filters.rto_only,
+      },
+      p.cursor,
+      p.page_size,
+    );
+    const rows: ShipmentRow[] = page.rows.map((r) => ({
+      id: r.id,
+      shipment_id: r.vendorShipmentId,
+      order_id: r.vendorOrderRef,
+      awb_code: null,          // not in connector_shipment_facts
+      courier_name: r.courierName,
+      status: r.status,
+      status_bucket: r.statusBucket,
+      payment_method: r.isCod ? 'COD' : 'Prepaid',
+      is_cod: r.isCod,
+      shopify_order_name: null, // not in connector_shipment_facts
+      channel_name: null,       // not in connector_shipment_facts
+      shipped_at: r.shippedAt,
+      created_at: r.createdAt,
+      delivery_pincode: r.deliveryPincode,
+      delivery_city: r.deliveryCity,
+      // Charge columns: forward = shipping_charges_mu (applied_weight_amount precedence)
+      forward_charge_mu: r.shippingChargesMu,
+      cod_charge_mu: r.isCod ? r.codAmountMu : null,
+      rto_charge_mu: r.statusBucket === 'RTO' ? r.shippingChargesMu : null,
+      charged_weight_kg: null,  // not in connector_shipment_facts
+      zone: null,               // not in connector_shipment_facts
+    }));
+    return {
+      rows,
+      next_cursor: page.nextCursor,
+      total_count: page.totalCount,
+      filtered_count: page.filteredCount,
+      delivered_count: page.deliveredCount,
+      rto_count: page.rtoCount,
+      mapped_count: page.mappedCount,
+      distinct_statuses: page.distinctStatuses,
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  // Marketing action CRUD — parity-38. Live DB overrides (core-settings use-cases).
+  override async listMarketingActions(p: { workspace_id: string; date_range: { start: string; end: string } }): Promise<{ result: ListMarketingActionsResult; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const rows = await coreListMarketingActions(this.ws, p.date_range.start, p.date_range.end);
+    return {
+      result: {
+        workspace_id: this.ws,
+        rows: rows.map((r) => ({
+          id: r.id,
+          workspace_id: r.workspace_id,
+          action_date: r.action_date,
+          action_type: r.action_type,
+          action_name: r.action_name,
+          notes: r.notes,
+          created_by: r.created_by,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+        })),
+        total_rows: BigInt(rows.length),
+        data_epoch: DATA_EPOCH,
+      },
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  override async createMarketingAction(p: CreateMarketingActionInput): Promise<MarketingActionRow> {
+    this.assertWs(p.workspace_id);
+    const row = await coreCreateMarketingAction(p.workspace_id, {
+      action_date: p.action_date,
+      action_type: p.action_type,
+      action_name: p.action_name,
+      notes: p.notes,
+      created_by: p.created_by,
+    });
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      action_date: row.action_date,
+      action_type: row.action_type,
+      action_name: row.action_name,
+      notes: row.notes,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  override async updateMarketingAction(p: UpdateMarketingActionInput): Promise<MarketingActionRow> {
+    this.assertWs(p.workspace_id);
+    const row = await coreUpdateMarketingAction(p.workspace_id, p.action_id, {
+      action_date: p.action_date,
+      action_type: p.action_type,
+      action_name: p.action_name,
+      notes: p.notes,
+    });
+    return {
+      id: row.id,
+      workspace_id: row.workspace_id,
+      action_date: row.action_date,
+      action_type: row.action_type,
+      action_name: row.action_name,
+      notes: row.notes,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  override async deleteMarketingAction(p: { workspace_id: string; action_id: string }): Promise<{ deleted: boolean }> {
+    this.assertWs(p.workspace_id);
+    return coreDeleteMarketingAction(p.workspace_id, p.action_id);
   }
 }

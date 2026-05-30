@@ -539,6 +539,19 @@ export type InventorySort = 'label' | 'current_inventory' | 'days_left' | 'sell_
 export interface InventoryRow {
   label: string;
   sku: string;
+  // --- Wave-4A parity additions ---
+  brand: string;
+  lead_time_days: number;
+  cost_value_mu: bigint | null;   // null = not set (COGS editor required)
+  price_mu: bigint | null;
+  compare_at_price_mu: bigint | null;
+  qty_l30: bigint;
+  qty_l90: bigint;
+  qty_l180: bigint;
+  qty_l360: bigint;
+  qty_n14ly: bigint;
+  tags: string;
+  // --- original fields ---
   current_inventory: bigint;
   days_left: bigint;            // 999999 = INFINITE (stock but no velocity)
   sell_through_bp: number | null;
@@ -561,6 +574,23 @@ export interface InventoryFilterInput {
   sort?: InventorySort;
   direction?: 'asc' | 'desc';
   status_filter?: InventoryStatus;
+  // Wave-4A additions
+  search?: string;
+  as_of_date?: string;          // YYYY-MM-DD snapshot date (legacy semantics)
+  page?: number;
+  page_size?: number;
+}
+
+// Wave-4A: lead-time mutation contract (MANAGER role).
+export interface InventorySetLeadTimeInput {
+  workspace_id: string;
+  sku: string;
+  lead_time_days: number;       // 0..365; persisted per-SKU
+}
+
+export interface InventorySetLeadTimeResult {
+  sku: string;
+  lead_time_days: number;
 }
 
 export interface FirstProductCascadeRow {
@@ -744,6 +774,45 @@ export interface CalendarReportResult {
 
 export interface CalendarReportFilterInput {
   grain?: CalendarGrain;
+}
+
+// /calendar marketing actions CRUD — parity-38. Manual operator annotations on calendar days.
+// Source 'klaviyo' is read-only (sync-created); CRUD applies to 'manual' rows only.
+export interface MarketingActionRow {
+  id: string;
+  workspace_id: string;
+  action_date: string;   // ISO yyyy-mm-dd
+  action_type: string;
+  action_name: string;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMarketingActionInput {
+  workspace_id: string;
+  action_date: string;
+  action_type: string;
+  action_name: string;
+  notes?: string | null;
+  created_by?: string | null;
+}
+
+export interface UpdateMarketingActionInput {
+  workspace_id: string;
+  action_id: string;
+  action_date?: string;
+  action_type?: string;
+  action_name?: string;
+  notes?: string | null;
+}
+
+export interface ListMarketingActionsResult {
+  workspace_id: string;
+  rows: MarketingActionRow[];
+  total_rows: bigint;
+  data_epoch: Date;
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,6 +1327,21 @@ export interface DataPlanePort {
     filters?: CalendarReportFilterInput;
   }): Promise<{ result: CalendarReportResult; data_epoch: Date }>;
 
+  // Marketing action CRUD — parity-38. Calendar overlay annotations.
+  listMarketingActions(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: ListMarketingActionsResult; data_epoch: Date }>;
+
+  createMarketingAction(params: CreateMarketingActionInput): Promise<MarketingActionRow>;
+
+  updateMarketingAction(params: UpdateMarketingActionInput): Promise<MarketingActionRow>;
+
+  deleteMarketingAction(params: {
+    workspace_id: string;
+    action_id: string;
+  }): Promise<{ deleted: boolean }>;
+
   // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. Additive read methods
   // on the SAME port (CF-C6-DATA-SEAM-1). NO send/dispatch method is added — Shreya S4.
   getLifecycleStates(params: {
@@ -1356,4 +1440,71 @@ export interface DataPlanePort {
     workspace_id: string;
     date_range: DateRange;
   }): Promise<{ rows: DailyAcquisitionRow[]; data_epoch: Date }>;
+
+  /**
+   * Wave-1 parity (shiprocket operational console): per-shipment row list with
+   * filtering + cursor pagination. Reads connector_shipment_facts.
+   * rawJson is intentionally null here — charge fields are pre-computed columns.
+   * CF-C6-DATA-SEAM-1: additive method on the SAME port.
+   */
+  getShipmentRows(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters: ShipmentRowFilters;
+    cursor?: string;
+    page_size: number;
+  }): Promise<{
+    rows: ShipmentRow[];
+    next_cursor: string | null;
+    total_count: bigint;
+    filtered_count: bigint;
+    delivered_count: bigint;
+    rto_count: bigint;
+    mapped_count: bigint;
+    distinct_statuses: string[];
+    data_epoch: Date;
+  }>;
+}
+
+// ---------------------------------------------------------------------------
+// Shipment row types (Wave-1 parity — /shiprocket operational console)
+// ---------------------------------------------------------------------------
+
+export interface ShipmentRowFilters {
+  search?: string;
+  statuses?: string[];
+  channel_names?: string[];
+  payment?: 'COD' | 'PREPAID' | null;
+  mapping?: 'MATCHED' | 'UNMATCHED' | null;
+  rto_only?: boolean;
+}
+
+/**
+ * One row in the per-shipment console table.
+ * charge fields computed from connector_shipment_facts columns (no raw_json).
+ * Zone, weight, fwd/COD/RTO charges derived from DB columns — no client fallback needed.
+ */
+export interface ShipmentRow {
+  id: string;
+  shipment_id: string;
+  order_id: string | null;
+  awb_code: string | null;
+  courier_name: string | null;
+  status: string | null;
+  status_bucket: string | null;
+  payment_method: string | null;
+  is_cod: boolean;
+  shopify_order_name: string | null;       // null when not yet mapped
+  channel_name: string | null;
+  shipped_at: string | null;
+  created_at: string | null;
+  delivery_pincode: string | null;
+  delivery_city: string | null;
+  // Charge columns (computed from connector_shipment_facts.shipping_charges_mu etc.)
+  // forward_charge_mu: the canonical applied charge (legacy: applied_weight_amount first)
+  forward_charge_mu: bigint | null;
+  cod_charge_mu: bigint | null;
+  rto_charge_mu: bigint | null;
+  charged_weight_kg: number | null;        // approximate from charges
+  zone: string | null;
 }

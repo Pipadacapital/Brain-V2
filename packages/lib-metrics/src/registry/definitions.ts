@@ -136,6 +136,98 @@ export const REALIZED_REVENUE_MU: MetricDefinition = {
 };
 
 // ---------------------------------------------------------------------------
+// Waterfall revenue-ladder deduction steps (Wave-1 parity, 2026-05-30)
+// These metrics complete the 16-step CM waterfall to match legacy waterfall.ts.
+// Byte-identical pairs with pylibs/brain_metrics/brain_metrics/registry/definitions.py.
+// ---------------------------------------------------------------------------
+
+// Returns (refunds) in minor units — same as Shopify total_returns.
+// MetricRow column name: returns_mu. Legacy waterfall.ts:530 "Refunds".
+// shadow_compare: Shopify analytics daily total_returns is the comparand.
+export const RETURNS_MU: MetricDefinition = {
+  id: 'returns_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (returns_mu: bigint): bigint => returns_mu,
+  clickhouse_sql: 'toInt64(returns_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Shipping outbound cost in minor units — Shiprocket forward charges + COD charges.
+// NOT the same as shipping_revenue_mu (which is Shopify shipping income).
+// Legacy waterfall.ts:951 — shippingOutbound = forwardCharges + codCharges.
+// Passed as an explicit workspace-scoped input (not in the daily MV — Shiprocket source).
+// parity_class: shadow_compare (legacy Shiprocket comparand).
+export const SHIPPING_OUTBOUND_MU: MetricDefinition = {
+  id: 'shipping_outbound_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (forward_charges_mu: bigint, cod_charges_mu: bigint): bigint =>
+    forward_charges_mu + cod_charges_mu,
+  clickhouse_sql: 'toInt64(forward_charges_mu + cod_charges_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Gross Revenue After Deductions — the intermediate subtotal after removing all
+// revenue-side deductions from Gross Sales. Legacy waterfall.ts:985 "revenueAfterTaxShipping".
+// Formula: gross_sales_mu − total_discount_mu − returns_mu − total_tax_mu − shipping_outbound_mu
+// This is the CM1 base in the legacy waterfall page (before COGS / variable costs / RTO).
+// NOTE: Brain CM1 uses net_revenue_mu (a different base — DDR _ROW_CM1).
+// parity_class: shadow_compare (legacy comparand is revenueAfterTaxShipping).
+export const GROSS_REVENUE_AFTER_DEDUCTIONS_MU: MetricDefinition = {
+  id: 'gross_revenue_after_deductions_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (
+    gross_sales_mu: bigint,
+    total_discount_mu: bigint,
+    returns_mu: bigint,
+    total_tax_mu: bigint,
+    shipping_outbound_mu: bigint,
+  ): bigint =>
+    gross_sales_mu - total_discount_mu - returns_mu - total_tax_mu - shipping_outbound_mu,
+  clickhouse_sql:
+    'toInt64(gross_sales_mu - total_discount_mu - returns_mu - total_tax_mu - shipping_outbound_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Founder's Salary — prorated founder monthly salary allocated to the period.
+// Legacy waterfall.ts:845-864 — allocated as (monthly / daysInMonth) × overlapDays.
+// Passed as an explicit workspace-scoped input (from workspace settings, not the daily MV).
+// parity_class: shadow_compare (legacy prorated founder salary is the comparand).
+export const FOUNDER_SALARY_MU: MetricDefinition = {
+  id: 'founder_salary_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (founder_salary_mu: bigint): bigint => founder_salary_mu,
+  clickhouse_sql: 'toInt64(founder_salary_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// Net Profit — CM3 minus the founder's prorated salary.
+// Legacy waterfall.ts:993 — netProfit = cm3 - founder.
+// parity_class: shadow_compare (legacy netProfit is the comparand).
+export const NET_PROFIT_MU: MetricDefinition = {
+  id: 'net_profit_mu',
+  kind: 'money',
+  unit: 'mu',
+  scale: 1,
+  formula_ts: (cm3_mu: bigint, founder_salary_mu: bigint): bigint =>
+    cm3_mu - founder_salary_mu,
+  clickhouse_sql: 'toInt64(cm3_mu - founder_salary_mu)',
+  display_only: false,
+  parity_class: 'shadow_compare',
+};
+
+// ---------------------------------------------------------------------------
 // Cost ladder
 // ---------------------------------------------------------------------------
 
@@ -1079,6 +1171,12 @@ export const METRIC_REGISTRY: Record<string, MetricDefinition> = {
   net_net_tax_mu: NET_NET_TAX_MU,
   net_revenue_mu: NET_REVENUE_MU,
   realized_revenue_mu: REALIZED_REVENUE_MU,
+  // Waterfall revenue-ladder deduction steps (Wave-1 parity, 2026-05-30)
+  returns_mu: RETURNS_MU,
+  shipping_outbound_mu: SHIPPING_OUTBOUND_MU,
+  gross_revenue_after_deductions_mu: GROSS_REVENUE_AFTER_DEDUCTIONS_MU,
+  founder_salary_mu: FOUNDER_SALARY_MU,
+  net_profit_mu: NET_PROFIT_MU,
   variable_costs_mu: VARIABLE_COSTS_MU,
   cm1_mu: CM1_MU,
   cm2_mu: CM2_MU,

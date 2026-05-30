@@ -2,12 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import {
-  CreditCard,
-  LogOut,
-  Bell,
-  UserCircle,
-  MoreVertical,
-} from "lucide-react";
+  IconCreditCard,
+  IconDotsVertical,
+  IconLogout,
+  IconNotification,
+  IconUserCircle,
+} from "@tabler/icons-react";
 import {
   Avatar,
   AvatarFallback,
@@ -49,7 +49,6 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const workspaceRole = useAppSelector((s) => s.session.workspaceRole);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
 
   // Real profile drives the avatar + dropdown label (Slice 2 backend).
@@ -86,7 +85,8 @@ export function NavUser() {
       /* ignore */
     }
     // Use a hard navigation so any in-flight queries + caches reset cleanly.
-    window.location.assign("/login");
+    // Redirect directly to /auth/login (canonical login surface, matching legacy).
+    window.location.assign("/auth/login");
   };
 
   return (
@@ -105,11 +105,12 @@ export function NavUser() {
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{displayName}</span>
+                {/* Trigger subtitle shows email, matching legacy nav-user */}
                 <span className="text-muted-foreground truncate text-xs">
-                  {workspaceRole ? workspaceRole.toLowerCase() : "viewer"}
+                  {displayEmail}
                 </span>
               </div>
-              <MoreVertical className="ml-auto size-4" />
+              <IconDotsVertical className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -136,15 +137,15 @@ export function NavUser() {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem onClick={() => router.push("/account")}>
-                <UserCircle className="size-4" />
+                <IconUserCircle />
                 Account
               </DropdownMenuItem>
               <DropdownMenuItem>
-                <CreditCard className="size-4" />
+                <IconCreditCard />
                 Billing
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => router.push("/notifications")}>
-                <Bell className="size-4" />
+                <IconNotification />
                 <span className="flex-1">Notifications</span>
                 {unreadCount > 0 && (
                   <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
@@ -155,7 +156,7 @@ export function NavUser() {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="size-4" />
+              <IconLogout />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

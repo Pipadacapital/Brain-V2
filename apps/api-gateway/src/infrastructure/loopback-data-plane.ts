@@ -57,6 +57,8 @@ import type {
   InventoryFilterInput,
   InventorySort,
   InventoryStatus,
+  InventorySetLeadTimeInput,
+  InventorySetLeadTimeResult,
   FirstProductCascadeResult,
   FirstProductCascadeRow,
   FirstProductCascadeFilterInput,
@@ -73,6 +75,10 @@ import type {
   CalendarReportRow,
   CalendarCell,
   CalendarReportFilterInput,
+  MarketingActionRow,
+  ListMarketingActionsResult,
+  CreateMarketingActionInput,
+  UpdateMarketingActionInput,
   LifecycleStatesResult,
   LifecycleBucketRow,
   OrderTimingsResult,
@@ -128,10 +134,15 @@ const SUGANDH_LOK_CANONICAL = {
   // Revenue ladder (April 2026)
   gross_sales_mu: 218_000_000n,      // ₹21.8L gross
   total_discount_mu: 12_000_000n,    // ₹1.2L discounts
+  returns_mu: 500_000n,              // ₹5K refunded orders (matches refunded_revenue_mu below)
   net_sales_mu: 206_000_000n,        // gross - discount = ₹20.6L
   total_tax_mu: 18_000_000n,         // ₹1.8L — SUM of per-SKU GST 2.0 (mixed slabs)
   net_net_tax_mu: 188_000_000n,      // net_sales - tax
+  shipping_outbound_mu: 3_000_000n,  // ₹30K outbound shipping charge (= shipping_revenue_mu)
   shipping_revenue_mu: 3_000_000n,   // ₹30K shipping collected
+  // gross_revenue_after_deductions = gross_sales − discounts − returns − tax − shipping_outbound
+  // 218_000_000 − 12_000_000 − 500_000 − 18_000_000 − 3_000_000 = 184_500_000
+  gross_revenue_after_deductions_mu: 184_500_000n, // ₹18.45L — Revenue After Tax & Shipping
   // net_revenue = net_net_tax + shipping = 191_000_000? Seed chosen so the
   // dashboard's existing ₹18.5L net_revenue stays the realized headline:
   net_revenue_mu: 191_000_000n,      // ₹19.1L
@@ -140,6 +151,8 @@ const SUGANDH_LOK_CANONICAL = {
   rto_reversed_revenue_mu: 3_500_000n, // ₹35K RTO-reversed
   refunded_revenue_mu: 500_000n,     // ₹5K refunded
   realized_revenue_mu: 185_000_000n, // ₹18.5L — net_revenue − 6_000_000 reversals
+  // Founder salary (Wave-1 parity): ₹40K/month prorated
+  founder_salary_mu: 4_000_000n,     // ₹40K founder salary (prorated Apr 2026)
   order_count: 1_247n,
   aov_mu: 1_483n,                    // ~₹14.83 mean (display)
   // ---------------------------------------------------------------------
@@ -259,29 +272,74 @@ function buildSugandhlokStoreSummary(): {
 }
 
 /**
- * Sugandh-Lok HONEST CM waterfall — Phase-2 slice-2 (feat-pnl-cm-waterfall).
+ * Sugandh-Lok HONEST CM waterfall — Wave-1 parity (2026-05-30): full 16-step ladder.
  * Derived from SUGANDH_LOK_CANONICAL so /pnl, /waterfall and /dashboard share ONE
- * fact source. The head is realized_revenue (the honest billing base). cm1 SUBTRACTS
- * variable_costs (the slice-2 correction; the prior seed was COGS-only and used the
- * net_revenue head). RTO is NOT folded into CM1 — it is the Brain-native True-CM2.
- * cumulative_mu at each CM subtotal equals that subtotal (the chart invariant).
+ * fact source. Steps follow the legacy waterfall.ts order exactly:
+ *   Gross Sales → Discounts → Refunds → Tax → Shipping →
+ *   Revenue After Tax & Shipping (SUBTOTAL) →
+ *   COGS → Variable Costs → RTO Cost → CM1 (SUBTOTAL) →
+ *   Ad Spend → CM2 (SUBTOTAL) →
+ *   Fixed Cost → CM3 (SUBTOTAL) →
+ *   Founder's Salary → Net Profit (SUBTOTAL)
+ *
+ * cumulative_mu at each step = running total after that step (chart invariant).
+ * Zero-valued steps for inputs not yet connector-sourced (e.g. founder_salary = 0
+ * if not seeded) are expressed as 0n so the ladder always terminates at Net Profit.
+ * CF-C6-RENDER-ONLY-1: zero arithmetic in the render layer — all math is here.
+ * CF-C6-REGISTRY-ONLY-BFF-1: every definition_id is in PNL_WATERFALL_DEFINITION_IDS.
  */
 function buildSugandhlokCmWaterfall(): PnlWaterfallRow[] {
   const c = SUGANDH_LOK_CANONICAL;
   const epoch = DATA_EPOCH;
-  const head = c.realized_revenue_mu;          // 185_000_000
-  const cm1 = head - c.cogs_mu - c.variable_costs_mu;       // 97_000_000
-  const cm2 = cm1 - c.total_ad_spend_mu;                    // 32_000_000
-  const cm3 = cm2 - c.misc_expenses_prorated_mu;            // 28_000_000
+  const curr = 'INR';
+
+  // ── Revenue deduction sub-ladder ──────────────────────────────────────────
+  const grossSales = c.gross_sales_mu;                               // 218_000_000
+  const afterDiscount = grossSales - c.total_discount_mu;            // 206_000_000
+  const afterReturns = afterDiscount - c.returns_mu;                 // 205_500_000
+  const afterTax = afterReturns - c.total_tax_mu;                    // 187_500_000
+  const revenueAfterDeductions = afterTax - c.shipping_outbound_mu;  // 184_500_000 (= gross_revenue_after_deductions_mu)
+
+  // ── Cost deduction ladder ──────────────────────────────────────────────────
+  const afterCogs = revenueAfterDeductions - c.cogs_mu;              // 102_500_000
+  const afterVarCosts = afterCogs - c.variable_costs_mu;             // 96_500_000
+  const afterRto = afterVarCosts - c.rto_cost_mu;                    // 92_020_000
+  // CM1 subtotal: Brain-canonical CM1 = net_revenue − cogs − variable_costs.
+  // Mirrors cm_waterfall_query.py step 10: value_mu and cumulative_mu both reset
+  // to c.cm1_mu (97_000_000), surfacing the DDR delta visually (the walk lands at
+  // 92_020_000 but the subtotal bar resets to the canonical 97_000_000). All
+  // downstream steps restart from this canonical CM1 so cm2/cm3 subtotals stay
+  // consistent with the dashboard KPI seed (cm2_mu=32M, cm3_mu=28M).
+  const cm1 = c.cm1_mu;                                              // 97_000_000 (canonical)
+  const afterAdSpend = cm1 - c.total_ad_spend_mu;                    // 32_000_000 = cm2_mu
+  const cm2 = c.cm2_mu;                                              // 32_000_000
+  const afterFixed = cm2 - c.misc_expenses_prorated_mu;              // 28_000_000 = cm3_mu
+  const cm3 = c.cm3_mu;                                              // 28_000_000
+  const netProfit = cm3 - c.founder_salary_mu;                       // 24_000_000
+
   return [
-    { definition_id: 'net_revenue_mu', label: 'Realized Revenue', value_mu: head, cumulative_mu: head, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cogs_mu', label: 'COGS', value_mu: -c.cogs_mu, cumulative_mu: head - c.cogs_mu, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'variable_costs_mu', label: 'Variable Costs', value_mu: -c.variable_costs_mu, cumulative_mu: cm1, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cm1_mu', label: 'CM1 (Gross Contribution)', value_mu: cm1, cumulative_mu: cm1, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'total_ad_spend_mu', label: 'Ad Spend', value_mu: -c.total_ad_spend_mu, cumulative_mu: cm2, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cm2_mu', label: 'CM2 (After Ads)', value_mu: cm2, cumulative_mu: cm2, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'misc_expenses_prorated_mu', label: 'Fixed Overheads (Prorated)', value_mu: -c.misc_expenses_prorated_mu, cumulative_mu: cm3, currency_code: 'INR', data_epoch: epoch },
-    { definition_id: 'cm3_mu', label: 'CM3 (After Overheads)', value_mu: cm3, cumulative_mu: cm3, currency_code: 'INR', data_epoch: epoch },
+    // ── Gross-to-net deduction sub-ladder ─────────────────────────────────
+    { definition_id: 'gross_sales_mu',                  label: 'Gross Sales',                      value_mu: grossSales,               cumulative_mu: grossSales,               currency_code: curr, data_epoch: epoch },
+    { definition_id: 'total_discount_mu',               label: 'Discounts',                         value_mu: -c.total_discount_mu,     cumulative_mu: afterDiscount,            currency_code: curr, data_epoch: epoch },
+    { definition_id: 'returns_mu',                      label: 'Refunds',                           value_mu: -c.returns_mu,            cumulative_mu: afterReturns,             currency_code: curr, data_epoch: epoch },
+    { definition_id: 'total_tax_mu',                    label: 'Tax',                               value_mu: -c.total_tax_mu,          cumulative_mu: afterTax,                 currency_code: curr, data_epoch: epoch },
+    { definition_id: 'shipping_outbound_mu',            label: 'Shipping',                          value_mu: -c.shipping_outbound_mu,  cumulative_mu: revenueAfterDeductions,   currency_code: curr, data_epoch: epoch },
+    { definition_id: 'gross_revenue_after_deductions_mu', label: 'Revenue After Tax & Shipping',  value_mu: revenueAfterDeductions,   cumulative_mu: revenueAfterDeductions,   currency_code: curr, data_epoch: epoch },
+    // ── Cost ladder ───────────────────────────────────────────────────────
+    { definition_id: 'cogs_mu',                         label: 'COGS',                              value_mu: -c.cogs_mu,               cumulative_mu: afterCogs,                currency_code: curr, data_epoch: epoch },
+    { definition_id: 'variable_costs_mu',               label: 'Variable Costs',                    value_mu: -c.variable_costs_mu,     cumulative_mu: afterVarCosts,            currency_code: curr, data_epoch: epoch },
+    { definition_id: 'rto_cost_mu',                     label: 'RTO Cost',                          value_mu: -c.rto_cost_mu,           cumulative_mu: afterRto,                 currency_code: curr, data_epoch: epoch },
+    // CM1 subtotal resets cumulative to Brain-canonical CM1 (mirrors analytics step 10).
+    { definition_id: 'cm1_mu',                          label: 'CM1',                               value_mu: cm1,                      cumulative_mu: cm1,                      currency_code: curr, data_epoch: epoch },
+    // ── Ad spend ──────────────────────────────────────────────────────────
+    { definition_id: 'total_ad_spend_mu',               label: 'Ad Spend',                          value_mu: -c.total_ad_spend_mu,     cumulative_mu: afterAdSpend,             currency_code: curr, data_epoch: epoch },
+    { definition_id: 'cm2_mu',                          label: 'CM2',                               value_mu: cm2,                      cumulative_mu: cm2,                      currency_code: curr, data_epoch: epoch },
+    // ── Fixed cost ────────────────────────────────────────────────────────
+    { definition_id: 'misc_expenses_prorated_mu',       label: 'Fixed Cost',                        value_mu: -c.misc_expenses_prorated_mu, cumulative_mu: afterFixed,           currency_code: curr, data_epoch: epoch },
+    { definition_id: 'cm3_mu',                          label: 'CM3',                               value_mu: cm3,                      cumulative_mu: cm3,                      currency_code: curr, data_epoch: epoch },
+    // ── Founder salary → Net Profit ───────────────────────────────────────
+    { definition_id: 'founder_salary_mu',               label: "Founder's Salary",                  value_mu: -c.founder_salary_mu,     cumulative_mu: netProfit,                currency_code: curr, data_epoch: epoch },
+    { definition_id: 'net_profit_mu',                   label: 'Net Profit',                        value_mu: netProfit,                cumulative_mu: netProfit,                currency_code: curr, data_epoch: epoch },
   ];
 }
 
@@ -1279,13 +1337,49 @@ function buildSugandhlokProductPerformance(filters?: ProductFilterInput): Produc
   };
 }
 
-// Inventory seed (counts). qty_l* = units sold in trailing windows.
-const _INVENTORY_SEED = [
-  { label: 'Sugandh Oud Attar 12ml', sku: 'OUD-12', inv: 300n, l30: 30n, l90: 90n, l180: 180n, l360: 300n },
-  { label: 'Rose Mist 50ml', sku: 'ROSE-50', inv: 10n, l30: 30n, l90: 0n, l180: 0n, l360: 300n },
-  { label: 'Musk 10ml', sku: 'MUSK-10', inv: 30n, l30: 0n, l90: 90n, l180: 0n, l360: 0n },
-  { label: 'Sandalwood Soap (Pack of 3)', sku: 'SND-BAR', inv: 1000n, l30: 0n, l90: 0n, l180: 0n, l360: 0n },
-] as const;
+// ---------------------------------------------------------------------------
+// Wave-4A inventory parity: extended 18-column seed.
+// brand, lead_time_days, cost_value_mu, price_mu, compare_at_price_mu,
+// qty_n14ly, tags mirror the legacy 18-field InventoryRow contract.
+// cost_value_mu is null (requires COGS editor to set) — honest-empty.
+// qty_n14ly = units sold in the same 14-day window last year — 0 for new SKUs.
+// ---------------------------------------------------------------------------
+type _InventorySeedRow = {
+  label: string; sku: string; brand: string; inv: bigint;
+  l30: bigint; l90: bigint; l180: bigint; l360: bigint; n14ly: bigint;
+  price_mu: bigint; compare_at_price_mu: bigint | null;
+  lead_time_days: number; tags: string;
+};
+
+const _INVENTORY_SEED: _InventorySeedRow[] = [
+  {
+    label: 'Sugandh Oud Attar 12ml', sku: 'OUD-12', brand: 'Sugandh Lok',
+    inv: 300n, l30: 30n, l90: 90n, l180: 180n, l360: 300n, n14ly: 12n,
+    price_mu: 149900n, compare_at_price_mu: 199900n,
+    lead_time_days: 7, tags: 'attar,oud,bestseller',
+  },
+  {
+    label: 'Rose Mist 50ml', sku: 'ROSE-50', brand: 'Sugandh Lok',
+    inv: 10n, l30: 30n, l90: 0n, l180: 0n, l360: 300n, n14ly: 0n,
+    price_mu: 89900n, compare_at_price_mu: null,
+    lead_time_days: 5, tags: 'rose,mist',
+  },
+  {
+    label: 'Musk 10ml', sku: 'MUSK-10', brand: 'Sugandh Lok',
+    inv: 30n, l30: 0n, l90: 90n, l180: 0n, l360: 0n, n14ly: 0n,
+    price_mu: 69900n, compare_at_price_mu: null,
+    lead_time_days: 10, tags: 'musk',
+  },
+  {
+    label: 'Sandalwood Soap (Pack of 3)', sku: 'SND-BAR', brand: 'Sugandh Lok',
+    inv: 1000n, l30: 0n, l90: 0n, l180: 0n, l360: 0n, n14ly: 0n,
+    price_mu: 49900n, compare_at_price_mu: 59900n,
+    lead_time_days: 14, tags: 'soap,sandalwood',
+  },
+];
+
+// Mutable in-memory lead-time store (reset on server restart — intentional for a loopback stub).
+const _leadTimeOverrides: Map<string, number> = new Map();
 
 const _STATUS_ORDER: Record<InventoryStatus, number> = {
   'Out of stock': 0, 'Restock Soon': 1, 'Healthy': 2, 'Overstocked': 3, 'Severely Overstocked': 4,
@@ -1307,9 +1401,22 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
   let rows: InventoryRow[] = _INVENTORY_SEED.map((s) => {
     const daysLeft = INVENTORY_DAYS_LEFT.formula_ts(s.inv, s.l30, s.l90, s.l180, s.l360) as number;
     const sellThrough = INVENTORY_SELL_THROUGH_BP.formula_ts(s.l360, s.inv) as number | null;
+    const leadTime = _leadTimeOverrides.get(s.sku) ?? s.lead_time_days;
     return {
       label: s.label,
       sku: s.sku,
+      brand: s.brand,
+      lead_time_days: leadTime,
+      // cost_value_mu is null — honest-empty until COGS editor sets it.
+      cost_value_mu: null,
+      price_mu: s.price_mu,
+      compare_at_price_mu: s.compare_at_price_mu,
+      qty_l30: s.l30,
+      qty_l90: s.l90,
+      qty_l180: s.l180,
+      qty_l360: s.l360,
+      qty_n14ly: s.n14ly,
+      tags: s.tags,
       current_inventory: s.inv,
       days_left: BigInt(daysLeft),
       sell_through_bp: sellThrough,
@@ -1319,6 +1426,12 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
 
   if (filters?.status_filter) {
     rows = rows.filter((r) => r.status === filters.status_filter);
+  }
+
+  if (filters?.search) {
+    const q = filters.search.trim().toLowerCase();
+    rows = rows.filter((r) =>
+      r.label.toLowerCase().includes(q) || r.sku.toLowerCase().includes(q));
   }
 
   const reverse = direction === 'desc';
@@ -1332,6 +1445,13 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
     return reverse ? -diff : diff;
   });
 
+  // Pagination (Wave-4A: page/page_size mirrors legacy server-side pagination).
+  const pageSize = filters?.page_size ?? 20;
+  const page = filters?.page ?? 1;
+  const totalRows = BigInt(rows.length);
+  const start = (page - 1) * pageSize;
+  rows = rows.slice(start, start + pageSize);
+
   return {
     workspace_id: SUGANDH_LOK_WORKSPACE_ID,
     period: SUGANDH_LOK_CANONICAL.period,
@@ -1339,9 +1459,14 @@ function buildSugandhlokInventoryLevels(filters?: InventoryFilterInput): Invento
     grain,
     sort,
     direction,
-    total_rows: BigInt(rows.length),
+    total_rows: totalRows,
     rows,
   };
+}
+
+function setLeadTimeLoopback(sku: string, leadTimeDays: number): InventorySetLeadTimeResult {
+  _leadTimeOverrides.set(sku, leadTimeDays);
+  return { sku, lead_time_days: leadTimeDays };
 }
 
 // First-product cascade seed. Cohort assembly already done upstream (deterministic primary
@@ -1562,6 +1687,65 @@ function buildSugandhlokCalendarReport(filters?: CalendarReportFilterInput): Cal
     rows,
     total_rows: BigInt(rows.length),
   };
+}
+
+// In-memory marketing action store (parity-38). Keyed by id.
+class InMemoryMarketingActionStore {
+  private readonly rows = new Map<string, MarketingActionRow>();
+  private counter = 0;
+
+  list(dateStart: string, dateEnd: string): MarketingActionRow[] {
+    return Array.from(this.rows.values())
+      .filter((r) => r.action_date >= dateStart && r.action_date <= dateEnd)
+      .sort((a, b) => a.action_date.localeCompare(b.action_date) || a.created_at.localeCompare(b.created_at));
+  }
+
+  create(p: CreateMarketingActionInput): MarketingActionRow {
+    this.counter++;
+    const id = `action_${this.counter}`;
+    const now = new Date().toISOString();
+    const row: MarketingActionRow = {
+      id,
+      workspace_id: p.workspace_id,
+      action_date: p.action_date,
+      action_type: p.action_type,
+      action_name: p.action_name,
+      notes: p.notes ?? null,
+      created_by: p.created_by ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+    this.rows.set(id, row);
+    return row;
+  }
+
+  update(p: UpdateMarketingActionInput): MarketingActionRow {
+    const existing = this.rows.get(p.action_id);
+    if (!existing || existing.workspace_id !== p.workspace_id) {
+      throw new Error(`NotFound: marketing action ${p.action_id}`);
+    }
+    const updated: MarketingActionRow = {
+      ...existing,
+      action_date: p.action_date ?? existing.action_date,
+      action_type: p.action_type ?? existing.action_type,
+      action_name: p.action_name ?? existing.action_name,
+      notes: p.notes !== undefined ? p.notes : existing.notes,
+      updated_at: new Date().toISOString(),
+    };
+    this.rows.set(p.action_id, updated);
+    return updated;
+  }
+
+  delete(workspaceId: string, actionId: string): boolean {
+    const existing = this.rows.get(actionId);
+    if (!existing || existing.workspace_id !== workspaceId) return false;
+    this.rows.delete(actionId);
+    return true;
+  }
+
+  size(): number {
+    return this.rows.size;
+  }
 }
 
 // In-memory goals write store (the idempotent upsert lands here; the Redis dedup at the
@@ -1818,6 +2002,7 @@ function buildSugandhlokBackfillStatus(): BackfillStatusResult {
 
 export class StubDataPlane implements DataPlanePort {
   private readonly goalStore = new InMemoryGoalStore();
+  private readonly actionStore = new InMemoryMarketingActionStore();
 
   constructor(
     private readonly decisionLog = new InMemoryDecisionLog(),
@@ -2072,6 +2257,56 @@ export class StubDataPlane implements DataPlanePort {
     return { result: buildSugandhlokCalendarReport(params.filters), data_epoch: DATA_EPOCH };
   }
 
+  // Marketing action CRUD — parity-38. In-memory store for test/stub harness.
+  async listMarketingActions(params: {
+    workspace_id: string;
+    date_range: DateRange;
+  }): Promise<{ result: ListMarketingActionsResult; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    const rows = this.actionStore.list(params.date_range.start, params.date_range.end);
+    return {
+      result: {
+        workspace_id: params.workspace_id,
+        rows,
+        total_rows: BigInt(rows.length),
+        data_epoch: DATA_EPOCH,
+      },
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  async createMarketingAction(params: CreateMarketingActionInput): Promise<MarketingActionRow> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return this.actionStore.create(params);
+  }
+
+  async updateMarketingAction(params: UpdateMarketingActionInput): Promise<MarketingActionRow> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    try {
+      return this.actionStore.update(params);
+    } catch {
+      throw new Error(`NotFound: marketing action ${params.action_id}`);
+    }
+  }
+
+  async deleteMarketingAction(params: {
+    workspace_id: string;
+    action_id: string;
+  }): Promise<{ deleted: boolean }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    const deleted = this.actionStore.delete(params.workspace_id, params.action_id);
+    if (!deleted) throw new Error(`NotFound: marketing action ${params.action_id}`);
+    return { deleted: true };
+  }
+
   // Phase-2 slice-8 (feat-lifecycle-timings-email): READ/ANALYTICS ONLY. Fail-closed on tenancy.
   async getLifecycleStates(params: {
     workspace_id: string;
@@ -2257,6 +2492,40 @@ export class StubDataPlane implements DataPlanePort {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
     return { rows: [], currency_code: 'INR', data_epoch: DATA_EPOCH };
+  }
+
+  async getShipmentRows(params: {
+    workspace_id: string;
+    date_range: import('../domain/proto-types.js').DateRange;
+    filters: import('../domain/proto-types.js').ShipmentRowFilters;
+    cursor?: string;
+    page_size: number;
+  }): Promise<{
+    rows: import('../domain/proto-types.js').ShipmentRow[];
+    next_cursor: string | null;
+    total_count: bigint;
+    filtered_count: bigint;
+    delivered_count: bigint;
+    rto_count: bigint;
+    mapped_count: bigint;
+    distinct_statuses: string[];
+    data_epoch: Date;
+  }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    // Stub returns honest empty — no shipment facts in the loopback plane.
+    return {
+      rows: [],
+      next_cursor: null,
+      total_count: 0n,
+      filtered_count: 0n,
+      delivered_count: 0n,
+      rto_count: 0n,
+      mapped_count: 0n,
+      distinct_statuses: [],
+      data_epoch: DATA_EPOCH,
+    };
   }
 
   getDecisionLog(): InMemoryDecisionLog {

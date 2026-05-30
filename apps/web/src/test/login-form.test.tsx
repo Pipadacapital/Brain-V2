@@ -49,7 +49,7 @@ beforeEach(() => {
   signInWithOAuthMock.mockReset();
   assignMock.mockClear();
   Object.defineProperty(window, 'location', {
-    value: { origin: 'http://localhost:3000', assign: assignMock },
+    value: { origin: 'http://localhost:3000', assign: assignMock, search: '' },
     writable: true,
   });
 });
@@ -69,12 +69,35 @@ function renderForm(props?: Parameters<typeof LoginForm>[0]) {
 }
 
 describe('LoginForm — real Supabase auth', () => {
-  it('renders email + password + Google button', () => {
+  it('renders email + password + Google button (legacy Card design)', () => {
     renderForm();
-    expect(screen.getByLabelText(/work email/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /sign in with google/i })).toBeInTheDocument();
+    // Legacy label: "Email" (not "Work email")
+    expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
+    // Legacy button copy: "Login"
+    expect(screen.getByRole('button', { name: /^login$/i })).toBeInTheDocument();
+    // Legacy Google button copy: "Continue with Google"
+    expect(screen.getByRole('button', { name: /continue with google/i })).toBeInTheDocument();
+  });
+
+  it('renders legacy Card heading "Login" and description', () => {
+    renderForm();
+    // CardTitle text — use heading role to disambiguate from the button
+    expect(screen.getByText('Login', { selector: '[data-slot="card-title"]' })).toBeInTheDocument();
+    expect(screen.getByText(/enter your email below to login/i)).toBeInTheDocument();
+  });
+
+  it('renders "Forgot your password?" link to /auth/forgot-password', () => {
+    renderForm();
+    const link = screen.getByRole('link', { name: /forgot your password\?/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/auth/forgot-password');
+  });
+
+  it('renders "Sign up" link to /auth/sign-up', () => {
+    renderForm();
+    const link = screen.getByRole('link', { name: /sign up/i });
+    expect(link).toHaveAttribute('href', '/auth/sign-up');
   });
 
   it('POSITIVE: valid credentials → signInWithPassword called, navigates to /dashboard', async () => {
@@ -82,9 +105,9 @@ describe('LoginForm — real Supabase auth', () => {
     renderForm();
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'real@brand.com');
-    await user.type(screen.getByLabelText(/password/i), 'realpassword');
-    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await user.type(screen.getByLabelText(/^email$/i), 'real@brand.com');
+    await user.type(screen.getByLabelText(/^password$/i), 'realpassword');
+    await user.click(screen.getByRole('button', { name: /^login$/i }));
 
     await waitFor(() => {
       expect(signInWithPasswordMock).toHaveBeenCalledWith({
@@ -102,9 +125,9 @@ describe('LoginForm — real Supabase auth', () => {
     renderForm();
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'real@brand.com');
-    await user.type(screen.getByLabelText(/password/i), 'wrongpass');
-    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await user.type(screen.getByLabelText(/^email$/i), 'real@brand.com');
+    await user.type(screen.getByLabelText(/^password$/i), 'wrongpass');
+    await user.click(screen.getByRole('button', { name: /^login$/i }));
 
     await waitFor(() => {
       const alert = screen.getByRole('alert');
@@ -120,7 +143,7 @@ describe('LoginForm — real Supabase auth', () => {
     renderForm();
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole('button', { name: /sign in with google/i }));
+    await user.click(screen.getByRole('button', { name: /continue with google/i }));
 
     await waitFor(() => {
       expect(signInWithOAuthMock).toHaveBeenCalledWith({
@@ -147,9 +170,9 @@ describe('LoginForm — PII client log negative test (CF-C6-PII-CLIENT-1)', () =
     renderForm();
     const user = userEvent.setup();
 
-    await user.type(screen.getByLabelText(/work email/i), 'real@brand.com');
-    await user.type(screen.getByLabelText(/password/i), 'secretpassword');
-    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+    await user.type(screen.getByLabelText(/^email$/i), 'real@brand.com');
+    await user.type(screen.getByLabelText(/^password$/i), 'secretpassword');
+    await user.click(screen.getByRole('button', { name: /^login$/i }));
 
     const allCalls = [
       ...consoleSpy.mock.calls,

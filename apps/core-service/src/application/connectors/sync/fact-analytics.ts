@@ -578,6 +578,169 @@ export async function readCodPrepaid(workspaceId: string): Promise<FactCodPrepai
 }
 
 // ---------------------------------------------------------------------------
+// Per-shipment rows — the Wave-1 parity operational console table.
+// Reads connector_shipment_facts with filter + cursor pagination.
+// No raw_json available in the facts table; charge columns are shipping_charges_mu
+// (forward) and cod_amount_mu (COD). RTO charge is rto_charges_mu where available.
+// Fallback precedence matches legacy:
+//   fwd  = shipping_charges_mu  (≡ applied_weight_amount_first in legacy rawJson)
+//   cod  = cod_amount_mu
+//   rto  = shipping_charges_mu WHERE status_bucket='RTO'
+// ---------------------------------------------------------------------------
+
+export interface FactShipmentRow {
+  id: string
+  vendorShipmentId: string
+  vendorOrderRef: string | null
+  status: string | null
+  statusBucket: string | null
+  isCod: boolean
+  codAmountMu: bigint | null
+  shippingChargesMu: bigint | null
+  courierName: string | null
+  deliveryPincode: string | null
+  deliveryCity: string | null
+  shippedAt: string | null
+  createdAt: string | null
+}
+
+export interface FactShipmentPage {
+  rows: FactShipmentRow[]
+  nextCursor: string | null
+  totalCount: bigint
+  filteredCount: bigint
+  deliveredCount: bigint
+  rtoCount: bigint
+  mappedCount: bigint       // always 0 — shopify mapping not in facts table
+  distinctStatuses: string[]
+}
+
+export interface ShipmentRowFiltersLocal {
+  search?: string
+  statuses?: string[]
+  channelNames?: string[]
+  payment?: 'COD' | 'PREPAID' | null
+  mapping?: 'MATCHED' | 'UNMATCHED' | null
+  rtoOnly?: boolean
+}
+
+export async function readShipmentRows(
+  workspaceId: string,
+  filters: ShipmentRowFiltersLocal,
+  cursor: string | undefined,
+  pageSize: number,
+): Promise<FactShipmentPage> {
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // Build WHERE clauses for filters
+    const conditions: string[] = []
+
+    if (filters.search && filters.search.trim() !== '') {
+      const term = filters.search.trim().replace(/'/g, "''")
+      conditions.push(`(vendor_shipment_id ILIKE '%${term}%' OR vendor_order_ref ILIKE '%${term}%')`)
+    }
+    if (filters.statuses && filters.statuses.length > 0) {
+      const quoted = filters.statuses.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')
+      conditions.push(`status IN (${quoted})`)
+    }
+    if (filters.payment === 'COD') conditions.push(`is_cod = true`)
+    else if (filters.payment === 'PREPAID') conditions.push(`is_cod = false`)
+    if (filters.rtoOnly) conditions.push(`status_bucket = 'RTO'`)
+    // mapping filter: we have no shopify mapping in facts table — UNMATCHED = all rows
+    // MATCHED would return 0 rows (honest empty) because shopify refs are not in facts
+
+    // cursor is the id of the last row (UUID, sortable by synced_at then id)
+    if (cursor) {
+      conditions.push(`(synced_at, id) < (SELECT synced_at, id FROM connector_shipment_facts WHERE id = '${cursor.replace(/'/g, '')}' LIMIT 1)`)
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    // Aggregate counts (no cursor applied)
+    const filterConditions: string[] = []
+    if (filters.search && filters.search.trim() !== '') {
+      const term = filters.search.trim().replace(/'/g, "''")
+      filterConditions.push(`(vendor_shipment_id ILIKE '%${term}%' OR vendor_order_ref ILIKE '%${term}%')`)
+    }
+    if (filters.statuses && filters.statuses.length > 0) {
+      const quoted = filters.statuses.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')
+      filterConditions.push(`status IN (${quoted})`)
+    }
+    if (filters.payment === 'COD') filterConditions.push(`is_cod = true`)
+    else if (filters.payment === 'PREPAID') filterConditions.push(`is_cod = false`)
+    if (filters.rtoOnly) filterConditions.push(`status_bucket = 'RTO'`)
+
+    const filterWhere = filterConditions.length > 0 ? `WHERE ${filterConditions.join(' AND ')}` : ''
+
+    const [aggRes, rowsRes, statusRes] = await Promise.all([
+      tx.query<Record<string, string>>(
+        `SELECT
+           count(*)::text total,
+           count(*) FILTER (WHERE status_bucket='DELIVERED')::text delivered,
+           count(*) FILTER (WHERE status_bucket='RTO')::text rto
+         FROM connector_shipment_facts ${filterWhere}`,
+      ),
+      tx.query<Record<string, unknown>>(
+        `SELECT
+           id::text,
+           vendor_shipment_id,
+           vendor_order_ref,
+           status,
+           status_bucket,
+           is_cod,
+           cod_amount_mu::text,
+           shipping_charges_mu::text,
+           courier_name,
+           delivery_pincode,
+           delivery_city,
+           shipped_at,
+           synced_at
+         FROM connector_shipment_facts
+         ${where}
+         ORDER BY synced_at DESC, id DESC
+         LIMIT ${pageSize + 1}`,
+      ),
+      tx.query<Record<string, string>>(
+        `SELECT DISTINCT status FROM connector_shipment_facts
+         WHERE status IS NOT NULL ORDER BY status LIMIT 50`,
+      ),
+    ])
+
+    const aggRow = aggRes.rows[0] ?? {}
+    const hasMore = rowsRes.rows.length > pageSize
+    const pageRows = hasMore ? rowsRes.rows.slice(0, pageSize) : rowsRes.rows
+    const lastRow = pageRows[pageRows.length - 1]
+    const nextCursor = hasMore && lastRow ? String(lastRow.id) : null
+
+    const rows: FactShipmentRow[] = pageRows.map((r) => ({
+      id: String(r.id),
+      vendorShipmentId: String(r.vendor_shipment_id ?? ''),
+      vendorOrderRef: r.vendor_order_ref != null ? String(r.vendor_order_ref) : null,
+      status: r.status != null ? String(r.status) : null,
+      statusBucket: r.status_bucket != null ? String(r.status_bucket) : null,
+      isCod: Boolean(r.is_cod),
+      codAmountMu: r.cod_amount_mu != null ? BigInt(String(r.cod_amount_mu)) : null,
+      shippingChargesMu: r.shipping_charges_mu != null ? BigInt(String(r.shipping_charges_mu)) : null,
+      courierName: r.courier_name != null ? String(r.courier_name) : null,
+      deliveryPincode: r.delivery_pincode != null ? String(r.delivery_pincode) : null,
+      deliveryCity: r.delivery_city != null ? String(r.delivery_city) : null,
+      shippedAt: r.shipped_at != null ? String(r.shipped_at) : null,
+      createdAt: r.synced_at != null ? String(r.synced_at) : null,
+    }))
+
+    return {
+      rows,
+      nextCursor,
+      totalCount: BigInt(aggRow.total ?? '0'),
+      filteredCount: BigInt(aggRow.total ?? '0'),
+      deliveredCount: BigInt(aggRow.delivered ?? '0'),
+      rtoCount: BigInt(aggRow.rto ?? '0'),
+      mappedCount: 0n,
+      distinctStatuses: statusRes.rows.map((r) => r.status).filter(Boolean),
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Cohorts — acquisition-month cohorts from order history. m[] is cumulative net
 // revenue (gross−discount−tax) by month-offset 0..11 from the cohort month; rr90 is
 // the share of the cohort that re-ordered within 90 days. CAC/payback are null (ad

@@ -84,6 +84,21 @@ class RtoProvisionFacts:
     rto_orders: int = 0
 
 
+@dataclass(frozen=True)
+class ShippingRtoFacts:
+    """Per-workspace Shiprocket-sourced cost facts for the waterfall (Wave-1 parity).
+
+    shipping_outbound_mu = forward_charges_mu + cod_charges_mu (from Shiprocket).
+    rto_cost_mu = Shiprocket RTO charges for the period.
+    founder_salary_mu = prorated founder monthly salary for the period (workspace setting).
+    These are NOT in the ClickHouse daily MV — they come from Shiprocket + workspace settings.
+    """
+
+    shipping_outbound_mu: int = 0   # forward + COD charges (cost side, NOT revenue)
+    rto_cost_mu: int = 0            # Shiprocket RTO charges
+    founder_salary_mu: int = 0      # prorated founder salary for the period
+
+
 # ---------------------------------------------------------------------------
 # Value objects — frozen, integer-only.
 # ---------------------------------------------------------------------------
@@ -103,9 +118,19 @@ class PnlLine:
 
 @dataclass(frozen=True)
 class PnlStatement:
-    """Honest P&L statement over a date range. All _mu are integer paise."""
+    """Honest P&L statement over a date range. All _mu are integer paise.
+
+    Wave-1 parity (2026-05-30): gross-revenue ladder fields added so the
+    CmWaterfallQuery can produce the full 16-step legacy-matching ladder.
+    """
 
     workspace_id: str
+    # Gross revenue ladder (Wave-1 parity — from MetricRow aggregates)
+    gross_sales_mu: int
+    returns_mu: int
+    total_discount_mu: int
+    total_tax_mu: int
+    # CM ladder (existing)
     net_revenue_mu: int
     cogs_mu: int
     variable_costs_mu: int
@@ -143,6 +168,9 @@ class PnlStatementQuery:
 
         Returns:
             PnlStatement with the full CM ladder in integer paise.
+            Wave-1 parity: also carries gross-revenue ladder aggregates
+            (gross_sales_mu, returns_mu, total_discount_mu, total_tax_mu) so the
+            CmWaterfallQuery can produce the full 16-step legacy-matching ladder.
 
         Raises:
             UnscopedQueryError: if workspace_id is falsy (fail-closed tenancy).
@@ -163,6 +191,11 @@ class PnlStatementQuery:
         )
 
         # Aggregate the cost-ladder inputs over the range with integer SUM (no float).
+        # Wave-1 parity: also aggregate gross-revenue ladder fields from MetricRow.
+        gross_sales_mu = sum(r.gross_sales_mu for r in rows)
+        returns_mu = sum(r.returns_mu for r in rows)
+        total_discount_mu = sum(r.discounts_mu for r in rows)  # MetricRow.discounts_mu = total_discount_mu
+        total_tax_mu = sum(r.total_tax_mu for r in rows)
         net_revenue_mu = sum(r.net_revenue_mu for r in rows)
         cogs_mu = sum(r.cogs_mu for r in rows)
         total_ad_spend_mu = sum(r.total_ad_spend_mu for r in rows)
@@ -201,6 +234,12 @@ class PnlStatementQuery:
 
         return PnlStatement(
             workspace_id=workspace_id,
+            # Gross revenue ladder (Wave-1 parity)
+            gross_sales_mu=gross_sales_mu,
+            returns_mu=returns_mu,
+            total_discount_mu=total_discount_mu,
+            total_tax_mu=total_tax_mu,
+            # CM ladder
             net_revenue_mu=net_revenue_mu,
             cogs_mu=cogs_mu,
             variable_costs_mu=variable_costs_total,

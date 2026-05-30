@@ -85,3 +85,32 @@
 **Deploy gate ledger:** 2 READY-IN-RUNBOOK / 1 HELD (FORCE — Founder+CTOA) / 1 HELD cross-child (Child-3 residual-writer conversion) / 7 DEFERRED-TO-ROLLOUT-WINDOW (all with exact predicates)
 **Deploy report:** 13-deployment-report.md
 **Next:** READINESS-COMPLETE. Awaiting: (1) Founder commits product code; (2) Child-3 residual-writer conversion; (3) Founder+CTOA FORCE ceremony sign-off; (4) live runbook execution by operator.
+
+## 2026-05-29T23:30:00Z — Jatin (platform-devops) — connector-webhook-intake (Stage-8 turnkey prep)
+**Stage:** 8 (live-cutover turnkey — offline verification only; no AWS action performed)
+**Affected:** connector-webhook-intake (T0/T1/T2/T3 + T-GEN-A + T-GEN-B) + credential-custody + chore-app-hmac-secret-custody + feat-tenancy-rls-live-cutover + feat-credential-custody-aws-sm
+**Canary:** N/A — no deployment performed (authored-not-deployed posture; NO valid AWS credentials in environment confirmed)
+**Monitor:** N/A — no live deploy; checklist produced for Founder-at-console execution
+
+**CDK synth result:**
+- `cdk list`: CredentialCustodyStack, CoreServiceTaskDefStack (2 stacks — exactly as expected)
+- `cdk synth`: `Successfully synthesized to .../cdk.out` — ZERO errors, ZERO warnings (74 feature flags advisory only)
+- `npm test`: 49/49 PASS, 2 suites (credential-custody-stack.test.ts + core-service-task-def-stack.test.ts), 0 failed, 0 skipped
+
+**Stage-8 execution kit drift findings (vs actual code + stacks):**
+1. DRIFT (NEW HOLD — not in original kit P2): `connector_identity_map` DDL (step-a-create.sql) and seed row (`('shopify', 'sugandhlok.myshopify.com', <ws_id>)`) are NEW Stage-8 items not listed in the original kit. Required before P7 (webhook registration).
+2. DRIFT (NEW HOLD — not in kit): gRPC server bind (`webhook_server.py`) and gateway route registration (route.webhook.ts is exported-not-registered in server.ts). Both are explicit HOLD-AT-CUTOVER annotations added by Maya/Vikram.
+3. DRIFT (NEW HOLD — not in kit): public `POST /webhooks/:vendor` ingress + WAF/TLS. Kit P2 covers custody stack only; the public webhook ingress is a separate ceremony.
+4. DRIFT (MED-1 — must fix before deploy): `grpcio>=1.68.0` floor in pyproject.toml. Shreya flagged this as MED-1 (admits DoS-vulnerable pre-1.70 versions). Must raise to `>=1.70.0` before Stage-8 image is built.
+5. DRIFT (MED-2 — dead code): `shop_resolver.py` is an orphaned dead file on disk (superseded by `identity_resolver.py` but never deleted). Confirmed present at `apps/ingestion-service/src/interfaces/grpc/shop_resolver.py`. Must delete before commit.
+6. MATCH: secret name `brain/_app/shopify/hmac_secret` — matches kit P2 step 4 exactly (IAM resource `brain/*` prefix covers it — CF-CC-IAM-LEASTPRIV-1 confirmed by test assertions).
+7. MATCH: region ap-south-1 — both stack constructors enforce residency guard at synth time; tests confirm.
+8. MATCH: stack names `CredentialCustodyStack` + `CoreServiceTaskDefStack` — confirmed by `cdk list`.
+9. MATCH: kit P5 (Google OAuth) is still valid and unchanged.
+10. NEW ITEM (not in kit): `connector_identity_map` RLS asymmetry is intentional (system routing table, no PII, pre-workspace lookup) — documented in migration DDL + architecture plan §11.
+
+**Checklist written:** `.engineering-os/LIVE-CUTOVER-CHECKLIST.md` — 8 phases (P1–P8 + DECOM + monitoring), safe dependency order, exact commands, preconditions, expected outputs, safety gates, reversibility recipe.
+
+**Skills loaded:** devops-aws, operational-readiness, security-baseline, verification-before-completion, finishing-a-development-branch
+**Staging smoke:** N/A (no live deploy)
+**Next:** Founder executes P1 (secret rotation — URGENT), then P2 at console with real AWS creds. Two pre-deploy code fixes required before any image build: raise grpcio floor + delete shop_resolver.py.

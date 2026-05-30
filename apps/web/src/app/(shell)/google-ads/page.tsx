@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { PlatformAdsView } from "@/interfaces/components/marketing/platform-ads-view.js";
+import { PlatformAdsView, GOOGLE_VENDOR_CONFIG } from "@/interfaces/components/marketing/platform-ads-view.js";
 
 export const metadata: Metadata = { title: "Google Ads — Brain" };
 
 export default function Page() {
-  return <PlatformAdsView platform="google" />;
+  return <PlatformAdsView config={GOOGLE_VENDOR_CONFIG} />;
 }

@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { ChevronsUpDown, Check, Plus } from "lucide-react";
+import { IconSelector, IconCheck, IconPlus } from "@tabler/icons-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,33 +21,23 @@ import { trpc } from "@/infrastructure/trpc-client.js";
 
 export function WorkspaceSwitcher() {
   const { isMobile } = useSidebar();
-  const router = useRouter();
   const dispatch = useAppDispatch();
 
   const currentWorkspaceId = useAppSelector((s) => s.session.workspaceId);
   const currentUserId = useAppSelector((s) => s.session.userId);
-  const workspaceRole = useAppSelector((s) => s.session.workspaceRole);
+  const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
 
   const { data: workspaceList } = trpc.workspace.list.useQuery(undefined, {
-    enabled: !!currentWorkspaceId,
+    enabled: isAuthenticated,
+    staleTime: 60_000,
   });
 
-  const switchMutation = trpc.workspace.switch.useMutation({
-    onSuccess(data) {
-      dispatch(
-        setSession({
-          userId: currentUserId ?? "anonymous",
-          workspaceId: data.workspaceId,
-          workspaceRole: workspaceRole ?? "VIEWER",
-        })
-      );
-    },
-  });
+  const currentWs = workspaceList?.workspaces?.find(
+    (w) => w.workspaceId === currentWorkspaceId,
+  );
 
-  // Display the REAL workspace name from the membership list (never a hardcoded brand).
-  const currentName =
-    workspaceList?.workspaces?.find((w) => w.workspaceId === currentWorkspaceId)?.name ??
-    "Workspace";
+  const currentName = currentWs?.name ?? "Workspace";
+  const currentPlan = currentWs?.plan ?? "Growth";
 
   const initials = currentName
     .split(" ")
@@ -56,6 +45,38 @@ export function WorkspaceSwitcher() {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+
+  const switchMutation = trpc.workspace.switch.useMutation({
+    onSuccess(data) {
+      // 1. Persist to localStorage FIRST — the tRPC client reads this header on
+      //    every request, so it must be set before the hard reload triggers a new
+      //    page load and any new tRPC calls.
+      try {
+        window.localStorage.setItem("brain.activeWorkspace", data.workspaceId);
+      } catch {
+        /* ignore — private browsing */
+      }
+
+      // 2. Update Redux so any interim renders use the correct workspace.
+      dispatch(
+        setSession({
+          userId: currentUserId ?? "anonymous",
+          workspaceId: data.workspaceId,
+          workspaceRole: data.role,
+        }),
+      );
+
+      // 3. Hard reload so every query refetches under the new workspace context.
+      //    The new x-brain-workspace header is picked up from localStorage by the
+      //    tRPC client on the fresh load.
+      window.location.assign("/dashboard");
+    },
+  });
+
+  const handleSwitch = (workspaceId: string) => {
+    if (workspaceId === currentWorkspaceId) return;
+    switchMutation.mutate({ workspaceId });
+  };
 
   return (
     <SidebarMenu>
@@ -65,17 +86,18 @@ export function WorkspaceSwitcher() {
             <SidebarMenuButton
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              data-testid="workspace-switcher-trigger"
             >
               <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-xs font-bold shrink-0">
                 {initials}
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">{currentName}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  growth plan
+                <span className="truncate text-xs text-muted-foreground capitalize">
+                  {currentPlan.toLowerCase()} plan
                 </span>
               </div>
-              <ChevronsUpDown className="ml-auto size-4" />
+              <IconSelector className="ml-auto size-4" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -90,40 +112,31 @@ export function WorkspaceSwitcher() {
             {workspaceList?.workspaces?.map((ws) => (
               <DropdownMenuItem
                 key={ws.workspaceId}
-                onClick={() => {
-                  if (ws.workspaceId !== currentWorkspaceId) {
-                    // Persist the selection (the tRPC client sends it as x-brain-workspace;
-                    // the gateway validates it against real membership) then hard-reload so
-                    // every query refetches against the newly-active workspace.
-                    try {
-                      window.localStorage.setItem('brain.activeWorkspace', ws.workspaceId);
-                    } catch {
-                      /* ignore */
-                    }
-                    switchMutation.mutate({ workspaceId: ws.workspaceId });
-                    window.location.assign('/dashboard');
-                  }
-                }}
+                onClick={() => handleSwitch(ws.workspaceId)}
                 className="gap-2 p-2"
+                data-testid={`workspace-option-${ws.workspaceId}`}
               >
                 <div className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground text-[10px] font-bold">
-                  {ws.name.slice(0, 2).toUpperCase()}
+                  {ws.name
+                    .split(" ")
+                    .map((w) => w[0])
+                    .join("")
+                    .toUpperCase()
+                    .slice(0, 2)}
                 </div>
-                <span className="flex-1 truncate text-sm">
-                  {ws.name}
-                </span>
+                <span className="flex-1 truncate text-sm">{ws.name}</span>
                 {ws.workspaceId === currentWorkspaceId && (
-                  <Check className="size-4 text-primary" />
+                  <IconCheck className="size-4 text-primary" />
                 )}
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => router.push("/onboarding")}
+              onClick={() => window.location.assign("/onboarding")}
               className="gap-2 p-2"
             >
               <div className="flex size-6 items-center justify-center rounded-md border bg-background">
-                <Plus className="size-4" />
+                <IconPlus className="size-4" />
               </div>
               <span className="text-muted-foreground text-sm">
                 Create workspace

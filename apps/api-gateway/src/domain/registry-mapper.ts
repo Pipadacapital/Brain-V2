@@ -71,21 +71,40 @@ export const KPI_FIELDS_TO_DEFINITION_ID: Record<string, string> = {
 // Each step MUST trace to a registry definition (CF-C6-REGISTRY-ONLY-BFF-1).
 // Phase-2 slice-2 (feat-pnl-cm-waterfall): variable_costs_mu added (the honest CM1 line)
 // and true_cm2_mu permitted (the RTO-honest CM2 rung).
+// Wave-1 parity (2026-05-30): expanded from 8→16 steps to match legacy waterfall.ts.
 export const PNL_WATERFALL_DEFINITION_IDS = [
-  'net_revenue_mu',
+  // Revenue deduction sub-ladder (Wave-1 parity)
+  'gross_sales_mu',
+  'total_discount_mu',
+  'returns_mu',
+  'total_tax_mu',
+  'shipping_outbound_mu',
+  'gross_revenue_after_deductions_mu',
+  // Cost ladder (original + rto_cost step)
   'cogs_mu',
   'variable_costs_mu',
+  'rto_cost_mu',
+  // CM subtotals
   'cm1_mu',
   'total_ad_spend_mu',
   'cm2_mu',
   'misc_expenses_prorated_mu',
   'cm3_mu',
+  // Founder + net profit (Wave-1 parity)
+  'founder_salary_mu',
+  'net_profit_mu',
+  // Optional Brain-native step (RTO-honest CM2, shown when order_count > 0)
   'true_cm2_mu',
 ] as const;
 
 // PNL_STATEMENT_DEFINITION_IDS: the registry ids that appear as P&L statement lines.
 // Phase-2 slice-2. Every PnlStatementRow money field must trace to one of these.
+// Wave-1 parity (2026-05-30): gross-revenue ladder fields added to PnlStatement.
 export const PNL_STATEMENT_DEFINITION_IDS = [
+  'gross_sales_mu',
+  'returns_mu',
+  'total_discount_mu',
+  'total_tax_mu',
   'net_revenue_mu',
   'cogs_mu',
   'variable_costs_mu',

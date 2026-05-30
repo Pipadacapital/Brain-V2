@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-05-29T23:30:00Z",
-  "updated_by": "cto-advisor (Rohan) — Stage 6 final review connector-webhook-intake",
+  "updated_at": "2026-05-30T00:40:00Z",
+  "updated_by": "orchestrator — local stack stood up fully functional + point-1 turnkey",
   "active_requirements": [
     {
       "req_id": "feat-store-order-fact-layer",
@@ -3282,9 +3282,9 @@
     {
       "req_id": "epic-real-auth-supabase",
       "title": "Real authentication (Supabase) — login + signup + onboarding + Google OAuth, Brain-native (EPIC)",
-      "status": "epic-ratified",
+      "status": "slices-cd-merged-local-functional",
       "stage": 1,
-      "current_owner": "founder — slice D Stage-7 gate SIGNED under delegation; awaiting commit authorization + provider-dashboard redirect-URI registration for live e2e",
+      "current_owner": "founder — ONLY remaining: Supabase dashboard config (Site URL http://localhost:3000 + redirect allow-list + mailer) + a real account to complete a live login loop",
       "feature_class": "high-stakes",
       "feature_class_rationale": "5 trigger surfaces (auth, multi-tenancy, pii, secrets-env, connectors); live auth with real consumers; no scaffolding carve-out.",
       "trigger_surfaces_touched": [
@@ -3419,7 +3419,9 @@
         "epic_close_out": "FINAL slice — closes epic-real-auth-supabase (A/B/C/D all built + mechanically verified locally)."
       },
       "founder_ratified_at": "2026-05-26T11:40:00Z",
-      "founder_ratification_note": "Founder-ratified 2026-05-26 (via claude-code hygiene loop). All 5 slices (A,B,C,D,E) merged via PR #3; Stage-6 PASS signed under delegation by Rohan (CTO Advisor) per the slice 12-founder-decision.json artifacts. Ratification is the formal epic-completion act; no new build triggered."
+      "founder_ratification_note": "Founder-ratified 2026-05-26 (via claude-code hygiene loop). All 5 slices (A,B,C,D,E) merged via PR #3; Stage-6 PASS signed under delegation by Rohan (CTO Advisor) per the slice 12-founder-decision.json artifacts. Ratification is the formal epic-completion act; no new build triggered.",
+      "reconcile_note": "STALE FLAG CLEARED: local-vs-live-DB decision already made = LOCAL (migration 01 Founder-binding 2026-05-25; .env wired to brain_dev). Slice C merged 8b0e8dd, Slice D merged 7dfbe73. Local stack verified: auth-gate redirects unauth->/auth/login, sign-in renders, gateway JWT fail-closed, onboarding tables FORCE-RLS fail-closed, onboarding write path works.",
+      "local_stack": "docker compose up -d (postgres+clickhouse+api-gateway+web all healthy); migrations 01..25 + 05a applied; from-scratch reproducible"
     },
     {
       "req_id": "feat-auth-supabase-identity",
@@ -3668,9 +3670,9 @@
     {
       "req_id": "feat-credential-custody-aws-sm",
       "title": "Real AWS Secrets Manager credential custody (Option A) — replace the NotImplementedError stubs with a production custody backing",
-      "status": "approved-stage8-readiness-held",
+      "status": "merged-on-development",
       "stage": 8,
-      "current_owner": "platform-devops (Jatin) — Stage 8 readiness (HELD behind ceremony gates); commit pending Founder \"commit it\"",
+      "current_owner": "platform-devops (Jatin) — Stage-8 readiness only; LIVE ceremony HELD (real AWS provisioning, KMS CMK, IAM, live token rotation, CF-C7 legs, legacy-plaintext DELETE PoNR) — none delegable",
       "stage2_plan_artifact": "06-architecture-plan.md",
       "stage2_complete_ts": "2026-05-29T17:10:00Z",
       "builder_tracks": {
@@ -3739,13 +3741,16 @@
       "carry_forward_low": [
         "LOW-1 hatchling uv-sync build-target (non-blocking, Maya/WS-1)",
         "LOW-2 resolved on disk (commit working tree)"
-      ]
+      ],
+      "committed": true,
+      "merged_via": "efe269e feat(custody): real AWS Secrets Manager credential custody (Option A)",
+      "reconcile_note": "State flag was stale (showed commit-pending); product code confirmed merged on development. No live provisioning performed."
     },
     {
       "req_id": "chore-app-hmac-secret-custody",
-      "status": "approved",
+      "status": "merged-on-development",
       "stage": 8,
-      "current_owner": "platform-devops (Jatin)",
+      "current_owner": "platform-devops (Jatin) — Stage-8 live ceremony HELD (real SM secret + CMK, IAM attach, live shpss_ put+rotate, botocore/urllib3 OFF-DEBUG, festival-safe window) — Founder/console",
       "feature_class": "high-stakes",
       "feature_class_rationale": "auth(HMAC gate)+secrets-custody+connectors+india-compliance(DPDP residency) trigger surfaces; scaffolding carve-out barred (live-credential auth-gate runtime); conservative tie-break holds.",
       "trigger_surfaces_touched": [
@@ -3791,14 +3796,16 @@
       "stage6_remutation": "both CRITICAL gates re-mutated by Rohan on disk: #1 compare_digest->== RED/revert/GREEN; #2 not-found-raise->return\"\" RED(4)/revert/37 GREEN — non-vacuous",
       "stage8_status": "HELD behind named live-provisioning ceremony (Founder/Jatin at console)",
       "commit_authorization": "awaiting Founder \"commit it\"",
-      "committed": false,
-      "named_follow_on": "chore-ts-oauth-app-secret-custody"
+      "committed": true,
+      "named_follow_on": "chore-ts-oauth-app-secret-custody",
+      "merged_via": "0e955fb feat(custody): app-level Shopify HMAC secret custody (PR #19)",
+      "reconcile_note": "State flag was stale (approved/committed=False); product code confirmed merged via PR #19. No live rotation performed."
     },
     {
       "req_id": "chore-ts-oauth-app-secret-custody",
-      "status": "stage-8-held",
+      "status": "merged-on-development",
       "stage": 8,
-      "current_owner": "founder",
+      "current_owner": "platform-devops (Jatin) — Stage-8 live cutover HELD (core-service Fargate + live task-role + rotated SHOPIFY_CLIENT_SECRET into SM) — Founder/console",
       "stage6_verdict": "APPROVE-WITH-CAVEATS",
       "stage6_delegated": true,
       "stage6_decided_by": "rishabhporwal (Founder) via Rohan standing delegation",
@@ -3945,14 +3952,17 @@
         "findings_med": 0,
         "findings_low": 1,
         "bounce": null
-      }
+      },
+      "committed": true,
+      "merged_via": "25a80ff feat(custody): TS OAuth app-secret via platform env-injection (PR #21)",
+      "reconcile_note": "State flag was stale (stage-8-held/awaiting commit); product code (5 TS + 3 CDK) confirmed merged via PR #21. No live cutover performed."
     },
     {
       "req_id": "connector-webhook-intake",
       "title": "Inbound Shopify webhook ingress (verify HMAC fail-closed → idempotent intake → produce)",
-      "status": "approved",
-      "stage": 6,
-      "current_owner": "platform-devops (Jatin) — Stage-8 readiness only (HELD behind live ceremony; no live deploy, no commit). Commit of reviewed code pending Founder free-text \"commit it\".",
+      "status": "merged-on-development",
+      "stage": 8,
+      "current_owner": "platform-devops (Jatin) — Stage-8 readiness only (HELD behind live ceremony; no live deploy, no rotation)",
       "feature_class": "high-stakes",
       "feature_class_rationale": "Trigger surfaces: auth (HMAC gate is the auth), multi-tenancy (shop->workspace), connectors, pii (Shopify order email/name), public inbound channel, india-compliance (DPDP residency). Scaffolding carve-out barred (live auth-gate runtime + biz logic + public surface).",
       "trigger_surfaces_touched": [
@@ -4079,7 +4089,11 @@
           "MED-3 out-of-slice Expo @xmldom/xmldom advisories -> mobile-developer"
         ],
         "auto_candidate_rule": "NONE — verify-the-verifier rule already adopted (2026-05-26); BOUNCE-1 is its Nth occurrence and the rule fired correctly; auto-candidate rule (>=3 distinct runs of a NEW root cause) N/A"
-      }
+      },
+      "merged_at": "2026-05-29T23:50:00Z",
+      "merged_via_pr": "22",
+      "merged_via_branch": "chore/intake-connector-webhook-intake",
+      "hygiene_sweep_note": "Code merged to origin/development (PR #22). LIVE-prod cutover gates remain HELD per Stage-8 readiness notes: live deploy, public webhook registration, shpss_ rotation, identity_map real seed, ingress/WAF/TLS, grpcio floor >=1.70.0."
     }
   ],
   "hygiene_sweep_note": "2026-05-26 sweep: reconciled active.json against actual git state on origin/development. Items whose code-work merged via PRs #1-#5 are now status=merged-on-development; LIVE-prod cutover gates remain held per the original Stage-8 notes; epic parents annotated; pending-founder-attention.md updated in companion edit."
