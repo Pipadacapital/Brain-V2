@@ -1356,4 +1356,71 @@ export interface DataPlanePort {
     workspace_id: string;
     date_range: DateRange;
   }): Promise<{ rows: DailyAcquisitionRow[]; data_epoch: Date }>;
+
+  /**
+   * Wave-1 parity (shiprocket operational console): per-shipment row list with
+   * filtering + cursor pagination. Reads connector_shipment_facts.
+   * rawJson is intentionally null here — charge fields are pre-computed columns.
+   * CF-C6-DATA-SEAM-1: additive method on the SAME port.
+   */
+  getShipmentRows(params: {
+    workspace_id: string;
+    date_range: DateRange;
+    filters: ShipmentRowFilters;
+    cursor?: string;
+    page_size: number;
+  }): Promise<{
+    rows: ShipmentRow[];
+    next_cursor: string | null;
+    total_count: bigint;
+    filtered_count: bigint;
+    delivered_count: bigint;
+    rto_count: bigint;
+    mapped_count: bigint;
+    distinct_statuses: string[];
+    data_epoch: Date;
+  }>;
+}
+
+// ---------------------------------------------------------------------------
+// Shipment row types (Wave-1 parity — /shiprocket operational console)
+// ---------------------------------------------------------------------------
+
+export interface ShipmentRowFilters {
+  search?: string;
+  statuses?: string[];
+  channel_names?: string[];
+  payment?: 'COD' | 'PREPAID' | null;
+  mapping?: 'MATCHED' | 'UNMATCHED' | null;
+  rto_only?: boolean;
+}
+
+/**
+ * One row in the per-shipment console table.
+ * charge fields computed from connector_shipment_facts columns (no raw_json).
+ * Zone, weight, fwd/COD/RTO charges derived from DB columns — no client fallback needed.
+ */
+export interface ShipmentRow {
+  id: string;
+  shipment_id: string;
+  order_id: string | null;
+  awb_code: string | null;
+  courier_name: string | null;
+  status: string | null;
+  status_bucket: string | null;
+  payment_method: string | null;
+  is_cod: boolean;
+  shopify_order_name: string | null;       // null when not yet mapped
+  channel_name: string | null;
+  shipped_at: string | null;
+  created_at: string | null;
+  delivery_pincode: string | null;
+  delivery_city: string | null;
+  // Charge columns (computed from connector_shipment_facts.shipping_charges_mu etc.)
+  // forward_charge_mu: the canonical applied charge (legacy: applied_weight_amount first)
+  forward_charge_mu: bigint | null;
+  cod_charge_mu: bigint | null;
+  rto_charge_mu: bigint | null;
+  charged_weight_kg: number | null;        // approximate from charges
+  zone: string | null;
 }

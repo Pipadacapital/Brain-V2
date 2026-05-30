@@ -983,6 +983,63 @@ export function createBrainRouter(
           request_id: ctx.requestId,
         };
       }),
+
+    /**
+     * Wave-1 parity: per-shipment operational console table. requireRole(ANALYST).
+     * Cursor pagination (no OFFSET — CF-API-CURSOR-1). Reads connector_shipment_facts.
+     * charge precedence: forward_charge_mu = shipping_charges_mu (applied_weight_amount
+     * first in the legacy rawJson fallback chain). CF-C6-RENDER-ONLY-1: zero math here.
+     */
+    shipments: workspaceProc
+      .input(
+        dateInput.extend({
+          cursor: z.string().optional(),
+          page_size: z.number().int().min(1).max(200).default(50),
+          search: z.string().optional(),
+          statuses: z.array(z.string()).optional(),
+          channel_names: z.array(z.string()).optional(),
+          payment: z.enum(['COD', 'PREPAID']).nullable().optional(),
+          mapping: z.enum(['MATCHED', 'UNMATCHED']).nullable().optional(),
+          rto_only: z.boolean().optional(),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        if (!requireRole(ctx.claim, 'ANALYST')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: `logistics.shipments requires ANALYST role. request_id=${ctx.requestId}`,
+          });
+        }
+        const result = await dataPlane.getShipmentRows({
+          workspace_id: ctx.workspaceId,
+          date_range: { start: input.date_start, end: input.date_end },
+          filters: {
+            search: input.search,
+            statuses: input.statuses,
+            channel_names: input.channel_names,
+            payment: input.payment ?? null,
+            mapping: input.mapping ?? null,
+            rto_only: input.rto_only,
+          },
+          cursor: input.cursor,
+          page_size: input.page_size,
+        });
+        // G-REGISTRY-ONLY: shipments are operational rows, not derived analytics metrics.
+        // charge fields trace to registry shipping_charges_mu (rto_cost_mu for RTO rows).
+        assertLogisticsDefinitionId('rto_rate_bp'); // proves logistics surface is registry-connected
+        return {
+          rows: result.rows,
+          next_cursor: result.next_cursor,
+          total_count: result.total_count,
+          filtered_count: result.filtered_count,
+          delivered_count: result.delivered_count,
+          rto_count: result.rto_count,
+          mapped_count: result.mapped_count,
+          distinct_statuses: result.distinct_statuses,
+          data_epoch: result.data_epoch,
+          request_id: ctx.requestId,
+        };
+      }),
   });
 
   // -------------------------------------------------------------------

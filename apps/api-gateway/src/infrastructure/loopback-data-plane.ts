@@ -2259,6 +2259,40 @@ export class StubDataPlane implements DataPlanePort {
     return { rows: [], currency_code: 'INR', data_epoch: DATA_EPOCH };
   }
 
+  async getShipmentRows(params: {
+    workspace_id: string;
+    date_range: import('../domain/proto-types.js').DateRange;
+    filters: import('../domain/proto-types.js').ShipmentRowFilters;
+    cursor?: string;
+    page_size: number;
+  }): Promise<{
+    rows: import('../domain/proto-types.js').ShipmentRow[];
+    next_cursor: string | null;
+    total_count: bigint;
+    filtered_count: bigint;
+    delivered_count: bigint;
+    rto_count: bigint;
+    mapped_count: bigint;
+    distinct_statuses: string[];
+    data_epoch: Date;
+  }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    // Stub returns honest empty — no shipment facts in the loopback plane.
+    return {
+      rows: [],
+      next_cursor: null,
+      total_count: 0n,
+      filtered_count: 0n,
+      delivered_count: 0n,
+      rto_count: 0n,
+      mapped_count: 0n,
+      distinct_statuses: [],
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
   getDecisionLog(): InMemoryDecisionLog {
     return this.decisionLog;
   }
