@@ -4,6 +4,8 @@
 // CF-C6-PERF-A11Y-1: lang attribute, skip-nav link, proper root structure.
 
 import type { Metadata } from "next";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { Providers } from "@/application/providers.js";
 
@@ -24,7 +26,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
           cz-shortcut-listen) inject attributes onto <body> before React
           hydrates. Scoped to this element's own attrs — does NOT mask
           mismatches in the component tree below. */}
-      <body suppressHydrationWarning>
+      <body className={`${GeistSans.variable} ${GeistMono.variable} antialiased`} suppressHydrationWarning>
         {/* CF-C6-PERF-A11Y-1: skip-to-content for keyboard users */}
         <a
           href="#main-content"
