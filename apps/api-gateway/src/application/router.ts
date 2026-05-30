@@ -190,6 +190,9 @@ export function createBrainRouter(
           slug: w.slug,
           name: w.name,
           role: w.role,
+          // plan is not stored per-workspace in the local schema yet;
+          // 'Growth' is the honest default (matches getWorkspaceSettings).
+          plan: 'Growth' as string,
         })),
         requestId: ctx.requestId,
       };
@@ -388,7 +391,9 @@ export function createBrainRouter(
             platform: input.platform,
             storeHandle: input.storeHandle ?? null,
           });
-          return { workspaceId, slug, redirectTo: '/dashboard', requestId: ctx.requestId };
+          // Return the workspace-scoped URL so the user lands inside the workspace they
+          // just created (parity with legacy backend redirectTo `/w/${normalizedSlug}/dashboard`).
+          return { workspaceId, slug, redirectTo: `/w/${slug}/dashboard`, requestId: ctx.requestId };
         } catch (err) {
           throw mapOnboardingError(err, ctx.requestId);
         }
