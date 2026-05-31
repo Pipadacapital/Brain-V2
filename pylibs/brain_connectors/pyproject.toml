@@ -1,0 +1,9 @@
+[project]
+name = "brain_connectors"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Connector base ABC + provider implementations (spec: pylibs/brain_connectors). Each provider (Shopify, Meta, Google Ads, Shiprocket, Klaviyo, …) subclasses BaseConnector. Backfill == live (window only); idempotent UPSERT on payload hash. Consumed by ingestion-service."
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
