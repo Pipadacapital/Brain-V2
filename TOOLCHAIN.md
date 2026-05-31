@@ -41,7 +41,7 @@ pnpm install
 
 # 4. Install/sync Python workspace (creates .venv/ at root).
 # --all-packages installs all workspace members as editable packages
-# so `import proto_py`, `import brain_metrics`, etc. all resolve.
+# so `import brain_grpc`, `import brain_metrics`, etc. all resolve.
 uv sync --all-packages
 
 # 5. Generate protobuf stubs (required before any build that imports @brain/proto-ts
@@ -64,7 +64,7 @@ After `buf generate`, verify both sides import correctly:
 pnpm --filter @brain/proto-ts exec node -e "console.log(require('./gen/brain/health/v1/health_pb.js'))"
 
 # Python — named package import
-uv run python -c "import proto_py; print('proto_py OK')"
+uv run python -c "import brain_grpc; print('proto_py OK')"
 uv run python -c "import brain_metrics; print('brain_metrics OK')"
 ```
 
@@ -100,9 +100,9 @@ Run from repo root on a clean checkout after the bootstrap above. ALL must pass:
 4. `uv sync --all-packages` — Python workspace resolves; `.venv/` and `uv.lock` present; all pylib packages installed as editable.
 5. `buf lint protos` — 0 violations.
 6. `buf build protos -o /dev/null` — valid image, 0 errors.
-7. `buf generate protos` — TS stubs in `packages/proto-ts/gen/`; Python stubs in `pylibs/proto_py/proto_py/_gen/`.
+7. `buf generate protos` — TS stubs in `packages/lib-grpc-clients/gen/`; Python stubs in `pylibs/brain_grpc/brain_grpc/_gen/`.
 8. TS import smoke: `pnpm --filter @brain/proto-ts exec node -e "require('./gen/...')"` resolves.
-9. Python import smoke: `uv run python -c "import proto_py"` + `uv run python -c "import brain_metrics"` both resolve.
+9. Python import smoke: `uv run python -c "import brain_grpc"` + `uv run python -c "import brain_metrics"` both resolve.
 10. `pnpm turbo run check:metrics-parity` — exits 0.
 11. Structural: 9 `apps/` dirs; 5 DDD folders in each backend service; NO `controllers/`; all 5 pins present; `DECISIONS.md` exists.
 

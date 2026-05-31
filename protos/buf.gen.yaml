@@ -12,9 +12,9 @@ plugins:
     out: ../packages/lib-grpc-clients/gen
     opt:
       - target=ts
-  # Python stubs → pylibs/proto_py/proto_py/_gen/
+  # Python stubs → pylibs/brain_grpc/brain_grpc/_gen/
   # Uses betterproto for idiomatic Python dataclass-based stubs.
   - remote: buf.build/community/danielgtaylor-betterproto:v1.2.5
-    out: ../pylibs/proto_py/proto_py/_gen
+    out: ../pylibs/brain_grpc/brain_grpc/_gen
     opt:
       - python_type_stubs=False
