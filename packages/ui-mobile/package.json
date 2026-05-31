@@ -1,0 +1,10 @@
+{
+  "name": "@brain/ui-mobile",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Tamagui mobile UI primitives shared across the Expo app (spec: packages/ui-mobile). Counterpart to @brain/ui (web). Primitives land here as the mobile Morning Brief surface is built; today it exports the shared primitive contract marker only.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
