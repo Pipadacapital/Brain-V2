@@ -222,6 +222,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@brain/lib-formatters':
+        specifier: workspace:*
+        version: link:../../packages/lib-formatters
       '@brain/lib-logger':
         specifier: workspace:*
         version: link:../../packages/lib-logger
@@ -384,6 +387,12 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+
+  packages/lib-formatters:
+    dependencies:
+      '@brain/lib-metrics':
+        specifier: workspace:*
+        version: link:../lib-metrics
 
   packages/lib-grpc-clients:
     dependencies:
