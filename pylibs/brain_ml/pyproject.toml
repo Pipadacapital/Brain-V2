@@ -1,0 +1,9 @@
+[project]
+name = "brain_ml"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Classical-ML surface (spec: pylibs/brain_ml). Prophet forecasting + festival regressors, BG/NBD+Gamma-Gamma LTV, Kaplan-Meier, SARIMA cashflow, z-score anomaly, isotonic spend-aMER. Paradigm 1/2 (never LLM). Consumed by intelligence-service / analytics (Phase-2 build)."
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

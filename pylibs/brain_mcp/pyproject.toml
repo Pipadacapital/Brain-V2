@@ -1,0 +1,9 @@
+[project]
+name = "brain_mcp"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "MCP server primitives + tool helpers (spec: pylibs/brain_mcp). MCP tool schemas generate from protos/ (no drift). Decision-Log middleware on writes. The api-gateway hosts the MCP surface; Python agents register tools via this package (Phase-2 build)."
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

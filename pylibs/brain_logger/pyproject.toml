@@ -1,0 +1,9 @@
+[project]
+name = "brain_logger"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Structured logging + correlation for the Python services (spec: pylibs/brain_logger). Counterpart to @brain/lib-logger (TS). Emits workspace_id + trace_id on every line; PII-redaction. Consumed by ingestion/analytics/intelligence."
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

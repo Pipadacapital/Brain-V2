@@ -6,11 +6,17 @@ requires-python = "==3.13.*"
 members = [
     "analytics-service",
     "brain",
+    "brain-agents",
     "brain-clickhouse",
     "brain-connectors",
     "brain-cost-router",
     "brain-grpc",
+    "brain-kafka",
+    "brain-llm",
+    "brain-logger",
+    "brain-mcp",
     "brain-metrics",
+    "brain-ml",
     "brain-regional",
     "ingestion-service",
     "intelligence-service",
@@ -177,6 +183,11 @@ version = "0.0.0"
 source = { virtual = "." }
 
 [[package]]
+name = "brain-agents"
+version = "0.0.0"
+source = { editable = "pylibs/brain_agents" }
+
+[[package]]
 name = "brain-clickhouse"
 version = "0.0.0"
 source = { editable = "pylibs/brain_clickhouse" }
@@ -203,9 +214,34 @@ version = "0.0.0"
 source = { editable = "pylibs/brain_grpc" }
 
 [[package]]
+name = "brain-kafka"
+version = "0.0.0"
+source = { editable = "pylibs/brain_kafka" }
+
+[[package]]
+name = "brain-llm"
+version = "0.0.0"
+source = { editable = "pylibs/brain_llm" }
+
+[[package]]
+name = "brain-logger"
+version = "0.0.0"
+source = { editable = "pylibs/brain_logger" }
+
+[[package]]
+name = "brain-mcp"
+version = "0.0.0"
+source = { editable = "pylibs/brain_mcp" }
+
+[[package]]
 name = "brain-metrics"
 version = "0.0.0"
 source = { editable = "pylibs/brain_metrics" }
+
+[[package]]
+name = "brain-ml"
+version = "0.0.0"
+source = { editable = "pylibs/brain_ml" }
 
 [[package]]
 name = "brain-regional"
