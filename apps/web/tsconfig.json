@@ -16,6 +16,9 @@
     "plugins": [{ "name": "next" }],
     "paths": {
       "@brain/lib-metrics": ["../../packages/lib-metrics/src/index.ts"],
+      "@brain/state": ["../../packages/state/src/index.ts"],
+      "@brain/state/session-slice": ["../../packages/state/src/session-slice.ts"],
+      "@brain/state/ui-slice": ["../../packages/state/src/ui-slice.ts"],
       "@brain/api-gateway": ["../../apps/api-gateway/src/application/router.ts"],
       "@brain/core-auth": ["../../apps/core-service/src/domain/auth/brain-claim.ts"],
       "@brain/core-onboarding": ["../../apps/core-service/src/application/onboarding/index.ts"],

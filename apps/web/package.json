@@ -17,6 +17,7 @@
   "dependencies": {
     "@brain/lib-formatters": "workspace:*",
     "@brain/lib-logger": "workspace:*",
+    "@brain/state": "workspace:*",
     "@brain/trpc-client": "workspace:*",
     "@reduxjs/toolkit": "^2.12.0",
     "@supabase/ssr": "^0.10.3",
