@@ -6,10 +6,10 @@ version: v2
 # To regenerate: run `buf generate protos` from repo root.
 # CI must pin buf plugin versions for reproducible codegen (see TOOLCHAIN.md).
 plugins:
-  # TypeScript stubs → packages/proto-ts/gen/
+  # TypeScript stubs → packages/lib-grpc-clients/gen/
   # Uses @bufbuild/protoc-gen-es for ES modules compatible with Node/browser.
   - remote: buf.build/bufbuild/es:v2.4.0
-    out: ../packages/proto-ts/gen
+    out: ../packages/lib-grpc-clients/gen
     opt:
       - target=ts
   # Python stubs → pylibs/proto_py/proto_py/_gen/

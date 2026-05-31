@@ -5,7 +5,7 @@
 //
 // In Phase 0-1 (in-process / localhost loopback), the api-gateway uses these
 // types directly. When buf generate produces remote-plugin stubs, these are
-// superseded by @brain/proto-ts — the DataPlanePort interface is the adapter seam.
+// superseded by @brain/lib-grpc-clients — the DataPlanePort interface is the adapter seam.
 //
 // CF-C6-DATA-SEAM-1: one port, one contract. No second code path.
 // CF-C6-BIGINT-JSON-1: _mu fields are bigint at the TS edge; superjson serializes
