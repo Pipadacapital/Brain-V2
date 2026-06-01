@@ -36,6 +36,9 @@ function client(): ClickHouseClient {
     // BigInts must survive the wire so integer minor units don't get clipped to JS Number.
     clickhouse_settings: {
       output_format_json_quote_64bit_integers: 1,
+      // Dashboard-read query timeout (canon: max_execution_time=30s) — caps the
+      // blast radius of a pathological/unbounded read so one query can't pin CH.
+      max_execution_time: 30,
     },
   })
   return _client

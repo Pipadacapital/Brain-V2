@@ -98,7 +98,15 @@ function getPool(): Pool {
       ? `${directUrl}&connection_limit=10`
       : `${directUrl}?connection_limit=10`
 
-  _pool = new Pool({ connectionString: url, max: 10 })
+  _pool = new Pool({
+    connectionString: url,
+    max: 10,
+    // Per-statement timeout (canon dashboard-read budget: 30s) — Postgres aborts any
+    // single statement exceeding this, capping the blast radius of a pathological
+    // query so one read can't pin a pool connection. Migrations run via a separate
+    // (superuser) path, so this does not constrain DDL.
+    statement_timeout: 30_000,
+  })
   return _pool
 }
 
