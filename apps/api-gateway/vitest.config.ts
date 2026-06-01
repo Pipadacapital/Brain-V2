@@ -30,6 +30,7 @@ export default defineConfig({
       '@brain/core-store-browser': '../../apps/core-service/src/application/contexts/store-browser/index.ts',
       '@brain/core-platform-ads': '../../apps/core-service/src/application/contexts/platform-ads/index.ts',
       '@brain/core-settings': '../../apps/core-service/src/application/contexts/settings/index.ts',
+      '@brain/core-admin': '../../apps/core-service/src/application/contexts/admin/index.ts',
     },
   },
 });

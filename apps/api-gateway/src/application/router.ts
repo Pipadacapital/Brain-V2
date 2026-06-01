@@ -43,6 +43,7 @@ import { makeMorningBriefRouter } from '../interfaces/trpc/make-morning-brief-ro
 import { makeDeviceRouter } from '../interfaces/trpc/make-device-router.js';
 import { makeInsightsRouter } from '../interfaces/trpc/make-insights-router.js';
 import { makeConnectorsRouter } from '../interfaces/trpc/make-connectors-router.js';
+import { makeAdminRouter } from '../interfaces/trpc/make-admin-router.js';
 
 export function createBrainRouter(
   dataPlane: DataPlanePort,
@@ -216,6 +217,10 @@ export function createBrainRouter(
   // -------------------------------------------------------------------
   const connectorsRouter = makeConnectorsRouter(dataPlane, idempotencyStore);
 
+  // Platform-admin (SUPERADMIN) — the one cross-tenant surface; argless (imports
+  // core-service cross-workspace use-cases directly, no data-plane/idempotency).
+  const adminRouter = makeAdminRouter();
+
   // -------------------------------------------------------------------
   // Root router
   // -------------------------------------------------------------------
@@ -242,6 +247,7 @@ export function createBrainRouter(
     insights: insightsRouter,
     device: deviceRouter,
     connectors: connectorsRouter,
+    admin: adminRouter,
   });
 }
 

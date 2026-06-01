@@ -14,7 +14,8 @@
     "baseUrl": ".",
     "paths": {
       "@brain/lib-metrics": ["../../packages/lib-metrics/src/index.ts"],
-      "@brain/core-auth": ["../../apps/core-service/src/domain/auth/brain-claim.ts"]
+      "@brain/core-auth": ["../../apps/core-service/src/domain/auth/brain-claim.ts"],
+      "@brain/core-admin": ["../../apps/core-service/src/application/contexts/admin/index.ts"]
     },
     "skipLibCheck": true,
     "types": ["jest"]
