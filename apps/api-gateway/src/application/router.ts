@@ -120,6 +120,7 @@ import {
   mapSettingsError,
   mapConnectorError,
 } from '../interfaces/trpc/error-mappers.js';
+import { dateInput, connectorVendor } from '../interfaces/trpc/shared-inputs.js';
 
 // ---------------------------------------------------------------------------
 // Router factory — accepts the DataPlanePort and IdempotencyStore as deps.
@@ -852,11 +853,6 @@ export function createBrainRouter(
   // CF-C6-REGISTRY-ONLY-BFF-1: every metric field traces a registry definition_id.
   // CF-C6-BIGINT-JSON-1: _mu = bigint over superjson.
   // -------------------------------------------------------------------
-  const dateInput = z.object({
-    date_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
-    date_end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'ISO date required'),
-  });
-
   const logisticsRouter = router({
     /** RTO analytics: rate/cost/revenue-lost + by-payment + by-courier. requireRole(ANALYST). */
     rto: workspaceProc.input(dateInput).query(async ({ ctx, input }) => {
@@ -2762,7 +2758,6 @@ export function createBrainRouter(
   // (AES-256-GCM, RLS-scoped) via core-service custody; the token VALUE is NEVER
   // returned by any procedure here (status only). core-service owns the logic.
   // -------------------------------------------------------------------
-  const connectorVendor = z.enum(['SHOPIFY', 'META', 'GOOGLE']);
   const connectorsRouter = router({
     /**
      * Begin an OAuth connect: create the CSRF state nonce + return the provider
