@@ -268,7 +268,9 @@ def query_metrics(
         date_range.end,
     )
 
-    result = client.query(query, parameters=params)
+    # Dashboard-read query timeout (canon: max_execution_time=30s) — caps the
+    # blast radius of a pathological/unbounded read so one query can't pin CH.
+    result = client.query(query, parameters=params, settings={"max_execution_time": 30})
     rows: list[MetricRow] = []
 
     for raw_row in result.result_rows:
