@@ -113,8 +113,13 @@ import {
 } from '../domain/idempotency.js';
 import { assertPageInsightGates } from '../domain/insight-gates.js';
 import type { DataPlanePort } from '../domain/proto-types.js';
-// Phase-E router split: thin per-domain routers under interfaces/trpc/.
+// Phase-E router split: thin per-domain routers + shared error mappers under interfaces/trpc/.
 import { makeAuthRouter } from '../interfaces/trpc/make-auth-router.js';
+import {
+  mapOnboardingError,
+  mapSettingsError,
+  mapConnectorError,
+} from '../interfaces/trpc/error-mappers.js';
 
 // ---------------------------------------------------------------------------
 // Router factory — accepts the DataPlanePort and IdempotencyStore as deps.
@@ -122,85 +127,7 @@ import { makeAuthRouter } from '../interfaces/trpc/make-auth-router.js';
 // CF-C6-DATA-SEAM-1: DataPlanePort is the ONLY data path. No direct DB access.
 // ---------------------------------------------------------------------------
 
-/**
- * Map a core-service OnboardingError to a tRPC error (Slice C). Validation/slug
- * issues → BAD_REQUEST; invitation issues → NOT_FOUND/CONFLICT/GONE. A non-
- * OnboardingError (e.g. a DB fault) is re-wrapped as INTERNAL_SERVER_ERROR with a
- * GENERIC message — the underlying error detail is NEVER surfaced (no PII / no DB
- * internals leak), only the requestId for correlation.
- */
-function mapOnboardingError(err: unknown, requestId: string): TRPCError {
-  if (err instanceof OnboardingError) {
-    const codeMap: Record<string, 'BAD_REQUEST' | 'CONFLICT' | 'NOT_FOUND'> = {
-      VALIDATION: 'BAD_REQUEST',
-      SLUG_INVALID: 'BAD_REQUEST',
-      SLUG_TAKEN: 'CONFLICT',
-      INVITATION_NOT_FOUND: 'NOT_FOUND',
-      INVITATION_NOT_PENDING: 'CONFLICT',
-      INVITATION_EXPIRED: 'CONFLICT',
-    };
-    return new TRPCError({
-      code: codeMap[err.code] ?? 'BAD_REQUEST',
-      message: `${err.message} request_id=${requestId}`,
-    });
-  }
-  // Unknown / DB fault: generic message only (never echo the raw error).
-  return new TRPCError({
-    code: 'INTERNAL_SERVER_ERROR',
-    message: `Operation failed. request_id=${requestId}`,
-  });
-}
-
-/**
- * Map a core-service ConnectorError to a tRPC error (Slice D). Validation/domain
- * issues → BAD_REQUEST/FORBIDDEN; a non-ConnectorError (DB/crypto fault) is wrapped
- * as INTERNAL_SERVER_ERROR with a GENERIC message — the underlying detail (which
- * could include a provider body) is NEVER surfaced, only the requestId. No token
- * value can leak through this mapper.
- */
-/**
- * Map a core-service SettingsError to a tRPC error (Wave-3). NOT_FOUND /
- * CONFLICT / VALIDATION map to 4xx; all others are INTERNAL_SERVER_ERROR with
- * a generic message — never surfaces DB internals.
- */
-function mapSettingsError(err: unknown, requestId: string): TRPCError {
-  if (err instanceof SettingsError) {
-    const codeMap: Record<string, 'NOT_FOUND' | 'CONFLICT' | 'BAD_REQUEST' | 'FORBIDDEN'> = {
-      NOT_FOUND: 'NOT_FOUND',
-      CONFLICT: 'CONFLICT',
-      VALIDATION: 'BAD_REQUEST',
-      FORBIDDEN: 'FORBIDDEN',
-    };
-    return new TRPCError({
-      code: codeMap[err.code] ?? 'BAD_REQUEST',
-      message: `${err.message} request_id=${requestId}`,
-    });
-  }
-  return new TRPCError({
-    code: 'INTERNAL_SERVER_ERROR',
-    message: `Settings operation failed. request_id=${requestId}`,
-  });
-}
-
-function mapConnectorError(err: unknown, requestId: string): TRPCError {
-  if (err instanceof ConnectorError) {
-    const codeMap: Record<string, 'BAD_REQUEST' | 'FORBIDDEN'> = {
-      VALIDATION: 'BAD_REQUEST',
-      INVALID_SHOP_DOMAIN: 'BAD_REQUEST',
-      INVALID_STATE: 'FORBIDDEN',
-      HMAC_INVALID: 'FORBIDDEN',
-      EXCHANGE_FAILED: 'BAD_REQUEST',
-    };
-    return new TRPCError({
-      code: codeMap[err.code] ?? 'BAD_REQUEST',
-      message: `${err.message} request_id=${requestId}`,
-    });
-  }
-  return new TRPCError({
-    code: 'INTERNAL_SERVER_ERROR',
-    message: `Connector operation failed. request_id=${requestId}`,
-  });
-}
+// Error mappers extracted to interfaces/trpc/error-mappers.ts (Phase-E split) — imported above.
 
 export function createBrainRouter(
   dataPlane: DataPlanePort,
