@@ -10,7 +10,7 @@
 // Money: rupee input → paise (×100 as bigint) on save; formatMoney for display.
 // Role gate: hide Add/Delete when workspaceRole is not MANAGER+; Founder salary edit is OWNER-only.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
@@ -144,6 +144,7 @@ function AddCostDialog({
         billing_mode: row.billing_mode ?? null,
       });
       utils.settings.costs.invalidate();
+      utils.settings.listCosts.invalidate();
       setOpen(false);
       resetForm();
     },
@@ -418,8 +419,31 @@ export function CostsContent() {
   const enabled = Boolean(isAuthenticated && workspaceId);
   const q = trpc.settings.costs.useQuery({ date_start: dateStart, date_end: dateEnd }, { enabled });
   const founderQ = trpc.settings.getFounderSalary.useQuery(undefined, { enabled });
+  // Hydrate the editable/deletable cost list WITH ids from core-service (the analytics
+  // cost-stack read carries no row id). Previously only session-created rows were
+  // editable; existing rows became deletable only after a manual re-add.
+  const configCostsQ = trpc.settings.listCosts.useQuery(undefined, { enabled });
 
   const utils = trpc.useUtils();
+
+  // Seed the deletable list from the id-carrying config read on load / refetch.
+  useEffect(() => {
+    if (configCostsQ.data) {
+      setLocalCosts(
+        configCostsQ.data.rows.map((r) => ({
+          id: r.id,
+          cost_type: r.cost_type,
+          name: r.name ?? null,
+          amount_mu: BigInt(r.amount_mu as unknown as string),
+          is_percent: r.is_percent ?? false,
+          effective_from: r.effective_from,
+          effective_to: r.effective_to ?? null,
+          currency_code: r.currency_code ?? null,
+          billing_mode: r.billing_mode ?? null,
+        })),
+      );
+    }
+  }, [configCostsQ.data]);
 
   const canManage = atLeast(workspaceRole, 'MANAGER');
   const isOwner = workspaceRole === 'OWNER';
@@ -436,6 +460,7 @@ export function CostsContent() {
     onSuccess: (_r, vars) => {
       setLocalCosts((prev) => prev.filter((c) => c.id !== vars.cost_id));
       utils.settings.costs.invalidate();
+      utils.settings.listCosts.invalidate();
     },
   });
 

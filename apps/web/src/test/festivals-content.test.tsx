@@ -40,12 +40,14 @@ vi.mock('@/domain/store/hooks.js', () => ({
     }),
 }));
 
-const { createFestivalMutate, updateFestivalMutate, deleteFestivalMutate, resetFestivalsMutate, invalidate } = vi.hoisted(() => ({
+const { createFestivalMutate, updateFestivalMutate, deleteFestivalMutate, resetFestivalsMutate, invalidate, EMPTY_LIST_RESULT } = vi.hoisted(() => ({
   createFestivalMutate: vi.fn(),
   updateFestivalMutate: vi.fn(),
   deleteFestivalMutate: vi.fn(),
   resetFestivalsMutate: vi.fn(),
   invalidate: vi.fn(),
+  // Stable ref (mirrors react-query) so the hydration useEffect doesn't loop forever.
+  EMPTY_LIST_RESULT: { data: { rows: [], total: 0 }, isLoading: false, error: null },
 }));
 
 let createOnSuccess: ((row: Record<string, unknown>) => void) | undefined;
@@ -91,6 +93,9 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
       festivals: {
         useQuery: () => ({ data: FESTIVALS_DATA, isLoading: false, error: null }),
       },
+      listFestivals: {
+        useQuery: () => EMPTY_LIST_RESULT,
+      },
       createFestival: {
         useMutation: (opts: { onSuccess?: (row: Record<string, unknown>) => void; onError?: (e: Error) => void }) => {
           createOnSuccess = opts.onSuccess;
@@ -120,6 +125,7 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
     useUtils: () => ({
       settings: {
         festivals: { invalidate },
+        listFestivals: { invalidate },
       },
     }),
   },

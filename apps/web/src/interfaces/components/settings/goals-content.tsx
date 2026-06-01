@@ -15,7 +15,7 @@
 // MANAGER-gated writes; ANALYST can read (attainment section). Role from Redux
 // session.workspaceRole. CF-C6-RENDER-ONLY-1: display only, no inline math.
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -182,6 +182,26 @@ export function GoalsContent() {
     { enabled },
   );
 
+  // Hydrate the editable/deletable goal list WITH ids from core-service (the attainment
+  // read is an aggregate with no row id), so existing goals are editable on load.
+  const configGoalsQ = trpc.settings.listGoals.useQuery(undefined, { enabled });
+  useEffect(() => {
+    if (configGoalsQ.data) {
+      setLocalGoals(
+        configGoalsQ.data.rows.map((r) => ({
+          id: r.id,
+          metric_name: r.metric_name as GoalMetricId,
+          period_type: r.period_type as PeriodType,
+          period_start: r.period_start,
+          goal_value: BigInt(r.goal_value as unknown as string),
+          goal_unit: (r.goal_unit as 'mu' | 'bp' | 'count') ?? 'mu',
+          goal_type: r.goal_type as GoalType,
+          updated_at: r.updated_at,
+        })),
+      );
+    }
+  }, [configGoalsQ.data]);
+
   // CRUD mutations
   const createMutation = trpc.settings.createGoal.useMutation({
     onSuccess: (data) => {
@@ -205,6 +225,7 @@ export function GoalsContent() {
         return [...filtered, row];
       });
       void utils.settings.goals.invalidate();
+      void utils.settings.listGoals.invalidate();
       setGoalValue('');
       setFormError(null);
     },
@@ -215,6 +236,7 @@ export function GoalsContent() {
     onSuccess: (_data, vars) => {
       setLocalGoals((prev) => prev.filter((g) => g.id !== vars.goal_id));
       void utils.settings.goals.invalidate();
+      void utils.settings.listGoals.invalidate();
     },
     onError: (err) => setFormError(err.message),
   });

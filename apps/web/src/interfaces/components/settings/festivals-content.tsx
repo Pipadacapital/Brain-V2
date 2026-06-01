@@ -11,7 +11,7 @@
 // Multiplier: UI shows ×N.N; stored as basis points (10000 = 1.0×).
 //   multiplier input → bp: Math.round(input * 10000).
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueryState, parseAsInteger } from 'nuqs';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
@@ -108,10 +108,24 @@ export function FestivalsContent() {
     { enabled },
   );
 
+  // Hydrate row ids from core-service (the analytics festival read carries no id), so
+  // EXISTING festivals are editable/deletable on load — not only ones mutated this session.
+  const configFestivalsQ = trpc.settings.listFestivals.useQuery(undefined, { enabled });
+  useEffect(() => {
+    if (configFestivalsQ.data) {
+      setLocalIdMap((prev) => {
+        const next = { ...prev };
+        for (const r of configFestivalsQ.data.rows) next[rowKey(r.name, r.start_date)] = r.id;
+        return next;
+      });
+    }
+  }, [configFestivalsQ.data]);
+
   const utils = trpc.useUtils();
 
   function invalidate() {
     utils.settings.festivals.invalidate();
+    utils.settings.listFestivals.invalidate();
   }
 
   const createMut = trpc.settings.createFestival.useMutation({
