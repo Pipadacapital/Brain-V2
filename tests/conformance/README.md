@@ -70,8 +70,11 @@ It stays **non-vacuous**: OFFSET introduced in any *other* file still fails C10
 (verified by planting a probe). When the keyset req lands, delete the allowlist
 entries and C10 enforces clean everywhere.
 
-## Wiring into CI (roadmap Phase A3)
+## Wired into CI (Phase A3)
 
-Add a job that runs `python tests/conformance/run_conformance.py --with-behavioral`
-on every PR, alongside `tools/check-metrics-parity.sh`. The gate is green now (C10
-dispositioned), so it can be wired as blocking.
+`.github/workflows/ci.yml` → the **`invariant-gates`** job runs
+`python3 tests/conformance/run_conformance.py --with-behavioral` on every PR and on
+push to development/release/master. It's BLOCKING and self-contained: the behavioral
+checks shell out via `uv run` / `bash`, so C4 (CH gateway), C5 (metric parity) and
+C8 (@paradigm) all execute in CI alongside the 11 static checks (14 PASS / 0 FAIL).
+A second `typecheck` job runs `tsc --noEmit` across the backend TS packages.

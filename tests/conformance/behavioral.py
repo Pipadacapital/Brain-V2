@@ -21,7 +21,7 @@ _BEHAVIORAL = {
     "C4": (
         "CH query gateway fail-closed",
         "apps/analytics-service/tests/test_query_gateway_isolation.py",
-        ["python", "-m", "pytest", "-q", "tests/test_query_gateway_isolation.py"],
+        ["uv", "run", "--quiet", "pytest", "-q", "tests/test_query_gateway_isolation.py"],
         "apps/analytics-service",
     ),
     "C5": (
@@ -33,7 +33,7 @@ _BEHAVIORAL = {
     "C8": (
         "@paradigm gate enforced at runtime",
         "apps/intelligence-service/tests/unit/test_gate1_paradigm.py",
-        ["python", "-m", "pytest", "-q", "tests/unit/test_gate1_paradigm.py"],
+        ["uv", "run", "--quiet", "pytest", "-q", "tests/unit/test_gate1_paradigm.py"],
         "apps/intelligence-service",
     ),
 }
