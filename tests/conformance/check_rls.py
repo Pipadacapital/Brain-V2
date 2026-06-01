@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 from _lib import (
+    ROOT,
     CheckResult,
     Status,
     extract_create_tables,
@@ -83,25 +84,73 @@ def check_c3() -> CheckResult:
                        f"({len(_ALLOWLIST)} documented exceptions allowlisted)")
 
 
-# ---- C12: cross-service DB read (advisory) -------------------------------------
-# Heuristic: a Python service must not raw-SQL a table owned by another service.
+# ---- C12: per-service DB isolation by GRANT (blocking after A4) -----------------
+# Honest C12 = three signals: (1) the per-service role + grant artifacts EXIST and
+# grant to the right svc_ role; (2) no MIS-GRANT (a service's grant file must not
+# grant another service's tables); (3) no cross-service raw-SQL FROM in source.
 _FOREIGN = {
     "intelligence-service": ["connector_order_facts", "workspace_costs", "customer_pii", "workspace_daily_metrics"],
     "core-service": ["ai.decision_log", "brand_fingerprint", "condition_outcome"],
 }
 
+# label -> (path, list of substrings that MUST be present)
+_GRANT_ARTIFACTS = {
+    "02-create-service-roles.sql": (
+        "apps/core-service/docker/initdb-dev/02-create-service-roles.sql",
+        ["svc_core", "svc_ingestion", "svc_intelligence", "svc_analytics_ro"],
+    ),
+    "26-grant-svc-roles.sql": (
+        "apps/core-service/migrations/local-dev/26-grant-svc-roles.sql", ["TO svc_core"],
+    ),
+    "grant-svc-ingestion.sql": (
+        "apps/ingestion-service/migrations/manual/raw/grant-svc-ingestion.sql", ["TO svc_ingestion"],
+    ),
+    "27-revoke-rls-app-overbroad.sql": (
+        "apps/core-service/migrations/local-dev/27-revoke-rls-app-overbroad.sql", ["rls_app"],
+    ),
+    "intelligence up.sql (ai/memory grants)": (
+        "apps/intelligence-service/migrations/postgres/up.sql", ["TO svc_intelligence"],
+    ),
+}
+
 
 def check_c12() -> CheckResult:
-    hits: list[str] = []
+    findings: list[str] = []
+
+    # (1) grant artifacts exist + grant the right roles.
+    for label, (relpath, needles) in _GRANT_ARTIFACTS.items():
+        p = ROOT / relpath
+        if not p.exists():
+            findings.append(f"missing grant artifact: {label} ({relpath})")
+            continue
+        txt = read(p)
+        for n in needles:
+            if n not in txt:
+                findings.append(f"{label}: missing expected `{n}`")
+
+    # (2) no mis-grant — a service's grant file must not name another's tables.
+    ing = ROOT / _GRANT_ARTIFACTS["grant-svc-ingestion.sql"][0]
+    if ing.exists():
+        it = strip_sql_comments(read(ing))
+        for core_tbl in ("customer_pii", "connector_credentials", "connector_order_facts"):
+            if re.search(rf"\b{core_tbl}\b", it):
+                findings.append(f"grant-svc-ingestion.sql grants CORE table `{core_tbl}` (mis-grant)")
+    core_g = ROOT / _GRANT_ARTIFACTS["26-grant-svc-roles.sql"][0]
+    if core_g.exists():
+        ct = strip_sql_comments(read(core_g))
+        if re.search(r"\braw_[a-z]", ct) or re.search(r"\bconnector_identity_map\b", ct) or re.search(r"\bconnector_cursor\b", ct):
+            findings.append("26-grant-svc-roles.sql grants an INGESTION table (raw_*/identity_map/cursor) to svc_core (mis-grant)")
+
+    # (3) no cross-service raw-SQL FROM/JOIN in service source.
     for svc, foreign in _FOREIGN.items():
         for path in globs(f"apps/{svc}/src/**/*.py", f"apps/{svc}/src/**/*.ts"):
             text = read(path)
             for tbl in foreign:
                 if re.search(rf"\bFROM\s+{re.escape(tbl)}\b|\bJOIN\s+{re.escape(tbl)}\b", text, re.I):
-                    hits.append(f"{rel(path)} references foreign table `{tbl}`")
-    if hits:
-        return CheckResult("C12", "No cross-service DB read (advisory)", Status.WARN,
-                           "possible cross-schema reads (convention-enforced; hardens to GRANT at Phase A4)", hits)
-    return CheckResult("C12", "No cross-service DB read (advisory)", Status.PASS,
-                       "no cross-service raw-SQL table references found "
-                       "(convention-enforced; hardens to per-service GRANT at Phase A4)")
+                    findings.append(f"{rel(path)} reads foreign table `{tbl}`")
+
+    if findings:
+        return CheckResult("C12", "Per-service DB isolation (grants)", Status.FAIL,
+                           f"{len(findings)} isolation issue(s)", findings)
+    return CheckResult("C12", "Per-service DB isolation (grants)", Status.PASS,
+                       "per-service roles + grants present, correctly scoped (no mis-grant), no cross-service FROM")

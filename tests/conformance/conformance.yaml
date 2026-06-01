@@ -83,10 +83,12 @@ checks:
     blocking: true
     impl: check_layering.py
   - id: C12
-    invariant: "No cross-service DB read (advisory until per-service GRANTs land — Phase A4)"
+    invariant: "Per-service DB isolation by GRANT — per-service roles+grants exist, correctly
+      scoped (no mis-grant), and no cross-service raw-SQL FROM. BLOCKING since A4."
     kind: static
-    blocking: false
+    blocking: true
     impl: check_rls.py
+    proof: "tests/integration/db-isolation/run.sh — deny-matrix vs disposable Postgres (11/11)"
   - id: C13
     invariant: "Cross-brand memory k-anonymity (brand_count >= 5 CHECK)"
     kind: static
