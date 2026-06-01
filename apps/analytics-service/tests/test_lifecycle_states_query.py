@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.lifecycle.lifecycle_states_query import (
+from src.application.contexts.lifecycle.lifecycle_states_query import (
     CustomerFact,
     LifecycleFacts,
     LifecycleStatesQuery,

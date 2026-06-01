@@ -30,7 +30,7 @@ from brain_metrics.registry.definitions import (
     goal_higher_better as _goal_higher_better,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

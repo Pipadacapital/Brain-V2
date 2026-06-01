@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.catalog.first_product_cascade_query import (
+from src.application.contexts.catalog.first_product_cascade_query import (
     FirstProductCascadeQuery,
     FirstProductCascadeFacts,
     FirstProductCohortFact,

@@ -48,7 +48,7 @@ from brain_metrics.registry.definitions import (
     ltv_cac_bp as _LTV_CAC_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

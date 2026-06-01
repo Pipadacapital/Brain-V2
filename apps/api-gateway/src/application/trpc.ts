@@ -63,6 +63,17 @@ export interface WorkspaceContext extends AuthedContext {
   workspaceId: string;  // asserted === claim.workspaceId (CF-C6-GATEWAY-TENANCY-1)
 }
 
+/**
+ * Superadmin tier: a valid BrainClaim whose `systemRole === 'SUPERADMIN'`. The ONE
+ * sanctioned cross-tenant tier — admin.* procedures that enumerate EVERY workspace/
+ * user/connection run here. NO workspace_id assertion (the whole point is to span
+ * tenants); the systemRole check IS the gate. Distinct from workspaceProc, which
+ * fails closed on a foreign workspace_id.
+ */
+export interface SuperadminContext extends AuthedContext {
+  claim: BrainClaim; // claim.systemRole asserted === 'SUPERADMIN' by superadminMiddleware
+}
+
 // The tRPC instance uses the union of all context shapes.
 // Each procedure tier narrows the context at middleware time.
 export type RootContext = PublicContext | IdentityContext | AuthedContext | WorkspaceContext;
@@ -250,6 +261,32 @@ const workspaceMiddleware = t.middleware(({ ctx, next }) => {
 });
 
 // ---------------------------------------------------------------------------
+// Middleware: superadmin (platform) authorization
+// The ONLY cross-tenant gate. Runs AFTER authedMiddleware so ctx.claim is present.
+// Load-bearing check: claim.systemRole === 'SUPERADMIN'. Mutation target — flipping
+// the comparison or dropping the check MUST fail a test (admin.* would leak every
+// tenant's directory to a normal USER). NO workspace_id assertion here by design.
+// ---------------------------------------------------------------------------
+
+const superadminMiddleware = t.middleware(({ ctx, next }) => {
+  if (!('claim' in ctx) || !ctx.claim) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: `Authentication required. request_id=${ctx.requestId}`,
+    });
+  }
+  if (ctx.claim.systemRole !== 'SUPERADMIN') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message:
+        `Superadmin only. systemRole=${ctx.claim.systemRole} is not SUPERADMIN. ` +
+        `request_id=${ctx.requestId}`,
+    });
+  }
+  return next({ ctx: ctx as SuperadminContext });
+});
+
+// ---------------------------------------------------------------------------
 // Procedure tiers
 // ---------------------------------------------------------------------------
 
@@ -274,3 +311,12 @@ export const workspaceProc = t.procedure
   .use(tracingMiddleware)
   .use(authedMiddleware)
   .use(workspaceMiddleware);
+
+/**
+ * Superadmin tier: requires a valid claim with systemRole === 'SUPERADMIN'. The
+ * sanctioned cross-tenant tier for the /admin suite. NO workspace assertion.
+ */
+export const superadminProc = t.procedure
+  .use(tracingMiddleware)
+  .use(authedMiddleware)
+  .use(superadminMiddleware);

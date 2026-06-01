@@ -123,6 +123,11 @@ export function makeUserRouter(
           role: w.role,
         })),
         needsOnboarding: workspaces.length === 0,
+        // Platform role for the /admin guard. Present on the claim only when the user
+        // has a resolved membership; absent (e.g. mid-onboarding) ⇒ 'USER' (never
+        // assume SUPERADMIN). The real gate is server-side (admin.* on superadminProc);
+        // this only drives UX (show/hide the admin area).
+        systemRole: ctx.claim?.systemRole ?? 'USER',
         requestId: ctx.requestId,
       };
     }),

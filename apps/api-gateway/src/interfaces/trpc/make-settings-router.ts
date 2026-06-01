@@ -63,6 +63,7 @@ import {
   deleteMiscExpense,
   getFounderSalary,
   setFounderSalary,
+  getWorkspaceSettings,
   updateWorkspaceSettings,
   deleteWorkspace,
   createGoal,
@@ -281,6 +282,27 @@ export function makeSettingsRouter(
       }
       const result = await dataPlane.getWorkspaceSettings({ workspace_id: ctx.workspaceId });
       return { result: result.result, data_epoch: result.data_epoch, request_id: ctx.requestId };
+    }),
+
+    /**
+     * Editable tax/filter/COGS config (the values updateWorkspaceSettings writes), read
+     * back from core-service so the Settings form hydrates its current state. requireRole
+     * (ANALYST). READ. Closes the write-only gap (tax_percent_bp + skip-zero +
+     * skipped-order-tags + COGS overrides were never read back).
+     */
+    workspaceConfig: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.workspaceConfig requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      try {
+        const row = await getWorkspaceSettings(ctx.workspaceId);
+        return { ...row, request_id: ctx.requestId };
+      } catch (err) {
+        throw mapSettingsError(err, ctx.requestId);
+      }
     }),
 
     /** Connector list + health/status/last-sync. requireRole(ANALYST). READ. Honest (connector cutover HELD). */

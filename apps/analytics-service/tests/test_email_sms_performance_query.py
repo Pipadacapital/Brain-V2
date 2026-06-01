@@ -16,8 +16,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.lifecycle import email_sms_performance_query as mod
-from src.application.lifecycle.email_sms_performance_query import (
+from src.application.contexts.lifecycle import email_sms_performance_query as mod
+from src.application.contexts.lifecycle.email_sms_performance_query import (
     EmailPerfFact,
     EmailSmsFacts,
     EmailSmsPerformanceQuery,

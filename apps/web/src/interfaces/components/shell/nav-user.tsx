@@ -6,6 +6,7 @@ import {
   IconDotsVertical,
   IconLogout,
   IconNotification,
+  IconShieldLock,
   IconUserCircle,
 } from "@tabler/icons-react";
 import {
@@ -64,6 +65,15 @@ export function NavUser() {
     { enabled: isAuthenticated, refetchInterval: 60_000 },
   );
   const unreadCount = unreadData?.count ?? 0;
+
+  // Platform role — surfaces the SUPERADMIN-only Admin entry. The route + every
+  // admin.* procedure are independently gated server-side; this only controls
+  // whether the menu item is shown (UX, not a security boundary).
+  const { data: me } = trpc.user.me.useQuery(undefined, {
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
+  const isSuperadmin = me?.systemRole === "SUPERADMIN";
 
   const displayName = profile?.fullName?.trim() || profile?.email || "";
   const displayEmail = profile?.email || "";
@@ -154,6 +164,15 @@ export function NavUser() {
                 )}
               </DropdownMenuItem>
             </DropdownMenuGroup>
+            {isSuperadmin && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => router.push("/admin")}>
+                  <IconShieldLock />
+                  Admin
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <IconLogout />

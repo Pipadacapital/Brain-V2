@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.settings.goal_attainment_query import (
+from src.application.contexts.settings.goal_attainment_query import (
     GoalAttainmentQuery,
     GoalFacts,
     GoalRowFact,

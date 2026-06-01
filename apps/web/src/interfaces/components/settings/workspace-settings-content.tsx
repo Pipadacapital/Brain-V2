@@ -103,13 +103,30 @@ function WorkspaceAndFiltersSection({
 
   const utils = trpc.useUtils();
 
+  // Editable tax/filter config, read back from core-service (settings.workspaceConfig).
+  // Closes the prior write-only gap: tax %, skip-zero-sales and skipped-order-tags used
+  // to reset to defaults on reload because the dashboard read (settings.workspace) does
+  // not return them.
+  const configQ = trpc.settings.workspaceConfig.useQuery(undefined, {
+    enabled: canManage,
+    staleTime: 60_000,
+  });
+
   // Populate form from read data
   useEffect(() => {
     if (readResult) {
       setTimezone(readResult.timezone || 'Asia/Kolkata');
-      // tax_percent_bp is not in WorkspaceSettingsResult; starts at 0 until user edits
     }
   }, [readResult?.timezone]);
+
+  // Hydrate the editable tax/filter values from the config readback.
+  useEffect(() => {
+    if (configQ.data) {
+      setTaxPercentStr(bpToPercentStr(configQ.data.tax_percent_bp));
+      setSkipZeroSales(configQ.data.skip_zero_sales_orders);
+      setSkippedTags(configQ.data.skipped_shopify_order_tags ?? []);
+    }
+  }, [configQ.data]);
 
   const timezoneOptions = useMemo(() => {
     const available = getSupportedTimeZones();
@@ -119,6 +136,7 @@ function WorkspaceAndFiltersSection({
   const update = trpc.settings.updateWorkspaceSettings.useMutation({
     onSuccess: () => {
       utils.settings.workspace.invalidate();
+      utils.settings.workspaceConfig.invalidate();
       setSaveSuccess(true);
       setSaveError(null);
       setTimeout(() => setSaveSuccess(false), 2000);

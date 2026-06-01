@@ -21,8 +21,16 @@ Legend: ✅ compliant · 🟡 partial / Phase-0-1-shaped · ❌ missing.
 
 ## B. Service-internal DDD layout
 Every backend service has `bootstrap/ domain/ application/ infrastructure/ interfaces/` ✅.
-Deeper `application/contexts/<bc>/{4 layers}` nesting NOT applied (flat `application/<feature>/`) 🟡 —
-Phase-2 (runbook Phase E).
+Deeper `application/contexts/<bc>/` nesting applied where a service holds multiple bounded
+contexts ✅ — **core-service** (9: connectors, cron, notifications, onboarding, platform-ads,
+product-cogs, settings, store-browser, user-profile) and **analytics-service** (9: catalog,
+cohorts, lifecycle, logistics, ltv, marketing, pnl, settings, store) now live under
+`application/contexts/<bc>/`. Single-concern services keep a flat application layer by design —
+**ingestion** (`application/framework/`) and **intelligence** (`application/gateway/`) each hold one
+framework-level concern, not multiple bounded contexts, so a `contexts/` grouping layer with a single
+child would contradict the spec's intent; **lifecycle/notifications** have empty Phase-2 placeholder
+application layers. Router split (Part 2) done — `router.ts` composes 22 `makeXxxRouter(deps)`
+factories under `interfaces/trpc/`, `BrainRouter` type-seam preserved. Phase E complete.
 
 ## packages (vs spec)
 Present: `config, eslint-config, lib-clickhouse-ts, lib-logger, lib-metrics, proto-ts, ui`.
@@ -41,5 +49,7 @@ workspace_id + trace_id · metric registry parity (lib-metrics ≡ brain_metrics
 Phase 0–1 = 3 backend deployables on Fargate, split to 7 on EKS at Phase 2.
 
 ## Progress (this attempt)
-- **Phase A — IN PROGRESS:** infra/k8s + infra/migrations index + tests/ + this doc (additive, no code moved).
-- Phases B/C/D/E — see `architecture-phase2-restructure-runbook.md` for the ordered, shim-based plan.
+- **Phase A — DONE:** infra/k8s + infra/migrations index + tests/ + this doc (additive, no code moved).
+- **Phases B/C/D — DONE:** packages/pylibs shim-renames + lib-grpc-clients/brain_grpc + connector/kafka extraction.
+- **Phase E — DONE:** context nesting (core-service + analytics-service) + router split (22 factories). See §B.
+- Full ordered history in `architecture-phase2-restructure-runbook.md`.

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.catalog.inventory_levels_query import (
+from src.application.contexts.catalog.inventory_levels_query import (
     InventoryLevelsQuery,
     InventoryFacts,
     InventoryFact,

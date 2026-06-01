@@ -49,7 +49,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ...infrastructure.clickhouse.query_gateway import DateRange
+from ....infrastructure.clickhouse.query_gateway import DateRange
 from .pnl_statement_query import (
     PnlStatementQuery,
     RtoProvisionFacts,

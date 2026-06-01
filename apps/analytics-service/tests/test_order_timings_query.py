@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.lifecycle.order_timings_query import (
+from src.application.contexts.lifecycle.order_timings_query import (
     OrderTimingsQuery,
     TimingsFacts,
     TimingsGroupFact,

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.cohorts.cohort_matrix_query import (
+from src.application.contexts.cohorts.cohort_matrix_query import (
     CohortMatrixQuery,
     CohortFacts,
     CohortFact,

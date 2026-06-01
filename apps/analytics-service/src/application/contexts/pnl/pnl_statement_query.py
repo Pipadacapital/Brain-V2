@@ -49,7 +49,7 @@ from brain_metrics.registry.definitions import (
     true_cm2_mu as _TRUE_CM2_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     MetricRow,
     UnscopedQueryError,

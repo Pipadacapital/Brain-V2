@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.logistics.logistics_query import (
+from src.application.contexts.logistics.logistics_query import (
     LogisticsQuery,
     LogisticsFacts,
     CourierLogisticsFacts,

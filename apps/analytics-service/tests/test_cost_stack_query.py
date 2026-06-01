@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.settings.cost_stack_query import (
+from src.application.contexts.settings.cost_stack_query import (
     CostStackQuery,
     CostStackFacts,
     CogsSettingsFact,

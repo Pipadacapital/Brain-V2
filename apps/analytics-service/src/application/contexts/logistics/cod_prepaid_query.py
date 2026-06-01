@@ -25,7 +25,7 @@ from brain_metrics.registry.definitions import (
     aov_mu as _AOV_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

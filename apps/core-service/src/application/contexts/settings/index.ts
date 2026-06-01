@@ -8,6 +8,7 @@ export {
   deleteMiscExpense,
   getFounderSalary,
   setFounderSalary,
+  getWorkspaceSettings,
   updateWorkspaceSettings,
   deleteWorkspace,
   createGoal,

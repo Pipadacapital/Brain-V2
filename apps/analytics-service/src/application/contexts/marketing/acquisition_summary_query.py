@@ -33,7 +33,7 @@ from brain_metrics.registry.definitions import (
     amer_bp as _AMER_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

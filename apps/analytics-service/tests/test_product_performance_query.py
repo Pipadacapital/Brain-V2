@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.catalog.product_performance_query import (
+from src.application.contexts.catalog.product_performance_query import (
     ProductPerformanceQuery,
     ProductFacts,
     ProductFact,

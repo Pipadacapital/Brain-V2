@@ -443,6 +443,65 @@ export interface WorkspaceSettingsRow {
   updated_at: string
 }
 
+// ---------------------------------------------------------------------------
+// getWorkspaceSettings — READ the tax/filter/COGS config row (workspaces +
+// workspace_cogs_settings) for the workspace. The existing dashboard read
+// (settings.workspace → analytics getWorkspaceSettings) returns only display
+// fields (name/plan/timezone/region); tax_percent_bp, skip_zero_sales_orders,
+// skipped_shopify_order_tags and the COGS overrides were WRITE-ONLY (set via
+// updateWorkspaceSettings, never read back), so a reload lost them from the form.
+// This getter returns the SAME shape updateWorkspaceSettings returns, so the
+// Settings form can hydrate its current values. Scoped under withWorkspace.
+// ---------------------------------------------------------------------------
+export async function getWorkspaceSettings(
+  workspaceId: string,
+  runners: DbRunners = defaultRunners,
+): Promise<WorkspaceSettingsRow> {
+  const fn = 'getWorkspaceSettings'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query<{
+        id: string
+        timezone: string
+        tax_percent_bp: number
+        skip_zero_sales_orders: boolean
+        skipped_shopify_order_tags: string[]
+        updated_at: string
+        override_all_cogs_bp: number | null
+        cogs_markup_bp: number | null
+        fallback_cogs_bp: number | null
+      }>(
+        `SELECT w.id, w.timezone, w.tax_percent_bp, w.skip_zero_sales_orders,
+                w.skipped_shopify_order_tags, w.updated_at::text,
+                c.override_all_cogs_bp, c.cogs_markup_bp, c.fallback_cogs_bp
+           FROM workspaces w
+           LEFT JOIN workspace_cogs_settings c ON c.workspace_id = w.id
+          WHERE w.id = $1`,
+        [workspaceId],
+      )
+      const row = res.rows[0]
+      if (!row) throw new SettingsError('NOT_FOUND', `Workspace ${workspaceId} not found`)
+      log.debug({ fn, workspaceId, duration_ms: Date.now() - t0 }, 'getWorkspaceSettings done')
+      return {
+        id: row.id,
+        timezone: row.timezone,
+        tax_percent_bp: row.tax_percent_bp,
+        skip_zero_sales_orders: row.skip_zero_sales_orders,
+        skipped_shopify_order_tags: row.skipped_shopify_order_tags,
+        override_all_cogs_bp: row.override_all_cogs_bp ?? 0,
+        cogs_markup_bp: row.cogs_markup_bp ?? 0,
+        fallback_cogs_bp: row.fallback_cogs_bp ?? 0,
+        updated_at: row.updated_at,
+      }
+    })
+  } catch (err) {
+    if (err instanceof SettingsError) throw err
+    log.error({ fn, err, workspaceId, duration_ms: Date.now() - t0 }, 'getWorkspaceSettings failed')
+    throw err
+  }
+}
+
 export async function updateWorkspaceSettings(
   workspaceId: string,
   input: WorkspaceSettingsUpdateInput,

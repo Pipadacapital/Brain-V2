@@ -38,13 +38,21 @@ structure/labels; the gaps need connector facts or backend endpoints, logged bel
 Kept Brain's lakh/crore formatMoney as-is (audit noted legacy used en-US grouping). Deliberate
 product-wide choice to ratify, not a regression.
 
-## NOT done — separate dedicated effort (Founder-chosen)
-ADMIN SUITE (/admin/*): BUILD as a separate gated platform-admin surface (new SUPERADMIN role +
-cross-tenant authorization). Security-sensitive; intentionally NOT bolted into the workspace shell.
+## ADMIN SUITE (/admin/*) — DONE (branch feat/admin-suite-platform-admin, commit 14f878d)
+Built as a separate gated platform-admin surface: SUPERADMIN tier (superadminProc, claim.systemRole
+gate), core-service cross-tenant reads (@brain/core-admin: listAllUsers/Workspaces/Connections under
+withSuperadmin), admin.users/workspaces/connections procedures, /admin route group OUTSIDE (shell)
+with a server-component guard + nav-user entry. /admin/sync lists connections cross-tenant but its
+sync TRIGGERS are honest-disabled (connector cutover HELD). Plan column = "—" (no plan tier; not faked).
+Tests: core 7 + gateway 7 (incl. USER/OWNER→FORBIDDEN, no-claim→UNAUTHORIZED) + web 7.
 
 ## Backend follow-ups (logged, non-blocking)
-- settings.getWorkspaceSettings read-getter (tax/filters currently write-only)
-- costs/festivals/goals read queries should return row id for full server-row edit/delete
-- cohort CAC/LTV:CAC need cohort-attributed ad spend
-- pincode revenue/top-courier, product NC/EC, email-sms fuller facts, order-composition: need fact joins / new endpoints
-- inventory lead-time persists in-process locally (production write-path positioned via setLeadTime port)
+- ✅ settings.getWorkspaceSettings read-getter (tax/filters readback) — DONE, commit 69871e0
+  (core getWorkspaceSettings + gateway settings.workspaceConfig + form hydration + tests).
+- ⏳ costs/festivals/goals read queries should return row id for full server-row edit/delete —
+  TRACTABLE next chunk: needs NEW core-service config reads (list* returning ids, the current reads
+  are analytics-aggregate and carry no source Postgres id) + gateway procedures + UI wiring. Not yet done.
+- 🔒 cohort CAC/LTV:CAC need cohort-attributed ad spend — DEFERRED (source facts don't exist locally).
+- 🔒 pincode revenue/top-courier, product NC/EC, email-sms fuller facts, order-composition — DEFERRED
+  (need fact joins / new endpoints with data not present in brain_dev).
+- 🔒 inventory lead-time persists in-process locally (production write-path positioned via setLeadTime port).

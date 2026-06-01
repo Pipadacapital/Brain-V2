@@ -49,6 +49,23 @@ const WS_DATA = {
   request_id: 'req-test',
 };
 
+// settings.workspaceConfig readback (tax/filter/COGS). Reassignable so a hydration
+// test can supply non-zero values; reset to baseline zeros in beforeEach so existing
+// bp-conversion assertions (form edited from baseline 0) still hold.
+const BASELINE_WS_CONFIG = {
+  id: 'ws-test',
+  timezone: 'Asia/Kolkata',
+  tax_percent_bp: 0,
+  skip_zero_sales_orders: false,
+  skipped_shopify_order_tags: [] as string[],
+  override_all_cogs_bp: 0,
+  cogs_markup_bp: 0,
+  fallback_cogs_bp: 5000,
+  updated_at: '2026-01-01T00:00:00.000Z',
+  request_id: 'req-test',
+};
+let WS_CONFIG_DATA: typeof BASELINE_WS_CONFIG = { ...BASELINE_WS_CONFIG };
+
 const COSTS_DATA = {
   result: {
     cogs_mode: 'product+fallback' as const,
@@ -78,6 +95,9 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
       workspace: {
         useQuery: () => ({ data: WS_DATA, isLoading: false, error: null }),
       },
+      workspaceConfig: {
+        useQuery: () => ({ data: WS_CONFIG_DATA, isLoading: false, error: null }),
+      },
       costs: {
         useQuery: () => ({ data: COSTS_DATA, isLoading: false, error: null }),
       },
@@ -98,6 +118,7 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
     useUtils: () => ({
       settings: {
         workspace: { invalidate },
+        workspaceConfig: { invalidate },
         costs: { invalidate },
       },
     }),
@@ -108,6 +129,7 @@ import { WorkspaceSettingsContent } from '@/interfaces/components/settings/works
 
 beforeEach(() => {
   mockRole = 'OWNER';
+  WS_CONFIG_DATA = { ...BASELINE_WS_CONFIG };
   updateWsMutate.mockReset();
   deleteWsMutate.mockReset();
   invalidate.mockReset();
@@ -140,6 +162,20 @@ describe('WorkspaceSettingsContent (Wave-3 CRUD)', () => {
     render(<WorkspaceSettingsContent />);
     expect(screen.queryByTestId('save-workspace-settings-btn')).not.toBeInTheDocument();
     expect(screen.queryByTestId('save-cogs-btn')).not.toBeInTheDocument();
+  });
+
+  it('hydrates tax %, skip-zero-sales and skipped tags from settings.workspaceConfig', () => {
+    // The readback gap fix: a saved 18% tax + skip-zero + a tag must show on reload.
+    WS_CONFIG_DATA = {
+      ...BASELINE_WS_CONFIG,
+      tax_percent_bp: 1800,
+      skip_zero_sales_orders: true,
+      skipped_shopify_order_tags: ['wholesale'],
+    };
+    render(<WorkspaceSettingsContent />);
+    const taxInput = screen.getByLabelText(/workspace tax percentage/i) as HTMLInputElement;
+    expect(taxInput.value).toBe('18.00');
+    expect(screen.getByText('wholesale')).toBeInTheDocument();
   });
 
   it('updateWorkspaceSettings called with correct bp for tax (5% → 500bp)', async () => {

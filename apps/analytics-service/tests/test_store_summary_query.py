@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.store.store_summary_query import (
+from src.application.contexts.store.store_summary_query import (
     ReversalFacts,
     StoreSummaryQuery,
 )

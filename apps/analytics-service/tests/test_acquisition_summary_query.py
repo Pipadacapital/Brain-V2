@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.marketing.acquisition_summary_query import (
+from src.application.contexts.marketing.acquisition_summary_query import (
     AcquisitionSummaryQuery,
     AcquisitionFacts,
     AcquisitionDailyFact,
