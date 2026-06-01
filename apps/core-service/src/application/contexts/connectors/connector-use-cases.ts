@@ -15,9 +15,9 @@
 
 import type { PoolClient } from 'pg'
 import { packageLogger } from '@brain/lib-logger'
-import { withWorkspace } from '../../infrastructure/db/workspace-context.js'
-import { selectCustody } from '../../infrastructure/secrets/custody-factory.js'
-import type { CredentialCustody } from '../../infrastructure/secrets/credential-custody.js'
+import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
+import { selectCustody } from '../../../infrastructure/secrets/custody-factory.js'
+import type { CredentialCustody } from '../../../infrastructure/secrets/credential-custody.js'
 
 // Per-package logger — every line emitted inside this module carries
 // `package: 'core-connectors'` so an on-call sees WHICH package failed

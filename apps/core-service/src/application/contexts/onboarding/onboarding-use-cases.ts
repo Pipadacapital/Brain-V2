@@ -26,7 +26,7 @@
 
 import type { PoolClient } from 'pg'
 import { packageLogger } from '@brain/lib-logger'
-import { withWorkspace, withSuperadmin } from '../../infrastructure/db/workspace-context.js'
+import { withWorkspace, withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 
 // Per-package logger — every line emitted inside this module carries
 // `package: 'core-onboarding'` so an on-call sees WHICH package failed inside
@@ -40,8 +40,8 @@ import {
   type ResolvedMembership,
   type VerifiedIdentity,
   type WorkspaceSummary,
-} from '../../domain/onboarding/membership.js'
-import type { WorkspaceRoleString, SystemRoleString } from '../../domain/auth/brain-claim.js'
+} from '../../../domain/onboarding/membership.js'
+import type { WorkspaceRoleString, SystemRoleString } from '../../../domain/auth/brain-claim.js'
 
 // Allow the DB runner to be injected for unit tests (defaults to the real primitive).
 export interface DbRunners {

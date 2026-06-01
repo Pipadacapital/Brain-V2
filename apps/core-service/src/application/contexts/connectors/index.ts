@@ -46,16 +46,16 @@ export {
 export {
   selectCustody,
   type CustodyBacking,
-} from '../../infrastructure/secrets/custody-factory.js'
+} from '../../../infrastructure/secrets/custody-factory.js'
 
 export {
   type Credential,
   type CredentialCustody,
   CredentialNotFoundError,
-} from '../../infrastructure/secrets/credential-custody.js'
+} from '../../../infrastructure/secrets/credential-custody.js'
 
-export { LocalAesGcmCustody } from '../../infrastructure/secrets/local-aesgcm-custody.js'
-export { HeldProductionCustody, NotImplementedCustodyError } from '../../infrastructure/secrets/production-custody.js'
+export { LocalAesGcmCustody } from '../../../infrastructure/secrets/local-aesgcm-custody.js'
+export { HeldProductionCustody, NotImplementedCustodyError } from '../../../infrastructure/secrets/production-custody.js'
 
 // Boot-time presence assert (CF-TS-FAILFAST-1 / CF-TS-NEVERLOG-1).
 // The gateway boot block calls this alongside assertBootableAuthConfig.

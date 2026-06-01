@@ -21,7 +21,7 @@
 
 import type { PoolClient } from 'pg'
 import { packageLogger } from '@brain/lib-logger'
-import { withSuperadmin } from '../../infrastructure/db/workspace-context.js'
+import { withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 
 // Per-package logger — every line emitted inside this module carries
 // `package: 'core-notifications'` so an on-call sees WHICH package failed

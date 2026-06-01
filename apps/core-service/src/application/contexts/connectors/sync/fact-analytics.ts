@@ -16,7 +16,7 @@
  */
 
 import type { PoolClient } from 'pg'
-import { withWorkspace, withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
+import { withWorkspace, withSuperadmin } from '../../../../infrastructure/db/workspace-context.js'
 import {
   readStoreSummaryCH, readPnlCH, readMarketingCH, readCogsCH, readProductPerformanceCH,
   readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH,

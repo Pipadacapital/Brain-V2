@@ -21,9 +21,9 @@
  */
 
 import type { PoolClient } from 'pg'
-import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
-import { selectCustody } from '../../../infrastructure/secrets/custody-factory.js'
-import { CredentialNotFoundError, type CredentialCustody } from '../../../infrastructure/secrets/credential-custody.js'
+import { withWorkspace } from '../../../../infrastructure/db/workspace-context.js'
+import { selectCustody } from '../../../../infrastructure/secrets/custody-factory.js'
+import { CredentialNotFoundError, type CredentialCustody } from '../../../../infrastructure/secrets/credential-custody.js'
 import type { ConnectorVendor } from '../oauth-state.js'
 import { ConnectorError } from '../connector-use-cases.js'
 import {

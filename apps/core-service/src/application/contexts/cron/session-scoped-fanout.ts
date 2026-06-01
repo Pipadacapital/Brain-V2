@@ -22,7 +22,7 @@
  * Child-3 supplies the concrete doWork implementations per connector.
  */
 
-import { withSuperadmin, withWorkspace, getCorrelation } from '../../infrastructure/db/workspace-context.js'
+import { withSuperadmin, withWorkspace, getCorrelation } from '../../../infrastructure/db/workspace-context.js'
 import type { PoolClient } from 'pg'
 
 // ---------------------------------------------------------------------------

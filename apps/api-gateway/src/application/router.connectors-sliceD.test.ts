@@ -13,7 +13,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../../core-service/src/application/connectors/index.ts', () => {
+vi.mock('../../../core-service/src/application/contexts/connectors/index.ts', () => {
   class ConnectorError extends Error {
     constructor(public code: string, message: string) {
       super(message);

@@ -13,13 +13,13 @@ import {
   customerRef,
   resolveGstSlabBp,
   INDIA_DEFAULT_GST_BP,
-} from '../application/connectors/sync/acl.js'
+} from '../application/contexts/connectors/sync/acl.js'
 import {
   normalizeShopifyOrder,
   normalizeMetaSpend,
   normalizeGoogleSpend,
   type ShopifyOrderNode,
-} from '../application/connectors/sync/normalizers.js'
+} from '../application/contexts/connectors/sync/normalizers.js'
 
 describe('Slice E — decimalStringToMinorUnits (no float drift)', () => {
   it('converts a 2-decimal rupee string exactly (the float trap)', () => {

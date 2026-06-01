@@ -17,7 +17,7 @@
 
 import { createHash, randomBytes } from 'node:crypto'
 import type { PoolClient } from 'pg'
-import { withSuperadmin } from '../../infrastructure/db/workspace-context.js'
+import { withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 
 const STATE_TTL_MS = 10 * 60 * 1000 // 10 minutes
 

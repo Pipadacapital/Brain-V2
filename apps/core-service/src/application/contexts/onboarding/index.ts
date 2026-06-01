@@ -25,4 +25,4 @@ export {
   type ResolvedMembership,
   type VerifiedIdentity,
   type WorkspaceSummary,
-} from '../../domain/onboarding/membership.js'
+} from '../../../domain/onboarding/membership.js'

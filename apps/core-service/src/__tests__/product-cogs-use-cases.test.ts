@@ -20,7 +20,7 @@ import {
   listProductsForCogs,
   updateProductCogs,
   bulkUpdateProductCogs,
-} from '../application/product-cogs/product-cogs-use-cases.js'
+} from '../application/contexts/product-cogs/product-cogs-use-cases.js'
 import type { PoolClient } from 'pg'
 
 // ---------------------------------------------------------------------------

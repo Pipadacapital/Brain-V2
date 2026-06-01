@@ -17,7 +17,7 @@ import {
   META_SCOPES,
   GOOGLE_SCOPES,
   type ProviderHttp,
-} from '../application/connectors/provider-config.js'
+} from '../application/contexts/connectors/provider-config.js'
 
 const ENV = {
   SHOPIFY_CLIENT_ID: 'test_shopify_id',

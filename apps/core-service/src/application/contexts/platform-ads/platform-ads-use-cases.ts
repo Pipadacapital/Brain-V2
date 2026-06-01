@@ -30,7 +30,7 @@
  */
 
 import type { PoolClient } from 'pg'
-import { withWorkspace } from '../../infrastructure/db/workspace-context.js'
+import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
 
 export type AdVendor = 'META' | 'GOOGLE'
 

@@ -12,12 +12,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Pool } from 'pg'
 import { randomUUID, createHmac } from 'node:crypto'
-import { buildAuthUrl, type ProviderHttp } from '../../application/connectors/provider-config.js'
+import { buildAuthUrl, type ProviderHttp } from '../../application/contexts/connectors/provider-config.js'
 import {
   completeCallback,
   listConnectors,
-} from '../../application/connectors/connector-use-cases.js'
-import { generateNonce, createOAuthState } from '../../application/connectors/oauth-state.js'
+} from '../../application/contexts/connectors/connector-use-cases.js'
+import { generateNonce, createOAuthState } from '../../application/contexts/connectors/oauth-state.js'
 import { withWorkspace, _resetPoolForTest } from '../../infrastructure/db/workspace-context.js'
 import { LocalAesGcmCustody } from '../../infrastructure/secrets/local-aesgcm-custody.js'
 

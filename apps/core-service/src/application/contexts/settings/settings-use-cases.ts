@@ -21,7 +21,7 @@
 
 import type { PoolClient } from 'pg'
 import { packageLogger } from '@brain/lib-logger'
-import { withWorkspace, withSuperadmin } from '../../infrastructure/db/workspace-context.js'
+import { withWorkspace, withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 
 const log = packageLogger('api-gateway', 'core-settings')
 

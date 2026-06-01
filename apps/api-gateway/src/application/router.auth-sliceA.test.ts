@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the core-onboarding use-cases the router calls (DB-backed in production).
 // Mock the RESOLVED source path the vitest alias points to (reliable interception).
-vi.mock('../../../core-service/src/application/onboarding/index.ts', () => ({
+vi.mock('../../../core-service/src/application/contexts/onboarding/index.ts', () => ({
   listWorkspaces: vi.fn(),
   ensureUser: vi.fn(),
   completeOnboarding: vi.fn(),

@@ -18,7 +18,7 @@
  */
 
 import type { PoolClient } from 'pg'
-import { withSuperadmin } from '../../infrastructure/db/workspace-context.js'
+import { withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 
 export interface AccountProfile {
   id: string

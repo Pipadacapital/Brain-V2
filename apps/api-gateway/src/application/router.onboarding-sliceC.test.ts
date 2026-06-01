@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock the core-onboarding barrel by its RESOLVED source path (the vitest alias
 // points '@brain/core-onboarding' here). Mocking the resolved path is the reliable
 // way to intercept an aliased module's named exports.
-vi.mock('../../../core-service/src/application/onboarding/index.ts', () => {
+vi.mock('../../../core-service/src/application/contexts/onboarding/index.ts', () => {
   class OnboardingError extends Error {
     constructor(public code: string, message: string) {
       super(message);
