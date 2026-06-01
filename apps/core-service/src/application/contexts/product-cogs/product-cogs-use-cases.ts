@@ -23,6 +23,7 @@
 
 import type { PoolClient } from 'pg'
 import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
+import { boundedOffset } from '../../shared/pagination.js'
 
 export type CogsFilter = 'all' | 'set' | 'not_set'
 export type StatusFilter = 'all' | 'ACTIVE' | 'DRAFT' | 'ARCHIVED'
@@ -53,6 +54,9 @@ export interface ListResult {
   page: number
   pageSize: number
   totalPages: number
+  // C10: true when the requested page is beyond MAX_OFFSET — rows are empty and
+  // the caller should prompt the user to refine filters (deep-page guard).
+  capped?: boolean
 }
 
 export interface ListOptions {
@@ -72,7 +76,7 @@ export async function listProductsForCogs(
 ): Promise<ListResult> {
   const page = Math.max(1, opts.page ?? 1)
   const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(10, opts.pageSize ?? DEFAULT_PAGE_SIZE))
-  const offset = (page - 1) * pageSize
+  const { offset, capped } = boundedOffset(page, pageSize)
   const search = (opts.search ?? '').trim()
   const status = opts.status ?? 'all'
   const cogsFilter = opts.cogsFilter ?? 'all'
@@ -101,6 +105,19 @@ export async function listProductsForCogs(
       args,
     )
     const total = Number(cnt.rows[0]?.n ?? '0')
+
+    // C10 deep-page guard: refuse pages past MAX_OFFSET — return an empty,
+    // "refine your filters" page instead of running an O(n) deep-OFFSET scan.
+    if (capped) {
+      return {
+        rows: [],
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1,
+        capped: true,
+      }
+    }
 
     // page — title ASC for stable pagination (legacy parity).
     args.push(pageSize, offset)
