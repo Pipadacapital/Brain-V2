@@ -72,6 +72,24 @@ apps/ingestion-service
 apps/intelligence-service
 pylibs
 
+# --- Phase-A PA-1: re-include the ingestion-service image build inputs ---------
+# ingestion-service now ships as its own uv image. Re-include exactly what its
+# Dockerfile COPYs (workspace member manifests + ingestion src + pylibs), then
+# re-exclude heavy/test/secret artifacts (last match wins in .dockerignore) so
+# the build context stays lean. Node (api-gateway/web) images are unaffected.
+!apps/ingestion-service/pyproject.toml
+!apps/ingestion-service/src
+!apps/analytics-service/pyproject.toml
+!apps/analytics-service/src
+!apps/intelligence-service/pyproject.toml
+!apps/intelligence-service/src
+!pylibs
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/tests
+
 # --- Tooling + docs we don't ship ---
 docs
 tools/migrate-legacy

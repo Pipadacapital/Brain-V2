@@ -127,19 +127,19 @@ def assert_postgres_read_only_role(dsn: str | None = None) -> None:
         )
 
     try:
-        import psycopg2  # type: ignore[import-untyped]
+        import psycopg  # type: ignore[import-untyped]
     except ImportError:
         logger.warning(
-            "psycopg2 not available; skipping read-only role check. "
-            "Install psycopg2 in production. CF-C4-SINGLE-WRITER-GREP-2."
+            "psycopg not available; skipping read-only role check. "
+            "psycopg[binary] is a declared dependency — this branch must be unreachable "
+            "in a correctly built image. CF-C4-SINGLE-WRITER-GREP-2."
         )
         return
 
     write_privilege_types = ("INSERT", "UPDATE", "DELETE", "TRUNCATE")
 
     try:
-        conn = psycopg2.connect(pg_dsn)
-        conn.autocommit = True
+        conn = psycopg.connect(pg_dsn, autocommit=True)
         cur = conn.cursor()
 
         # Query role_table_grants for write privileges on ANY table.
@@ -171,7 +171,7 @@ def assert_postgres_read_only_role(dsn: str | None = None) -> None:
             "CF-C4-SINGLE-WRITER-GREP-2: Postgres read-only role verified (no write grants). Proceeding."
         )
 
-    except psycopg2.Error as exc:
+    except psycopg.Error as exc:
         raise EnvironmentError(
             f"CF-C4-SINGLE-WRITER-GREP-2: Failed to verify Postgres read-only role: {exc}. "
             "Cannot start analytics-service without confirming single-writer safety."

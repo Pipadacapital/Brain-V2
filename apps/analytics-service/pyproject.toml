@@ -3,7 +3,15 @@ name = "analytics-service"
 version = "0.0.0"
 requires-python = ">=3.13,<3.14"
 description = "Metric engine, ClickHouse query layer, Decision-Log writer, RTO/COD/GST analytics over integer minor-unit inputs. Phase 0-1 deployable. uv workspace member."
-dependencies = []
+dependencies = [
+  # ClickHouse OLAP driver — the query gateway (infrastructure/clickhouse) speaks this.
+  "clickhouse-connect>=0.8.0",
+  # Postgres v3 — the read-only-role startup probe connects with this (psycopg, not psycopg2).
+  "psycopg[binary]>=3.3.4",
+  # Internal gRPC server transport (health surface in PA-2a; MetricsService servicer later).
+  "grpcio>=1.68.0,<2.0.0",
+  "grpcio-health-checking>=1.68.0,<2.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]
