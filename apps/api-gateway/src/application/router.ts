@@ -113,6 +113,8 @@ import {
 } from '../domain/idempotency.js';
 import { assertPageInsightGates } from '../domain/insight-gates.js';
 import type { DataPlanePort } from '../domain/proto-types.js';
+// Phase-E router split: thin per-domain routers under interfaces/trpc/.
+import { makeAuthRouter } from '../interfaces/trpc/make-auth-router.js';
 
 // ---------------------------------------------------------------------------
 // Router factory — accepts the DataPlanePort and IdempotencyStore as deps.
@@ -205,19 +207,9 @@ export function createBrainRouter(
   idempotencyStore: IdempotencyStore,
 ) {
   // -------------------------------------------------------------------
-  // auth router
+  // auth router — extracted to interfaces/trpc/make-auth-router.ts (Phase-E split)
   // -------------------------------------------------------------------
-  const authRouter = router({
-    /** Return the current session claim (authed tier). */
-    session: authedProc.query(({ ctx }) => {
-      return {
-        userId: ctx.claim.userId,
-        workspaceId: ctx.claim.workspaceId,
-        workspaceRole: ctx.claim.workspaceRole,
-        requestId: ctx.requestId,
-      };
-    }),
-  });
+  const authRouter = makeAuthRouter();
 
   // -------------------------------------------------------------------
   // workspace router
