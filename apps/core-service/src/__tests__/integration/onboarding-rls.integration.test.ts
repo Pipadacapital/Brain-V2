@@ -28,7 +28,7 @@ import {
   listWorkspaces,
   acceptInvitation,
   ensureUser,
-} from '../../application/onboarding/onboarding-use-cases.js'
+} from '../../application/contexts/onboarding/onboarding-use-cases.js'
 import { _resetPoolForTest } from '../../infrastructure/db/workspace-context.js'
 
 const IS_INTEGRATION = process.env['INTEGRATION_TEST'] === 'true'

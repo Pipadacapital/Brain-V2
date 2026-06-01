@@ -17,6 +17,12 @@ import type {
   ResponseKind,
   CreateMarketingActionInput,
   UpdateMarketingActionInput,
+  InventorySetLeadTimeInput,
+  TeamInviteParams,
+  TeamChangeRoleParams,
+  TeamRemoveMemberParams,
+  TeamRevokeInviteParams,
+  TeamTransferOwnershipParams,
 } from '../domain/proto-types.js';
 import { LocalDbDataPlane } from './local-db-data-plane.js';
 
@@ -55,7 +61,7 @@ export class DispatchingDataPlane implements DataPlanePort {
   getRtoAnalytics(p: { workspace_id: string; date_range: DateRange }) {
     return this.plane(p.workspace_id).getRtoAnalytics(p);
   }
-  getCodPrepaid(p: { workspace_id: string; date_range: DateRange }) {
+  getCodPrepaid(p: Parameters<DataPlanePort['getCodPrepaid']>[0]) {
     return this.plane(p.workspace_id).getCodPrepaid(p);
   }
   getLogistics(p: { workspace_id: string; date_range: DateRange }) {
@@ -167,5 +173,30 @@ export class DispatchingDataPlane implements DataPlanePort {
   }
   deleteMarketingAction(p: { workspace_id: string; action_id: string }) {
     return this.plane(p.workspace_id).deleteMarketingAction(p);
+  }
+
+  // Wave-4A: lead-time mutation — routed by workspace_id like all other write methods.
+  setLeadTime(p: InventorySetLeadTimeInput) {
+    return this.plane(p.workspace_id).setLeadTime(p);
+  }
+
+  // Team CRUD mutations (parity-38 feat-parity-w6b).
+  listPendingInvitations(p: { workspace_id: string }) {
+    return this.plane(p.workspace_id).listPendingInvitations(p);
+  }
+  teamInviteMember(p: TeamInviteParams) {
+    return this.plane(p.workspace_id).teamInviteMember(p);
+  }
+  teamChangeRole(p: TeamChangeRoleParams) {
+    return this.plane(p.workspace_id).teamChangeRole(p);
+  }
+  teamRemoveMember(p: TeamRemoveMemberParams) {
+    return this.plane(p.workspace_id).teamRemoveMember(p);
+  }
+  teamRevokeInvite(p: TeamRevokeInviteParams) {
+    return this.plane(p.workspace_id).teamRevokeInvite(p);
+  }
+  teamTransferOwnership(p: TeamTransferOwnershipParams) {
+    return this.plane(p.workspace_id).teamTransferOwnership(p);
   }
 }

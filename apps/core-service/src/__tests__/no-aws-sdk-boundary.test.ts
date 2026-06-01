@@ -21,7 +21,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { assertShopifyOAuthSecretsPresent } from '../application/connectors/boot-assert.js'
+import { assertShopifyOAuthSecretsPresent } from '../application/contexts/connectors/boot-assert.js'
 
 // Resolve the source root relative to THIS test file (src/__tests__/…).
 // __dirname is not available in ESM; derive from import.meta.url.

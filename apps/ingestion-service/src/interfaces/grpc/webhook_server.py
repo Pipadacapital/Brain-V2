@@ -23,7 +23,7 @@ Startup integration:
 
 gRPC generated stubs:
   The real proto-generated stub (brain.ingestion.v1.WebhookIngestService) is produced
-  by `buf generate protos` into pylibs/proto_py/proto_py/_gen/.
+  by `buf generate protos` into pylibs/brain_grpc/brain_grpc/_gen/.
   In this slice the servicer is registered against the stub at startup.
   Tests bypass the server and test the servicer directly.
 
@@ -117,11 +117,11 @@ async def start_webhook_grpc_server(
 
     # Register the servicer.
     # The generated stub add_WebhookIngestServicerToServer is produced by
-    # `buf generate protos` into pylibs/proto_py/proto_py/_gen/.
+    # `buf generate protos` into pylibs/brain_grpc/brain_grpc/_gen/.
     # HELD: the import below resolves only when codegen has run.
     # For Stage-3 testing, the servicer is tested directly (no server needed).
     try:
-        from proto_py._gen.brain.ingestion.v1 import ingestion_grpc
+        from brain_grpc._gen.brain.ingestion.v1 import ingestion_grpc
         ingestion_grpc.add_WebhookIngestServicerToServer(servicer, server)
     except ImportError:
         logger.warning(

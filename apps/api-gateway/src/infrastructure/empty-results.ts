@@ -37,6 +37,7 @@ const base = (ws: string) => ({
 
 export const emptyRtoAnalytics = (ws: string): RtoAnalyticsResult => ({
   ...base(ws),
+  connected: false,
   total_shipments: 0n,
   rto_count: 0n,
   rto_rate_bp: null,
@@ -44,10 +45,12 @@ export const emptyRtoAnalytics = (ws: string): RtoAnalyticsResult => ({
   revenue_lost_to_rto_mu: 0n,
   by_payment_method: [],
   by_courier: [],
+  by_product: [],
 });
 
 export const emptyCodPrepaid = (ws: string): CodPrepaidResult => ({
   ...base(ws),
+  connected: false,
   cod_orders: 0n,
   prepaid_orders: 0n,
   cod_realization_rate_bp: null,
@@ -59,6 +62,7 @@ export const emptyCodPrepaid = (ws: string): CodPrepaidResult => ({
   average_order_value_mu: null,
   breakeven_cod_rto_rate_bp: null,
   breakeven_note: null,
+  fee_overrides: {},
   comparison: [],
 });
 

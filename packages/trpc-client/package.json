@@ -1,0 +1,16 @@
+{
+  "name": "@brain/trpc-client",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared tRPC client + AppRouter types (spec: packages/trpc-client). Hosts the typed `trpc` React hooks object + a vanilla client factory bound to the gateway BrainRouter. Platform-specific link/header factories (supabase token, localStorage workspace) live in the consuming app.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@brain/api-gateway": "workspace:*",
+    "@trpc/client": "^11.1.2",
+    "@trpc/react-query": "^11.1.2",
+    "superjson": "^2.2.2"
+  }
+}

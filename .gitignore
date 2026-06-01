@@ -25,7 +25,7 @@ dist/
 .turbo/
 
 # Generated TypeScript stubs (buf generate → regenerated in CI; see DECISIONS.md §3)
-packages/proto-ts/gen/
+packages/lib-grpc-clients/gen/
 
 # Python / uv
 .venv/

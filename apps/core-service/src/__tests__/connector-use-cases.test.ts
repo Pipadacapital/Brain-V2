@@ -15,10 +15,10 @@ import {
   listConnectors,
   disconnect,
   ConnectorError,
-} from '../application/connectors/connector-use-cases.js'
-import { hashState } from '../application/connectors/oauth-state.js'
+} from '../application/contexts/connectors/connector-use-cases.js'
+import { hashState } from '../application/contexts/connectors/oauth-state.js'
 import type { CredentialCustody } from '../infrastructure/secrets/credential-custody.js'
-import type { ProviderHttp } from '../application/connectors/provider-config.js'
+import type { ProviderHttp } from '../application/contexts/connectors/provider-config.js'
 import { createHmac } from 'node:crypto'
 
 const WS = '00000000-0000-0000-0000-0000000000aa'
@@ -90,7 +90,7 @@ function makeStores() {
 // for withWorkspace + custody + http, and patch oauth-state's runner through env-free mock
 // by spying on the DB primitive module. Simpler: drive createOAuthState/validate through
 // the same mock by importing the runner injection on those functions.
-import * as oauthState from '../application/connectors/oauth-state.js'
+import * as oauthState from '../application/contexts/connectors/oauth-state.js'
 
 function mockCustody(store: Map<string, Record<string, unknown>>): CredentialCustody {
   return {

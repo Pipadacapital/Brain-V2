@@ -92,6 +92,14 @@ import type {
   WorkspaceSettingsResult,
   IntegrationsResult,
   BackfillStatusResult,
+  // Team CRUD mutations (parity-38 feat-parity-w6b):
+  PendingInvitationRow,
+  TeamInviteParams,
+  TeamChangeRoleParams,
+  TeamRemoveMemberParams,
+  TeamRevokeInviteParams,
+  TeamTransferOwnershipParams,
+  TeamMutationResult,
 } from '../domain/proto-types.js';
 import {
   INVENTORY_DAYS_LEFT,
@@ -394,6 +402,7 @@ function buildSugandhlokRtoAnalytics(): RtoAnalyticsResult {
     period: c.period,
     data_epoch: DATA_EPOCH,
     currency_code: c.currency_code,
+    connected: true,
     total_shipments: c.total_shipments,
     rto_count: c.rto_orders,
     rto_rate_bp: _ratioBp(c.rto_orders, c.total_shipments), // 224/1247 = 1796bp
@@ -409,40 +418,53 @@ function buildSugandhlokRtoAnalytics(): RtoAnalyticsResult {
       { courier_name: 'Delhivery', rto_count: 120n, rto_cost_mu: 2_400_000n, revenue_lost_mu: 18_000_000n },
       { courier_name: 'Bluedart', rto_count: 104n, rto_cost_mu: 2_080_000n, revenue_lost_mu: 15_200_000n },
     ],
+    by_product: [], // Shopify enrichment deferred (no mapped-order join in loopback seed)
   };
 }
 
-function buildSugandhlokCodPrepaid(): CodPrepaidResult {
+function buildSugandhlokCodPrepaid(feeOverrides?: import('../domain/proto-types.js').CodPrepaidFeeOverrides): CodPrepaidResult {
   const c = SUGANDH_LOK_CANONICAL;
   const totalOrders = c.cod_orders + c.prepaid_orders;            // 1000
   const totalGross = c.gross_revenue_cod_mu + c.gross_revenue_prepaid_mu; // 150_000_000
   const aov = totalOrders > 0n ? totalGross / totalOrders : 0n;   // 150000
   const codRtoBp = _ratioBp(c.cod_rto, c.cod_orders) ?? 0;        // 2250
   const prepaidRtoBp = _ratioBp(c.prepaid_rto, c.prepaid_orders) ?? 0; // 500
+  // Fee assumptions — defaults match legacy (₹30 COD fee, ₹80 return shipping, 2% gateway).
+  const codFeePerOrder = feeOverrides?.cod_fee_per_order_mu ?? c.cod_fee_mu;
+  const returnShipping = feeOverrides?.return_shipping_per_rto_mu ?? c.return_shipping_mu;
+  const gatewayFeeBp = feeOverrides?.gateway_fee_bp ?? c.gateway_fee_bp;
   // Effective revenue (integer FLOOR), mirrors the use-case.
   const codSurvived = c.gross_revenue_cod_mu - (c.gross_revenue_cod_mu * BigInt(codRtoBp)) / 10000n;
   const prepaidSurvived =
     c.gross_revenue_prepaid_mu - (c.gross_revenue_prepaid_mu * BigInt(prepaidRtoBp)) / 10000n;
-  const codFeeTotal = c.cod_orders * c.cod_fee_mu;
-  const gatewayFeeTotal = (c.gross_revenue_prepaid_mu * BigInt(c.gateway_fee_bp)) / 10000n;
-  const codReturnShip = c.cod_rto * c.return_shipping_mu;
-  const prepaidReturnShip = c.prepaid_rto * c.return_shipping_mu;
+  const codFeeTotal = c.cod_orders * codFeePerOrder;
+  const gatewayFeeTotal = (c.gross_revenue_prepaid_mu * BigInt(gatewayFeeBp)) / 10000n;
+  const codReturnShip = c.cod_rto * returnShipping;
+  const prepaidReturnShip = c.prepaid_rto * returnShipping;
   const effCod = codSurvived - codFeeTotal - codReturnShip;
   const effPrepaid = prepaidSurvived - gatewayFeeTotal - prepaidReturnShip;
+  const codFeeTotalRow = codFeeTotal + codReturnShip;
+  const prepaidFeeTotalRow = gatewayFeeTotal + prepaidReturnShip;
   // Break-even (FULL legacy formula) — single final FLOOR-to-bp.
   const restocking = 0n;
-  const denom = aov + c.return_shipping_mu + restocking;
-  const pgFee = (aov * BigInt(c.gateway_fee_bp)) / 10000n;
+  const denom = aov + returnShipping + restocking;
+  const pgFee = (aov * BigInt(gatewayFeeBp)) / 10000n;
   const numScaled =
     aov * BigInt(prepaidRtoBp) +
-    (c.cod_fee_mu - pgFee) * 10000n +
-    BigInt(prepaidRtoBp) * (c.return_shipping_mu + restocking);
+    (codFeePerOrder - pgFee) * 10000n +
+    BigInt(prepaidRtoBp) * (returnShipping + restocking);
   const breakeven = denom > 0n ? Number(numScaled / denom) : null; // 500bp
+  const appliedOverrides: import('../domain/proto-types.js').CodPrepaidFeeOverrides = {
+    cod_fee_per_order_mu: codFeePerOrder,
+    return_shipping_per_rto_mu: returnShipping,
+    gateway_fee_bp: gatewayFeeBp,
+  };
   return {
     workspace_id: SUGANDH_LOK_WORKSPACE_ID,
     period: c.period,
     data_epoch: DATA_EPOCH,
     currency_code: c.currency_code,
+    connected: true,
     cod_orders: c.cod_orders,
     prepaid_orders: c.prepaid_orders,
     cod_realization_rate_bp: _ratioBp(c.cod_delivered, c.cod_orders), // 7650
@@ -454,6 +476,7 @@ function buildSugandhlokCodPrepaid(): CodPrepaidResult {
     average_order_value_mu: aov,
     breakeven_cod_rto_rate_bp: breakeven,
     breakeven_note: null,
+    fee_overrides: appliedOverrides,
     comparison: [
       {
         payment_method: 'COD',
@@ -461,7 +484,8 @@ function buildSugandhlokCodPrepaid(): CodPrepaidResult {
         gross_revenue_mu: c.gross_revenue_cod_mu,
         rto_rate_bp: codRtoBp,
         effective_revenue_mu: effCod,
-        fee_total_mu: codFeeTotal + codReturnShip,
+        fee_total_mu: codFeeTotalRow,
+        net_revenue_mu: effCod - codFeeTotalRow,
         net_revenue_per_order_mu: c.cod_orders > 0n ? effCod / c.cod_orders : null,
       },
       {
@@ -470,7 +494,8 @@ function buildSugandhlokCodPrepaid(): CodPrepaidResult {
         gross_revenue_mu: c.gross_revenue_prepaid_mu,
         rto_rate_bp: prepaidRtoBp,
         effective_revenue_mu: effPrepaid,
-        fee_total_mu: gatewayFeeTotal + prepaidReturnShip,
+        fee_total_mu: prepaidFeeTotalRow,
+        net_revenue_mu: effPrepaid - prepaidFeeTotalRow,
         net_revenue_per_order_mu: c.prepaid_orders > 0n ? effPrepaid / c.prepaid_orders : null,
       },
     ],
@@ -1323,6 +1348,40 @@ function buildSugandhlokProductPerformance(filters?: ProductFilterInput): Produc
     rows = rows.filter((r) => r.label.toLowerCase().includes(q));
   }
 
+  // Multi-column sort honoring the full sort enum.
+  const cmp = (a: ProductRow, b: ProductRow): number => {
+    let diff = 0;
+    switch (sort) {
+      case 'label': diff = a.label.localeCompare(b.label); break;
+      case 'revenue': diff = Number(a.revenue_mu - b.revenue_mu); break;
+      case 'sold': diff = Number(a.sold - b.sold); break;
+      case 'refunded': diff = Number(a.refunded - b.refunded); break;
+      case 'net_quantity': diff = Number(a.net_quantity - b.net_quantity); break;
+      case 'orders': diff = Number(a.orders - b.orders); break;
+      case 'aov': diff = Number((a.aov_mu ?? 0n) - (b.aov_mu ?? 0n)); break;
+      case 'cm1_pct': diff = (a.cm1_pct_bp ?? 0) - (b.cm1_pct_bp ?? 0); break;
+      case 'cm1_total': diff = (a.cm1_total_share_bp ?? 0) - (b.cm1_total_share_bp ?? 0); break;
+      case 'return_rate': diff = (a.return_rate_bp ?? 0) - (b.return_rate_bp ?? 0); break;
+      case 'pareto_grade': {
+        const gradeOrd: Record<string, number> = { A: 3, B: 2, C: 1, F: 0 };
+        diff = (gradeOrd[a.pareto_grade] ?? 0) - (gradeOrd[b.pareto_grade] ?? 0);
+        break;
+      }
+      default: diff = Number(a.cm1_mu - b.cm1_mu);
+    }
+    return direction === 'asc' ? diff : -diff;
+  };
+  rows = [...rows].sort(cmp);
+
+  const totalRowsBeforePage = rows.length;
+  // Apply server-side pagination if requested.
+  const pageSize = filters?.page_size ?? 0;
+  if (pageSize > 0) {
+    const page = Math.max(1, filters?.page ?? 1);
+    const start = (page - 1) * pageSize;
+    rows = rows.slice(start, start + pageSize);
+  }
+
   return {
     workspace_id: SUGANDH_LOK_WORKSPACE_ID,
     period: SUGANDH_LOK_CANONICAL.period,
@@ -1332,7 +1391,7 @@ function buildSugandhlokProductPerformance(filters?: ProductFilterInput): Produc
     sort,
     direction,
     total_cm1_mu: totalCm1,
-    total_rows: BigInt(rows.length),
+    total_rows: BigInt(totalRowsBeforePage),
     rows,
   };
 }
@@ -1901,21 +1960,29 @@ function buildSugandhlokEmailSmsPerformance(filters?: EmailSmsFilterInput): Emai
   };
   const seeds = seedByGroup[groupBy] ?? seedByGroup.campaign;
 
-  const rows: EmailPerfRow[] = seeds.map((s) => ({
-    key: s.key,
-    label: s.label,
-    channel: s.channel,
-    delivered: BigInt(s.delivered),
-    unique_opens: BigInt(s.opens),
-    unique_clicks: BigInt(s.clicks),
-    orders: BigInt(s.orders),
-    revenue_mu: s.revenue_mu,
-    unsubscribes: BigInt(s.unsub),
-    spam_complaints: BigInt(s.spam),
-    open_rate_bp: s.delivered > 0 ? (EMAIL_OPEN_RATE_BP.formula_ts(BigInt(s.opens), BigInt(s.delivered)) as number) : null,
-    click_rate_bp: s.delivered > 0 ? (EMAIL_CLICK_RATE_BP.formula_ts(BigInt(s.clicks), BigInt(s.delivered)) as number) : null,
-    revenue_per_recipient_mu: s.delivered > 0 ? (EMAIL_REVENUE_PER_RECIPIENT_MU.formula_ts(s.revenue_mu, BigInt(s.delivered)) as bigint) : null,
-  }));
+  const rows: EmailPerfRow[] = seeds.map((s) => {
+    const delivered = BigInt(s.delivered);
+    const uniqueOpens = BigInt(s.opens);
+    const revenueMu = s.revenue_mu;
+    return {
+      key: s.key,
+      label: s.label,
+      channel: s.channel,
+      delivered,
+      unique_opens: uniqueOpens,
+      unique_clicks: BigInt(s.clicks),
+      orders: BigInt(s.orders),
+      revenue_mu: revenueMu,
+      unsubscribes: BigInt(s.unsub),
+      spam_complaints: BigInt(s.spam),
+      open_rate_bp: s.delivered > 0 ? (EMAIL_OPEN_RATE_BP.formula_ts(uniqueOpens, delivered) as number) : null,
+      click_rate_bp: s.delivered > 0 ? (EMAIL_CLICK_RATE_BP.formula_ts(BigInt(s.clicks), delivered) as number) : null,
+      revenue_per_recipient_mu: s.delivered > 0 ? (EMAIL_REVENUE_PER_RECIPIENT_MU.formula_ts(revenueMu, delivered) as bigint) : null,
+      revenue_per_unique_open_mu: s.opens > 0 ? revenueMu / uniqueOpens : null,
+      unsubscribe_rate_bp: s.delivered > 0 ? Math.round((s.unsub * 10000) / s.delivered) : null,
+      spam_rate_bp: s.delivered > 0 ? Math.round((s.spam * 10000) / s.delivered) : null,
+    };
+  });
 
   if (groupBy === 'dow') {
     rows.sort((a, b) => a.key.localeCompare(b.key));
@@ -2091,11 +2158,12 @@ export class StubDataPlane implements DataPlanePort {
   async getCodPrepaid(params: {
     workspace_id: string;
     date_range: DateRange;
+    fee_overrides?: import('../domain/proto-types.js').CodPrepaidFeeOverrides;
   }): Promise<{ result: CodPrepaidResult; data_epoch: Date }> {
     if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
       throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
     }
-    return { result: buildSugandhlokCodPrepaid(), data_epoch: DATA_EPOCH };
+    return { result: buildSugandhlokCodPrepaid(params.fee_overrides), data_epoch: DATA_EPOCH };
   }
 
   async getLogistics(params: {
@@ -2526,6 +2594,88 @@ export class StubDataPlane implements DataPlanePort {
       distinct_statuses: [],
       data_epoch: DATA_EPOCH,
     };
+  }
+
+  // Wave-4A: lead-time mutation (MANAGER-gated). In-memory override for the stub plane.
+  async setLeadTime(params: InventorySetLeadTimeInput): Promise<InventorySetLeadTimeResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return setLeadTimeLoopback(params.sku, params.lead_time_days);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Team CRUD mutations — stub plane (parity-38 feat-parity-w6b).
+  // The loopback/stub plane uses an in-memory store; Sugandh members are seeded.
+  // ---------------------------------------------------------------------------
+  private readonly _pendingInvitations: PendingInvitationRow[] = [];
+  private _stubMembers = buildSugandhlokMembers().members;
+
+  async listPendingInvitations(params: { workspace_id: string }): Promise<{ invitations: PendingInvitationRow[]; data_epoch: Date }> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      throw new Error(`UnscopedQueryError: workspace_id=${params.workspace_id} not authorized`);
+    }
+    return { invitations: [...this._pendingInvitations], data_epoch: DATA_EPOCH };
+  }
+
+  async teamInviteMember(params: TeamInviteParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const token = crypto.randomUUID();
+    const now = new Date();
+    const expires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    this._pendingInvitations.push({
+      id: crypto.randomUUID(),
+      email: params.invitee_email,
+      role: params.role,
+      token,
+      created_at: now.toISOString(),
+      expires_at: expires.toISOString(),
+    });
+    return { ok: true };
+  }
+
+  async teamChangeRole(params: TeamChangeRoleParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const m = this._stubMembers.find((m) => m.user_id === params.target_user_id);
+    if (!m) return { ok: false, error: 'Member not found' };
+    (m as { role: string }).role = params.new_role;
+    return { ok: true };
+  }
+
+  async teamRemoveMember(params: TeamRemoveMemberParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const idx = this._stubMembers.findIndex((m) => m.user_id === params.target_user_id);
+    if (idx === -1) return { ok: false, error: 'Member not found' };
+    this._stubMembers.splice(idx, 1);
+    return { ok: true };
+  }
+
+  async teamRevokeInvite(params: TeamRevokeInviteParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const idx = this._pendingInvitations.findIndex((i) => i.id === params.invitation_id);
+    if (idx === -1) return { ok: false, error: 'Invitation not found' };
+    this._pendingInvitations.splice(idx, 1);
+    return { ok: true };
+  }
+
+  async teamTransferOwnership(params: TeamTransferOwnershipParams): Promise<TeamMutationResult> {
+    if (!params.workspace_id || params.workspace_id !== this.workspaceId) {
+      return { ok: false, error: 'Not authorized' };
+    }
+    const newOwner = this._stubMembers.find((m) => m.user_id === params.new_owner_user_id);
+    if (!newOwner) return { ok: false, error: 'Target member not found' };
+    const actor = this._stubMembers.find((m) => m.user_id === params.actor_user_id);
+    (newOwner as { role: string }).role = 'OWNER';
+    if (actor) (actor as { role: string }).role = 'MANAGER';
+    return { ok: true };
   }
 
   getDecisionLog(): InMemoryDecisionLog {

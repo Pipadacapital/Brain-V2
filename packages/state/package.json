@@ -1,0 +1,15 @@
+{
+  "name": "@brain/state",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Shared Redux slices for web + mobile (spec: packages/state). Hosts the platform-agnostic session + ui slices; each app assembles its own store + typed hooks from these.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./session-slice": "./src/session-slice.ts",
+    "./ui-slice": "./src/ui-slice.ts"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.12.0"
+  }
+}

@@ -31,8 +31,8 @@ import {
   updateFestival,
   deleteFestival,
   resetFestivalDefaults,
-} from '../application/settings/settings-use-cases.js'
-import type { DbRunners } from '../application/settings/settings-use-cases.js'
+} from '../application/contexts/settings/settings-use-cases.js'
+import type { DbRunners } from '../application/contexts/settings/settings-use-cases.js'
 import type { PoolClient } from 'pg'
 
 // ---------------------------------------------------------------------------

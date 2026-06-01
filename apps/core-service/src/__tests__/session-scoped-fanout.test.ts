@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { Pool, PoolClient } from 'pg'
-import type { ConnectedRecord, FanoutLogEvent } from '../application/cron/session-scoped-fanout.js'
+import type { ConnectedRecord, FanoutLogEvent } from '../application/contexts/cron/session-scoped-fanout.js'
 
 // ---------------------------------------------------------------------------
 // Minimal mock Pool + PoolClient
@@ -37,14 +37,14 @@ const BETA_CONN:  ConnectedRecord = { id: 'conn-2', workspaceId: BETA_WS,  statu
 describe('scheduledFanout()', () => {
   let _setPoolForTest: (p: Pool) => void
   let _resetPoolForTest: () => void
-  let scheduledFanout: typeof import('../application/cron/session-scoped-fanout.js').scheduledFanout
+  let scheduledFanout: typeof import('../application/contexts/cron/session-scoped-fanout.js').scheduledFanout
 
   beforeEach(async () => {
     vi.resetModules()
     const contextMod = await import('../infrastructure/db/workspace-context.js')
     _setPoolForTest = contextMod._setPoolForTest
     _resetPoolForTest = contextMod._resetPoolForTest
-    const fanoutMod = await import('../application/cron/session-scoped-fanout.js')
+    const fanoutMod = await import('../application/contexts/cron/session-scoped-fanout.js')
     scheduledFanout = fanoutMod.scheduledFanout
   })
 
@@ -91,7 +91,7 @@ describe('scheduledFanout()', () => {
     contextMod._setPoolForTest(pool)
 
     const workspacesSeen: (string | null)[] = []
-    const fanoutMod = await import('../application/cron/session-scoped-fanout.js')
+    const fanoutMod = await import('../application/contexts/cron/session-scoped-fanout.js')
     await fanoutMod.scheduledFanout({
       syncName: 'test-sync',
       listConnected: async () => [ALPHA_CONN],

@@ -1,0 +1,13 @@
+{
+  "name": "@brain/lib-formatters",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Currency / ratio / score display formatters shared across web + mobile (spec: packages/lib-formatters). CF-C6-RENDER-ONLY-1: display math ONLY on server-produced integers; never produces a metric value. formatMoney re-exported from @brain/lib-metrics (Single-Primitive Rule — ONE money home).",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@brain/lib-metrics": "workspace:*"
+  }
+}

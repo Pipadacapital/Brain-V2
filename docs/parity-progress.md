@@ -1,33 +1,50 @@
-# Parity restoration progress (branch chore/record-merge-connector-webhook-intake)
+# Legacy → New Parity Restoration — COMPLETE
+Branch: chore/record-merge-connector-webhook-intake
 
-## DONE + pushed (verified tsc clean + tests)
-- Wave 1: dashboard, meta-ads, google-ads, waterfall (metrics+render+CM1 reconcile), shiprocket, cohorts
-- Wave 2: onboarding, auth (login/logout/signup/recovery), workspace-switching+sidebar, design-system (Geist+tokens+shadcn primitives)
-- Wave 3: settings backend (17 settings.* CRUD) + 7 settings UIs (costs, workspace-settings, goals, ad-campaigns, festivals, integrations, backfill)
-- calendar (marketing-action CRUD backend + UI, festival bands, legend, honest Klaviyo)
-- analytics (full 33-metric grid reusing dashboard grid, presets, RAG, empty-state)
-- lifetime-value (shadcn rebuild, 10 dimensions, LTV curve)
-- customer-lifecycle (controls/thresholds/buckets restored)
+## Status: every in-app page/flow from the audit restored + live-verified healthy
 
-## NOT YET DONE (Wave 4A failed mid-run — socket errors; nothing committed from it)
-- inventory (18-col table, variant drilldown, lead-time editor, as-of-date) — REDO
-- pincode-intelligence (5 cols + filters + data-plane tier/state/courier computation) — REDO
-- acquisition (3 sections incl MA trend) — REDO (4B agent also socket-failed)
+After each wave: tsc clean (web+gateway, incl tests), per-page Vitest + relevant core/python
+tests green, then web+gateway docker images rebuilt and the live stack smoke-tested. FINAL smoke:
+gateway+web healthy, /health 200, auth/login + auth/sign-up 200, all 33 protected routes 307→
+/auth/login (correct fail-closed), zero broken routes.
 
-## REMAINING
-- Wave 5: products (data-plane filters), timings (data-plane), product-cogs (correctness/core-service), store (sync/backfill)
-- Wave 6: rto-analytics (by-product), cod-prepaid (fee inputs), logistics (COD/prepaid), first-product-cascade (date/window), email-sms
-- Wave 7: notifications (scoping), account (chrome), pnl (formatting), distributions, team (CRUD)
-- ADMIN SUITE: Founder chose BUILD as separate gated surface (SUPERADMIN role + platform-admin area) — dedicated task, NOT in workspace shell
+## Waves shipped (commits, oldest→newest)
+- audit: full 40-page parity report (docs/legacy-parity-audit-v2.md)
+- W1: dashboard, meta-ads, google-ads, waterfall(metrics+render+CM1 reconcile), shiprocket, cohorts
+- W2: onboarding, auth(login/logout/signup/recovery), workspace-switching+sidebar, design-system(Geist+tokens+shadcn)
+- W3: settings backend (17 settings.* CRUD) + 7 settings UIs (costs, workspace-settings, goals, ad-campaigns, festivals, integrations, backfill)
+- W4: inventory, pincode-intelligence (data-plane tier/state compute), acquisition; calendar(CRUD); analytics; lifetime-value; customer-lifecycle
+- W5: products, timings, product-cogs (0-vs-NULL + set-all correctness)
+- W6a: store, logistics (charge-sum fix), rto-analytics, cod-prepaid
+- W6b: first-product-cascade (analytics fix), email-sms, team (CRUD), notifications
+- W7: account, pnl, distributions
 
-## Backend follow-ups
-- workspace-settings: add settings.getWorkspaceSettings read-getter (tax/filters currently write-only)
-- costs/festivals/goals read queries should return row id for full edit/delete on server rows
-- inventory in_transit, acquisition repeat-within-30d, sessions/conversion: need fact joins/connectors
-- integrations: multi-account arrays, product-data-source
+## Cross-page metric correctness fixed
+- CM1 reconciled to ₹9.7L (net_rev−cogs−varcosts) across dashboard + waterfall + analytics (RTO a separate step per DDR).
+- Waterfall: 16-step ladder, gross top line. CM-registry TS↔Python byte-identical; parity gate green.
+- cohorts/products data planes now honor metric/mode/date/filter selectors (were ignored).
+- logistics forward/cod charges summed from facts (were hardcoded 0).
+- pincode state/tier computed (were stubs).
+- product-cogs NULL≠0; "fill empty" never clobbers set values.
+- first-product-cascade query honors date/observation window; primary product by line revenue.
 
-## DISCIPLINE (what works / lessons)
-- Parallel agents ONLY on disjoint files; exactly ONE agent owns shared backend (router.ts/data-planes/proto-types/core-service) per round.
-- Agents CAN socket-fail (subagent_tokens:0) leaving partial/orphan edits (e.g. a port-interface method with no impl). ALWAYS run prod tsc (web+gw, excluding tests) before committing; never trust a checkpoint doc over a fresh tsc.
-- Clear apps/web *.tsbuildinfo before tsc (stale cache → false @brain/* resolve errors).
-- Commit per-area; push; periodic docker rebuild+smoke.
+## Honest-deferred (no live source locally; render honest empty/disabled — never fabricated)
+sync/backfill triggers (connector cutover HOLD), Klaviyo overlay, in_transit inventory,
+sessions/conversion, pincode revenue/uniq/top-courier, NC/EC product splits, invite/email delivery,
+AI insight sheets, order-composition section, multi-account connector arrays. All match legacy
+structure/labels; the gaps need connector facts or backend endpoints, logged below.
+
+## Money formatting (₹ Indian lakh/crore) — Founder decision pending
+Kept Brain's lakh/crore formatMoney as-is (audit noted legacy used en-US grouping). Deliberate
+product-wide choice to ratify, not a regression.
+
+## NOT done — separate dedicated effort (Founder-chosen)
+ADMIN SUITE (/admin/*): BUILD as a separate gated platform-admin surface (new SUPERADMIN role +
+cross-tenant authorization). Security-sensitive; intentionally NOT bolted into the workspace shell.
+
+## Backend follow-ups (logged, non-blocking)
+- settings.getWorkspaceSettings read-getter (tax/filters currently write-only)
+- costs/festivals/goals read queries should return row id for full server-row edit/delete
+- cohort CAC/LTV:CAC need cohort-attributed ad spend
+- pincode revenue/top-courier, product NC/EC, email-sms fuller facts, order-composition: need fact joins / new endpoints
+- inventory lead-time persists in-process locally (production write-path positioned via setLeadTime port)

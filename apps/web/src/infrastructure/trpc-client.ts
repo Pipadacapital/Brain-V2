@@ -7,10 +7,13 @@
 // The typed BrainRouter is imported from the api-gateway.
 // This import gives Ananya's components the FULL type-safe procedure tree.
 
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
-import { createTRPCReact } from '@trpc/react-query';
+import { httpBatchLink } from '@trpc/client';
 import superjson from 'superjson';
-import type { BrainRouter } from '@brain/api-gateway';
+// Platform-agnostic core (typed hooks object, vanilla client factory, BrainRouter type)
+// lives in @brain/trpc-client (spec: packages/trpc-client). This file keeps the WEB-specific
+// header/link factory and re-exports `trpc` so existing importers are unchanged.
+import { trpc, createVanillaClient } from '@brain/trpc-client';
+import type { BrainRouter } from '@brain/trpc-client';
 import { createSupabaseBrowserClient } from './supabase/client.js';
 // Browser-safe subpath — does NOT pull pino into the client bundle.
 // (The top-level '@brain/lib-logger' import pulls pino's stdSerializers
@@ -48,9 +51,10 @@ const getApiUrl = (): string => {
 // CF-C6-BIGINT-JSON-1: superjson transformer on the httpBatchLink.
 // ---------------------------------------------------------------------------
 
-// Explicit type annotation avoids the "cannot name inferred type" TS2883 error.
-// CF-C6-BIGINT-JSON-1: superjson transformer is configured at the link level.
-export const trpc: ReturnType<typeof createTRPCReact<BrainRouter>> = createTRPCReact<BrainRouter>();
+// Re-export the shared typed hooks object + router type so existing importers
+// (`@/infrastructure/trpc-client`) keep working unchanged.
+export { trpc };
+export type { BrainRouter };
 
 // ---------------------------------------------------------------------------
 // Factory to create the tRPC React client (called once in the provider).
@@ -128,11 +132,4 @@ export function createTrpcClient(workspaceId?: string) {
 // rare Server Action patterns.
 // ---------------------------------------------------------------------------
 
-export const trpcVanillaClient = createTRPCClient<BrainRouter>({
-  links: [
-    httpBatchLink({
-      url: `${getApiUrl()}/trpc`,
-      transformer: superjson,
-    }),
-  ],
-});
+export const trpcVanillaClient = createVanillaClient(getApiUrl());

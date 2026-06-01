@@ -170,14 +170,21 @@ describe('tenancy fail-closed (foreign workspace rejected)', () => {
 
 // ---------------------------------------------------------------------------
 // CF-S10-NO-WRITE-1 — the parity-cleanup surfaces are READ-ONLY.
-// team.members + the new settings reads expose NO mutation (no invite/connect/backfill-trigger).
+// team router — parity-38 w6b: now includes full CRUD mutations.
 // ---------------------------------------------------------------------------
 describe('CF-S10-NO-WRITE-1 (read-only surfaces)', () => {
-  it('team router exposes only .members (no mutation procedure)', () => {
+  it('team router exposes members + all CRUD procedures (parity-38 w6b)', () => {
     const dp = new StubDataPlane(new InMemoryDecisionLog(), SUGANDH_LOK_WORKSPACE_ID);
     const router = createBrainRouter(dp, new InMemoryIdempotencyStore());
     const teamProcs = Object.keys((router as unknown as { team: Record<string, unknown> }).team);
-    expect(teamProcs).toEqual(['members']);
+    // Required: members (read), pendingInvitations (read), invite, changeRole, removeMember, revokeInvite, transferOwnership.
+    expect(teamProcs).toContain('members');
+    expect(teamProcs).toContain('pendingInvitations');
+    expect(teamProcs).toContain('invite');
+    expect(teamProcs).toContain('changeRole');
+    expect(teamProcs).toContain('removeMember');
+    expect(teamProcs).toContain('revokeInvite');
+    expect(teamProcs).toContain('transferOwnership');
   });
 
   it('the new settings reads are queries (workspace/integrations/backfill carry no input mutation)', () => {

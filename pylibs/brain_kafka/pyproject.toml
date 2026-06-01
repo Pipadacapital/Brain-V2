@@ -1,0 +1,9 @@
+[project]
+name = "brain_kafka"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Kafka producer/consumer + rate limiter (spec: pylibs/brain_kafka). Envelope carries workspace_id (partition key) + trace_id. Wired as the MSK event backbone is activated (Phase 1+); ingestion/analytics consume from here."
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

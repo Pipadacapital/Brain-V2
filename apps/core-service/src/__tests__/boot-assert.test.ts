@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { assertShopifyOAuthSecretsPresent } from '../application/connectors/boot-assert.js'
+import { assertShopifyOAuthSecretsPresent } from '../application/contexts/connectors/boot-assert.js'
 
 // Fake value — clearly not real, safe to use in tests.
 const FAKE_SECRET = 'shpss_FAKE_TEST_VALUE_NOT_REAL'

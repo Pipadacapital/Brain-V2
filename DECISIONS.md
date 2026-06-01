@@ -53,10 +53,10 @@ all 7 future consumer services import from a stable named package, not from a pa
 that changes when the layout shifts.
 
 **Decision:** `buf.gen.yaml` targets two dedicated workspace-member stub packages:
-- TypeScript stubs → `packages/proto-ts/gen/` (pnpm member `@brain/proto-ts`)
-- Python stubs → `pylibs/proto_py/proto_py/_gen/` (uv member `proto_py`)
+- TypeScript stubs → `packages/lib-grpc-clients/gen/` (pnpm member `@brain/lib-grpc-clients`)
+- Python stubs → `pylibs/brain_grpc/brain_grpc/_gen/` (uv member `brain_grpc`)
 
-Consumers import a **named package** (`@brain/proto-ts`, `proto_py`), never a relative
+Consumers import a **named package** (`@brain/lib-grpc-clients`, `brain_grpc`), never a relative
 path across the `protos/` boundary.
 
 **Rationale:** Relative path imports across `protos/` break `tsc --paths` resolution
@@ -66,11 +66,11 @@ packages are the standard pattern and make service-level imports mechanical. The
 reproducible in CI.
 
 **Reversibility:** If the plugin ecosystem changes (e.g., connect/es superseded),
-update `buf.gen.yaml` + `packages/proto-ts/package.json` + `pylibs/proto_py/pyproject.toml`.
+update `buf.gen.yaml` + `packages/lib-grpc-clients/package.json` + `pylibs/proto_py/pyproject.toml`.
 The named-package import surface remains stable for consumers; only the internals change.
 
 **Consequence:** Every service that calls a gRPC endpoint imports stubs from
-`@brain/proto-ts` (TS) or `proto_py` (Python). No direct `protos/` imports anywhere.
+`@brain/lib-grpc-clients` (TS) or `brain_grpc` (Python). No direct `protos/` imports anywhere.
 
 ---
 
@@ -84,7 +84,7 @@ code (the stubs could drift from the source `.proto` if `buf generate` is not ru
 a proto change).
 
 **Decision:** Generated stubs are **gitignored** (`.gitignore` entries for
-`packages/proto-ts/gen/` and `pylibs/proto_py/proto_py/_gen/`) and **regenerated in CI**
+`packages/lib-grpc-clients/gen/` and `pylibs/brain_grpc/brain_grpc/_gen/`) and **regenerated in CI**
 before any build that depends on them. `buf generate protos` must run as the first step
 of any CI job that compiles TS or Python service code.
 
@@ -99,7 +99,7 @@ named-package import surface (ADR-002) is unaffected.
 
 **Consequence:** CI (Jatin) must pin buf plugin versions in `buf.gen.yaml` so codegen
 is reproducible and not a supply-chain hole. `buf generate` must precede any `pnpm turbo
-run build` step that touches `@brain/proto-ts`-dependent packages.
+run build` step that touches `@brain/lib-grpc-clients`-dependent packages.
 
 ---
 

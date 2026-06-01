@@ -5,7 +5,7 @@
 //
 // In Phase 0-1 (in-process / localhost loopback), the api-gateway uses these
 // types directly. When buf generate produces remote-plugin stubs, these are
-// superseded by @brain/proto-ts — the DataPlanePort interface is the adapter seam.
+// superseded by @brain/lib-grpc-clients — the DataPlanePort interface is the adapter seam.
 //
 // CF-C6-DATA-SEAM-1: one port, one contract. No second code path.
 // CF-C6-BIGINT-JSON-1: _mu fields are bigint at the TS edge; superjson serializes
@@ -163,11 +163,19 @@ export interface RtoByCourierRow {
   revenue_lost_mu: bigint;
 }
 
+/** Optional Shopify-enrichment row (top-50 RTO products). Gated: only when non-empty. */
+export interface RtoByProductRow {
+  product_title: string;
+  quantity: bigint;
+  revenue_lost_mu: bigint;
+}
+
 export interface RtoAnalyticsResult {
   workspace_id: string;
   period: string;
   data_epoch: Date;
   currency_code: string;
+  connected: boolean;               // true when Shiprocket connector is active
   total_shipments: bigint;
   rto_count: bigint;
   rto_rate_bp: number | null;       // registry rto_rate_bp
@@ -175,6 +183,7 @@ export interface RtoAnalyticsResult {
   revenue_lost_to_rto_mu: bigint;   // registry rto_revenue_lost_mu
   by_payment_method: RtoByPaymentMethodRow[];
   by_courier: RtoByCourierRow[];
+  by_product: RtoByProductRow[];    // optional Shopify enrichment; may be empty
 }
 
 export interface CodPrepaidSegmentRow {
@@ -184,7 +193,15 @@ export interface CodPrepaidSegmentRow {
   rto_rate_bp: number | null;
   effective_revenue_mu: bigint;
   fee_total_mu: bigint;
+  net_revenue_mu: bigint;           // effective_revenue − fee_total
   net_revenue_per_order_mu: bigint | null;
+}
+
+/** Fee-assumption overrides for the COD vs Prepaid what-if calculator. */
+export interface CodPrepaidFeeOverrides {
+  cod_fee_per_order_mu?: bigint;    // default ₹30 (3000 paise)
+  return_shipping_per_rto_mu?: bigint; // default ₹80 (8000 paise)
+  gateway_fee_bp?: number;           // default 200 bp (2%)
 }
 
 export interface CodPrepaidResult {
@@ -192,6 +209,7 @@ export interface CodPrepaidResult {
   period: string;
   data_epoch: Date;
   currency_code: string;
+  connected: boolean;               // true when Shiprocket + order connectors are active
   cod_orders: bigint;
   prepaid_orders: bigint;
   cod_realization_rate_bp: number | null;      // registry cod_realization_rate_bp
@@ -203,6 +221,7 @@ export interface CodPrepaidResult {
   average_order_value_mu: bigint | null;       // registry aov_mu
   breakeven_cod_rto_rate_bp: number | null;    // registry breakeven_cod_rto_rate_bp
   breakeven_note: string | null;
+  fee_overrides: CodPrepaidFeeOverrides;       // echoes the applied overrides
   comparison: CodPrepaidSegmentRow[];
 }
 
@@ -883,17 +902,21 @@ export type EmailPerfGroupByName = 'campaign' | 'flow' | 'date' | 'channel' | 'd
 export interface EmailPerfRow {
   key: string;
   label: string;
-  channel: string;                  // "email" | "sms" — REPORTING tag, not a send target
+  channel: string;                       // "email" | "sms" — REPORTING tag, not a send target
   delivered: bigint;
   unique_opens: bigint;
   unique_clicks: bigint;
   orders: bigint;
-  revenue_mu: bigint;               // attributed past performance (REPORTING, never a send)
+  revenue_mu: bigint;                    // attributed past performance (REPORTING, never a send)
   unsubscribes: bigint;
   spam_complaints: bigint;
   open_rate_bp: number | null;
   click_rate_bp: number | null;
   revenue_per_recipient_mu: bigint | null;
+  // Restored legacy columns (7 dropped columns — parity-38 fix):
+  revenue_per_unique_open_mu: bigint | null;  // $/unique-open (null when unique_opens=0)
+  unsubscribe_rate_bp: number | null;         // unsub % (null when delivered=0)
+  spam_rate_bp: number | null;               // spam % (null when delivered=0)
 }
 
 export interface EmailSmsPerformanceResult {
@@ -1081,8 +1104,62 @@ export interface WorkspaceMemberRow {
 export interface WorkspaceMembersResult {
   workspace_id: string;
   members: WorkspaceMemberRow[];
-  pending_invitations: number; // count only; invite (write) is deferred this slice.
+  pending_invitations: number;
 }
+
+// ---------------------------------------------------------------------------
+// Team mutation types (parity-38 TEAM CRUD — feat-parity-w6b)
+// invite is honest-deferred on email sending: creates the row + token only.
+// Role-gate: OWNER/MANAGER can invite; only OWNER may transfer ownership or
+// change another OWNER's role; MANAGER cannot remove an OWNER.
+// ---------------------------------------------------------------------------
+
+export interface PendingInvitationRow {
+  id: string;
+  email: string;
+  role: WorkspaceMemberRole;
+  token: string;            // shareable /join/<token> link token
+  created_at: string;       // ISO date
+  expires_at: string;       // ISO date
+}
+
+export interface TeamInviteParams {
+  workspace_id: string;
+  inviter_user_id: string;
+  inviter_role: WorkspaceMemberRole;
+  invitee_email: string;
+  role: WorkspaceMemberRole;
+}
+
+export interface TeamChangeRoleParams {
+  workspace_id: string;
+  actor_user_id: string;
+  actor_role: WorkspaceMemberRole;
+  target_user_id: string;
+  new_role: WorkspaceMemberRole;
+}
+
+export interface TeamRemoveMemberParams {
+  workspace_id: string;
+  actor_user_id: string;
+  actor_role: WorkspaceMemberRole;
+  target_user_id: string;
+}
+
+export interface TeamRevokeInviteParams {
+  workspace_id: string;
+  actor_role: WorkspaceMemberRole;
+  invitation_id: string;
+}
+
+export interface TeamTransferOwnershipParams {
+  workspace_id: string;
+  actor_user_id: string;
+  actor_role: WorkspaceMemberRole;
+  new_owner_user_id: string;
+}
+
+export type TeamMutationResult = { ok: true } | { ok: false; error: string };
 
 export interface WorkspaceSettingsResult {
   workspace_id: string;
@@ -1229,6 +1306,7 @@ export interface DataPlanePort {
   getCodPrepaid(params: {
     workspace_id: string;
     date_range: DateRange;
+    fee_overrides?: CodPrepaidFeeOverrides;
   }): Promise<{ result: CodPrepaidResult; data_epoch: Date }>;
 
   getLogistics(params: {
@@ -1400,6 +1478,19 @@ export interface DataPlanePort {
     workspace_id: string;
   }): Promise<{ result: WorkspaceMembersResult; data_epoch: Date }>;
 
+  /** List pending invitations for a workspace (OWNER/MANAGER-gated in router). */
+  listPendingInvitations(params: {
+    workspace_id: string;
+  }): Promise<{ invitations: PendingInvitationRow[]; data_epoch: Date }>;
+
+  // Team CRUD mutations (parity-38 feat-parity-w6b). Role-gated in the router.
+  // Email sending is honest-deferred: invite creates the DB row + token only.
+  teamInviteMember(params: TeamInviteParams): Promise<TeamMutationResult>;
+  teamChangeRole(params: TeamChangeRoleParams): Promise<TeamMutationResult>;
+  teamRemoveMember(params: TeamRemoveMemberParams): Promise<TeamMutationResult>;
+  teamRevokeInvite(params: TeamRevokeInviteParams): Promise<TeamMutationResult>;
+  teamTransferOwnership(params: TeamTransferOwnershipParams): Promise<TeamMutationResult>;
+
   getWorkspaceSettings(params: {
     workspace_id: string;
   }): Promise<{ result: WorkspaceSettingsResult; data_epoch: Date }>;
@@ -1464,6 +1555,15 @@ export interface DataPlanePort {
     distinct_statuses: string[];
     data_epoch: Date;
   }>;
+
+  /**
+   * Wave-4A: per-SKU lead-time mutation. MANAGER-gated.
+   * Persists lead_time_days for a single SKU in the workspace.
+   * In the local/loopback plane this is an in-memory override; in production it
+   * writes to workspace_product_settings or a similar catalog settings table.
+   * CF-C6-DATA-SEAM-1: additive method on the SAME port — no second code path.
+   */
+  setLeadTime(params: InventorySetLeadTimeInput): Promise<InventorySetLeadTimeResult>;
 }
 
 // ---------------------------------------------------------------------------

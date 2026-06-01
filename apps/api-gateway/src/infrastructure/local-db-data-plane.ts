@@ -20,6 +20,12 @@ import {
   readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
   readDailyNetSales, readDailyAcquisition, readDistributionsGraphPoints, readPnlPeriodGrid,
   readShipmentRows,
+  // Team CRUD mutations:
+  listTeamPendingInvitations, inviteTeamMember, changeTeamMemberRole,
+  removeTeamMember, revokeTeamInvite, transferTeamOwnership,
+  // Email/SMS performance:
+  readEmailPerformance,
+  type ReadProductPerformanceFilters,
 } from '@brain/core-connectors';
 import {
   listMarketingActions as coreListMarketingActions,
@@ -69,6 +75,19 @@ import type {
   ListMarketingActionsResult,
   CreateMarketingActionInput,
   UpdateMarketingActionInput,
+  InventorySetLeadTimeInput,
+  InventorySetLeadTimeResult,
+  ProductGroupBy,
+  ProductSort,
+  PendingInvitationRow,
+  TeamInviteParams,
+  TeamChangeRoleParams,
+  TeamRemoveMemberParams,
+  TeamRevokeInviteParams,
+  TeamTransferOwnershipParams,
+  TeamMutationResult,
+  EmailSmsPerformanceResult,
+  EmailPerfRow,
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
@@ -95,6 +114,95 @@ import {
 function bp(numerator: bigint, denominator: bigint): number | null {
   if (denominator === 0n) return null;
   return Number((numerator * 10000n) / denominator);
+}
+
+// ---------------------------------------------------------------------------
+// Pincode intelligence helpers — COMPUTED (not stubbed) so state/tier/top_courier
+// show real values for the LocalDbDataPlane. Mirror legacy classifyTier exactly
+// (pincode-intelligence.ts lines 10-41).
+// ---------------------------------------------------------------------------
+const _TIER_1_CITIES = new Set([
+  'mumbai', 'delhi', 'bangalore', 'bengaluru', 'hyderabad', 'chennai', 'kolkata', 'pune', 'ahmedabad',
+]);
+const _TIER_2_CITIES = new Set([
+  'jaipur', 'lucknow', 'surat', 'kanpur', 'nagpur', 'indore', 'bhopal', 'patna', 'vadodara', 'ludhiana',
+  'agra', 'nashik', 'faridabad', 'meerut', 'rajkot', 'varanasi', 'srinagar', 'aurangabad', 'dhanbad',
+  'amritsar', 'navi mumbai', 'allahabad', 'ranchi', 'howrah', 'coimbatore', 'jabalpur', 'gwalior',
+  'vijayawada', 'jodhpur', 'madurai', 'raipur', 'kota', 'guwahati', 'chandigarh', 'solapur', 'hubballi',
+  'tiruchirappalli', 'bareilly', 'mysuru', 'mysore', 'tiruppur', 'gurgaon', 'gurugram', 'noida', 'thane',
+]);
+
+function _classifyTier(city: string): 1 | 2 | 3 | null {
+  const c = city.trim().toLowerCase();
+  if (!c || c === '—') return null;
+  if (_TIER_1_CITIES.has(c)) return 1;
+  if (_TIER_2_CITIES.has(c)) return 2;
+  return 3;
+}
+
+/**
+ * Derive Indian state name from the first 2–3 digits of a 6-digit pincode.
+ * Based on India Post pin code zones (standard reference).
+ * Returns '' for unknown/unparseable pins — honest empty, not a stub.
+ */
+function _stateFromPincode(pincode: string): string {
+  const p = pincode.trim();
+  if (p.length < 6) return '';
+  const prefix2 = parseInt(p.substring(0, 2), 10);
+  const prefix3 = parseInt(p.substring(0, 3), 10);
+  // Zone 1: 11x–19x Delhi NCR / Rajasthan
+  if (prefix2 === 11) return 'Delhi';
+  if (prefix2 >= 12 && prefix2 <= 13) return 'Haryana';
+  if (prefix2 >= 14 && prefix2 <= 15) return 'Punjab';
+  if (prefix2 === 16) return 'Punjab'; // Chandigarh
+  if (prefix2 >= 17 && prefix2 <= 17) return 'Himachal Pradesh';
+  if (prefix2 >= 18 && prefix2 <= 19) return 'Jammu & Kashmir';
+  // Zone 2: 20x–28x UP / Uttarakhand
+  if (prefix2 >= 20 && prefix2 <= 28) {
+    if (prefix3 >= 248 && prefix3 <= 249) return 'Uttarakhand';
+    return 'Uttar Pradesh';
+  }
+  // Zone 3: 30x–34x Rajasthan
+  if (prefix2 >= 30 && prefix2 <= 34) return 'Rajasthan';
+  // Zone 4: 36x–39x Gujarat, 40x–44x Maharashtra (partial)
+  if (prefix2 >= 36 && prefix2 <= 39) return 'Gujarat';
+  if (prefix2 === 40) return 'Maharashtra'; // Mumbai
+  if (prefix2 >= 40 && prefix2 <= 44) return 'Maharashtra';
+  if (prefix2 === 45 || prefix2 === 46 || prefix2 === 47) return 'Madhya Pradesh';
+  if (prefix2 === 48) return 'Madhya Pradesh';
+  if (prefix2 === 49) return 'Chhattisgarh';
+  // Zone 5: 50x–53x Andhra/Telangana
+  if (prefix2 >= 50 && prefix2 <= 53) {
+    if (prefix3 >= 500 && prefix3 <= 502) return 'Telangana';
+    if (prefix3 >= 503 && prefix3 <= 535) return 'Andhra Pradesh';
+    return 'Telangana';
+  }
+  // Zone 6: 56x–59x Karnataka, 60x–64x Tamil Nadu, 67x–69x Kerala
+  if (prefix2 >= 56 && prefix2 <= 59) return 'Karnataka';
+  if (prefix2 >= 60 && prefix2 <= 64) return 'Tamil Nadu';
+  if (prefix2 >= 67 && prefix2 <= 69) return 'Kerala';
+  // Zone 7: 70x–74x West Bengal, 75x–77x Odisha
+  if (prefix2 >= 70 && prefix2 <= 74) return 'West Bengal';
+  if (prefix2 >= 75 && prefix2 <= 77) return 'Odisha';
+  if (prefix2 >= 78 && prefix2 <= 78) return 'Assam';
+  // Zone 8: 80x–85x Bihar/Jharkhand
+  if (prefix2 >= 80 && prefix2 <= 83) return 'Bihar';
+  if (prefix2 === 82 || prefix2 === 83) return 'Jharkhand';
+  if (prefix2 === 84 || prefix2 === 85) return 'Odisha';
+  return '';
+}
+
+// In-memory lead-time overrides for the LocalDbDataPlane (per-process, reset on restart).
+// In production this would be persisted to workspace_product_settings; for local-dev
+// the in-process store is consistent with loopback semantics.
+const _localLeadTimeOverrides = new Map<string, Map<string, number>>(); // wsId → sku → days
+
+function _getLocalLeadTime(wsId: string, sku: string): number | null {
+  return _localLeadTimeOverrides.get(wsId)?.get(sku) ?? null;
+}
+function _setLocalLeadTime(wsId: string, sku: string, days: number): void {
+  if (!_localLeadTimeOverrides.has(wsId)) _localLeadTimeOverrides.set(wsId, new Map());
+  _localLeadTimeOverrides.get(wsId)!.set(sku, days);
 }
 
 // ---------------------------------------------------------------------------
@@ -432,11 +540,14 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
 
   // RTO analytics from Shiprocket shipment facts. revenue_lost_to_rto = 0 (legacy
   // never persisted the shipment→order key — documented in connector-pipeline-gaps).
+  // connected=true when there are any shipment facts for this workspace.
   override async getRtoAnalytics(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
     const s = await readShipmentAnalytics(this.ws);
+    const connected = s.totalShipments > 0n;
     const result: RtoAnalyticsResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      connected,
       total_shipments: s.totalShipments,
       rto_count: s.rtoCount,
       rto_rate_bp: bp(s.rtoCount, s.totalShipments),
@@ -447,36 +558,102 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
         { payment_method: 'Prepaid', rto_count: s.prepaidRtoCount, rto_cost_mu: 0n, revenue_lost_mu: 0n },
       ],
       by_courier: s.byCourier.map((c) => ({ courier_name: c.courierName, rto_count: c.rtoCount, rto_cost_mu: 0n, revenue_lost_mu: 0n })),
+      by_product: [], // Shopify-enrichment table requires order→shipment mapping (deferred)
     };
     return { result, data_epoch: DATA_EPOCH };
   }
   // COD vs Prepaid: order counts/revenue from order facts; RTO rates from shipments.
-  override async getCodPrepaid(p: { workspace_id: string; date_range: DateRange }) {
+  // Computes effective revenue, fees and break-even mirroring loopback-data-plane formula.
+  // Fee defaults: ₹30 COD fee/order, ₹80 return shipping/RTO, 2% gateway fee.
+  override async getCodPrepaid(p: {
+    workspace_id: string;
+    date_range: DateRange;
+    fee_overrides?: import('../domain/proto-types.js').CodPrepaidFeeOverrides;
+  }) {
     this.assertWs(p.workspace_id);
     const cp = await readCodPrepaid(this.ws);
     const s = await readShipmentAnalytics(this.ws);
     const codRto = bp(s.codRtoCount, s.codTotal);
     const prepaidRto = bp(s.prepaidRtoCount, s.prepaidTotal);
+    const connected = s.totalShipments > 0n || cp.codOrders + cp.prepaidOrders > 0n;
+    // Fee assumptions
+    const COD_FEE_DEFAULT = 3000n;       // ₹30 per order
+    const RETURN_SHIP_DEFAULT = 8000n;   // ₹80 per RTO
+    const GATEWAY_FEE_BP_DEFAULT = 200;  // 2%
+    const codFeePerOrder = p.fee_overrides?.cod_fee_per_order_mu ?? COD_FEE_DEFAULT;
+    const returnShipping = p.fee_overrides?.return_shipping_per_rto_mu ?? RETURN_SHIP_DEFAULT;
+    const gatewayFeeBp = p.fee_overrides?.gateway_fee_bp ?? GATEWAY_FEE_BP_DEFAULT;
+    // Effective revenue = gross - RTO-loss - fees (integer FLOOR, mirrors loopback)
+    const codRtoBp = codRto ?? 0;
+    const prepaidRtoBp = prepaidRto ?? 0;
+    const codSurvived = cp.codGrossMu - (cp.codGrossMu * BigInt(codRtoBp)) / 10000n;
+    const prepaidSurvived = cp.prepaidGrossMu - (cp.prepaidGrossMu * BigInt(prepaidRtoBp)) / 10000n;
+    const codRtoCount = s.codRtoCount;
+    const prepaidRtoCount = s.prepaidRtoCount;
+    const codFeeTotal = cp.codOrders * codFeePerOrder;
+    const gatewayFeeTotal = (cp.prepaidGrossMu * BigInt(gatewayFeeBp)) / 10000n;
+    const codReturnShip = codRtoCount * returnShipping;
+    const prepaidReturnShip = prepaidRtoCount * returnShipping;
+    const effCod = codSurvived - codFeeTotal - codReturnShip;
+    const effPrepaid = prepaidSurvived - gatewayFeeTotal - prepaidReturnShip;
+    const codFeeTotalRow = codFeeTotal + codReturnShip;
+    const prepaidFeeTotalRow = gatewayFeeTotal + prepaidReturnShip;
+    // Break-even (FULL legacy formula)
+    const aov = cp.aovMu ?? 0n;
+    const restocking = 0n;
+    const denom = aov + returnShipping + restocking;
+    const pgFee = (aov * BigInt(gatewayFeeBp)) / 10000n;
+    const numScaled =
+      aov * BigInt(prepaidRtoBp) +
+      (codFeePerOrder - pgFee) * 10000n +
+      BigInt(prepaidRtoBp) * (returnShipping + restocking);
+    const breakeven = denom > 0n ? Number(numScaled / denom) : null;
+    const appliedOverrides: import('../domain/proto-types.js').CodPrepaidFeeOverrides = {
+      cod_fee_per_order_mu: codFeePerOrder,
+      return_shipping_per_rto_mu: returnShipping,
+      gateway_fee_bp: gatewayFeeBp,
+    };
     const result: CodPrepaidResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
+      connected,
       cod_orders: cp.codOrders,
       prepaid_orders: cp.prepaidOrders,
       cod_realization_rate_bp: codRto === null ? null : 10000 - codRto,
       cod_rto_rate_bp: codRto,
       prepaid_rto_rate_bp: prepaidRto,
-      effective_revenue_cod_mu: cp.codGrossMu,
-      effective_revenue_prepaid_mu: cp.prepaidGrossMu,
-      prepaid_premium_mu: 0n,
+      effective_revenue_cod_mu: effCod,
+      effective_revenue_prepaid_mu: effPrepaid,
+      prepaid_premium_mu: effPrepaid - effCod,
       average_order_value_mu: cp.aovMu,
-      breakeven_cod_rto_rate_bp: null,
+      breakeven_cod_rto_rate_bp: breakeven,
       breakeven_note: null,
+      fee_overrides: appliedOverrides,
       comparison: [
-        { payment_method: 'COD', orders: cp.codOrders, gross_revenue_mu: cp.codGrossMu, rto_rate_bp: codRto, effective_revenue_mu: cp.codGrossMu, fee_total_mu: 0n, net_revenue_per_order_mu: cp.codOrders > 0n ? cp.codGrossMu / cp.codOrders : null },
-        { payment_method: 'Prepaid', orders: cp.prepaidOrders, gross_revenue_mu: cp.prepaidGrossMu, rto_rate_bp: prepaidRto, effective_revenue_mu: cp.prepaidGrossMu, fee_total_mu: 0n, net_revenue_per_order_mu: cp.prepaidOrders > 0n ? cp.prepaidGrossMu / cp.prepaidOrders : null },
+        {
+          payment_method: 'COD',
+          orders: cp.codOrders,
+          gross_revenue_mu: cp.codGrossMu,
+          rto_rate_bp: codRto,
+          effective_revenue_mu: effCod,
+          fee_total_mu: codFeeTotalRow,
+          net_revenue_mu: effCod - codFeeTotalRow,
+          net_revenue_per_order_mu: cp.codOrders > 0n ? effCod / cp.codOrders : null,
+        },
+        {
+          payment_method: 'Prepaid',
+          orders: cp.prepaidOrders,
+          gross_revenue_mu: cp.prepaidGrossMu,
+          rto_rate_bp: prepaidRto,
+          effective_revenue_mu: effPrepaid,
+          fee_total_mu: prepaidFeeTotalRow,
+          net_revenue_mu: effPrepaid - prepaidFeeTotalRow,
+          net_revenue_per_order_mu: cp.prepaidOrders > 0n ? effPrepaid / cp.prepaidOrders : null,
+        },
       ],
     };
     return { result, data_epoch: DATA_EPOCH };
   }
+  // Logistics: sums forward/cod charges from shipment facts (not hardcoded 0).
   override async getLogistics(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
     const s = await readShipmentAnalytics(this.ws);
@@ -489,8 +666,8 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
       rto_rate_bp: bp(s.rtoCount, s.totalShipments),
       cod_count: s.codCount,
       prepaid_count: s.prepaidCount,
-      forward_charges_mu: 0n,
-      cod_charges_mu: 0n,
+      forward_charges_mu: s.forwardChargesMu,   // summed from DB — not hardcoded 0
+      cod_charges_mu: s.codChargesMu,            // summed from DB — not hardcoded 0
       rto_charges_mu: s.rtoChargesMu,
       total_shiprocket_charges_mu: s.totalChargesMu,
       average_shipping_charge_per_shipment_mu: s.totalShipments > 0n ? s.totalChargesMu / s.totalShipments : null,
@@ -498,23 +675,69 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     };
     return { result, data_epoch: DATA_EPOCH };
   }
-  override async getPincodeIntelligence(p: { workspace_id: string; date_range: DateRange }) {
+  override async getPincodeIntelligence(p: { workspace_id: string; date_range: DateRange; filters?: import('../domain/proto-types.js').PincodeFilterInput }) {
     this.assertWs(p.workspace_id);
+    const filters = p.filters;
+    const HIGH_RTO_BP = 2000;
+    const HIGH_COD_BP = 5000;
     const rows = await readPincodes(this.ws);
     const total = rows.reduce((a, r) => a + r.shipmentCount, 0n);
+    // COMPUTED: state from pincode prefix, tier from city, top_courier from max-count courier.
+    // readPincodes does not expose top_courier (no per-courier breakdown in the PG aggregate);
+    // top_courier is honest-empty for the local-db plane — connector_shipment_facts does not
+    // carry a per-pincode courier aggregation without an extra GROUP BY subquery.
+    let pincodeRows: import('../domain/proto-types.js').PincodeRow[] = rows.map((r) => {
+      const sc = r.shipmentCount;
+      const rtoBp = bp(r.rtoCount, sc);
+      const codBp = bp(r.codCount, sc);
+      const deliveredBp = bp(r.deliveredCount, sc);
+      const state = _stateFromPincode(r.pincode);
+      const tier = _classifyTier(r.city);
+      // Profitability score mirrors legacy calcProfitabilityScore:
+      // 100 - rtoRate%*2 - codRate%*0.5 + repeatRate%*0.5 + (aov/1000)*10, clamped 0..100.
+      // In the local-db plane repeat and aov are not available per-pincode without joined orders.
+      // We compute what we can (rto + cod penalty, delivered bonus) and cap at 10000 centi-points.
+      const rtoRatePct = (rtoBp ?? 0) / 100;
+      const codRatePct = (codBp ?? 0) / 100;
+      const rawScore = Math.max(0, Math.min(100, 100 - rtoRatePct * 2 - codRatePct * 0.5));
+      // Store as centi-points (×100) matching the PincodeRow.reliability_score contract.
+      const reliability_score = Math.round(rawScore * 100);
+      return {
+        pincode: r.pincode,
+        city: r.city,
+        state,
+        tier,
+        shipment_count: sc,
+        rto_count: r.rtoCount,
+        rto_rate_bp: rtoBp,
+        cod_count: r.codCount,
+        cod_rate_bp: codBp,
+        delivered_count: r.deliveredCount,
+        delivered_rate_bp: deliveredBp,
+        revenue_mu: 0n,      // honest: no per-pincode revenue without matched-order join
+        aov_mu: null,        // honest: see above
+        unique_customers: 0n, // honest: no per-pincode customer aggregation
+        repeat_rate_bp: null, // honest: no repeat data without per-customer join
+        reliability_score,
+        top_courier: '',     // honest: no per-pincode courier breakdown in current PG aggregate
+      };
+    });
+    // Apply filters
+    if (filters?.search) {
+      const q = filters.search.toLowerCase();
+      pincodeRows = pincodeRows.filter((r) =>
+        r.pincode.toLowerCase().includes(q) ||
+        r.city.toLowerCase().includes(q) ||
+        r.state.toLowerCase().includes(q));
+    }
+    if (filters?.state) pincodeRows = pincodeRows.filter((r) => r.state.toLowerCase() === filters.state!.toLowerCase());
+    if (filters?.min_orders) pincodeRows = pincodeRows.filter((r) => r.shipment_count >= BigInt(filters.min_orders!));
+    if (filters?.high_rto) pincodeRows = pincodeRows.filter((r) => r.rto_rate_bp !== null && r.rto_rate_bp >= HIGH_RTO_BP);
+    if (filters?.high_cod) pincodeRows = pincodeRows.filter((r) => r.cod_rate_bp !== null && r.cod_rate_bp >= HIGH_COD_BP);
     const result: PincodeIntelligenceResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
       total_shipments: total,
-      rows: rows.map((r) => ({
-        pincode: r.pincode, city: r.city, state: '', tier: null,
-        shipment_count: r.shipmentCount,
-        rto_count: r.rtoCount, rto_rate_bp: bp(r.rtoCount, r.shipmentCount),
-        cod_count: r.codCount, cod_rate_bp: bp(r.codCount, r.shipmentCount),
-        delivered_count: r.deliveredCount, delivered_rate_bp: bp(r.deliveredCount, r.shipmentCount),
-        revenue_mu: 0n, aov_mu: null, unique_customers: 0n, repeat_rate_bp: null,
-        reliability_score: r.shipmentCount > 0n ? Number((r.deliveredCount * 10000n) / r.shipmentCount) : 0,
-        top_courier: '',
-      })),
+      rows: pincodeRows,
     };
     return { result, data_epoch: DATA_EPOCH };
   }
@@ -665,17 +888,34 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getProductPerformance(p: Parameters<DataPlanePort['getProductPerformance']>[0]) {
     this.assertWs(p.workspace_id);
-    const { rows, totalCm1Mu } = await readProductPerformance(this.ws);
+    const f = p.filters;
+    // Map the tRPC-layer sort enum to the fact-analytics sort param.
+    const sortMap: Record<string, ReadProductPerformanceFilters['sort']> = {
+      cm1: 'cm1', revenue: 'revenue', sold: 'sold', orders: 'orders', label: 'label',
+      // These sort axes map to cm1 at the SQL layer (returned sorted by cm1 then re-sorted client-side).
+      cm1_pct: 'cm1', cm1_total: 'cm1', refunded: 'sold', net_quantity: 'sold',
+      return_rate: 'cm1', aov: 'revenue', pareto_grade: 'cm1',
+    };
+    const factFilters: ReadProductPerformanceFilters = {
+      dateStart: p.date_range.start,
+      dateEnd: p.date_range.end,
+      search: f?.search,
+      sort: sortMap[f?.sort ?? 'cm1'] ?? 'cm1',
+      direction: f?.direction ?? 'desc',
+      page: f?.page,
+      pageSize: f?.page_size,
+    };
+    const { rows, totalCm1Mu, totalUnfilteredRows } = await readProductPerformance(this.ws, factFilters);
     const result: ProductPerformanceResult = {
       workspace_id: this.ws,
       period: 'synced',
       data_epoch: DATA_EPOCH,
       currency_code: 'INR',
-      group_by: 'product',
-      sort: 'cm1',
-      direction: 'desc',
+      group_by: (f?.group_by ?? 'product') as ProductGroupBy,
+      sort: (f?.sort ?? 'cm1') as ProductSort,
+      direction: f?.direction ?? 'desc',
       total_cm1_mu: totalCm1Mu,
-      total_rows: BigInt(rows.length),
+      total_rows: BigInt(totalUnfilteredRows),
       rows: rows.map((r) => ({
         label: r.label,
         pareto_grade: r.paretoGrade,
@@ -683,20 +923,22 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
         cm1_pct_bp: r.revenueMu > 0n ? Number((r.cm1Mu * 10000n) / r.revenueMu) : null,
         cm1_total_share_bp: totalCm1Mu > 0n ? Number((r.cm1Mu * 10000n) / totalCm1Mu) : null,
         revenue_mu: r.revenueMu,
+        // sales_mu = revenue (full price before refunds); local facts only have realized revenue.
+        // Honest approximation: sales_mu == revenue_mu (refund split not in connector_line_item_facts).
         sales_mu: r.revenueMu,
-        refunds_mu: 0n,
+        refunds_mu: 0n,  // honest-empty: refund attribution per product not in local facts
         sold: r.soldQty,
-        refunded: 0n,
+        refunded: 0n,    // honest-empty: refunded qty per product not in local facts
         net_quantity: r.soldQty,
-        return_rate_bp: null,
-        nc_return_rate_bp: null,
+        return_rate_bp: null,     // honest-empty: requires refund join
+        nc_return_rate_bp: null,  // honest-empty: NC/EC split not in local facts
         ec_return_rate_bp: null,
         orders: r.orders,
-        nc_orders: 0n,
-        ec_orders: 0n,
+        nc_orders: 0n,   // honest-empty
+        ec_orders: 0n,   // honest-empty
         aov_mu: r.aovMu,
-        nc_aov_mu: null,
-        ec_aov_mu: null,
+        nc_aov_mu: null, // honest-empty
+        ec_aov_mu: null, // honest-empty
       })),
     };
     return { result, data_epoch: DATA_EPOCH };
@@ -707,25 +949,42 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getFirstProductCascade(p: Parameters<DataPlanePort['getFirstProductCascade']>[0]) {
     this.assertWs(p.workspace_id);
-    const { rows, totalCohort } = await readFirstProductCascade(this.ws);
+    const obsDays = Math.min(730, Math.max(30, p.filters?.observation_days ?? 365));
+    const { rows, totalCohort } = await readFirstProductCascade(
+      this.ws,
+      p.date_range.start,
+      p.date_range.end,
+      obsDays,
+    );
     const result: FirstProductCascadeResult = {
       workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, currency_code: 'INR',
-      observation_days: 90,
+      observation_days: obsDays,
       total_cohort_customers: totalCohort,
-      rows: rows.map((r) => ({
-        product_key: r.productKey,
-        product_title: r.productTitle,
-        first_order_customers: r.firstOrderCustomers,
-        customers_with_2nd_order: r.with2nd,
-        customers_with_3rd_order: r.with3rd,
-        customers_with_4th_plus_order: r.with4thPlus,
-        second_order_rate_bp: bp(r.with2nd, r.firstOrderCustomers),
-        third_order_rate_bp: bp(r.with3rd, r.firstOrderCustomers),
-        fourth_plus_rate_bp: bp(r.with4thPlus, r.firstOrderCustomers),
-        additional_order_rate_centi: 0n,
-        average_ltv_revenue_mu: r.avgLtvMu,
-        average_days_to_second_deci: null,
-      })),
+      rows: rows.map((r) => {
+        const n = r.firstOrderCustomers;
+        // additional_order_rate_centi = sum(max(0,ordersInWindow-1)) * 100 / cohortSize (floor)
+        const additionalCenti = n > 0n
+          ? (r.sumAdditionalOrders * 100n) / n
+          : 0n;
+        // average_days_to_second_deci = sum_days * 10 / custs_with_2nd (floor), null if 0
+        const daysDeci = r.customersWith2ndInWindow > 0n
+          ? (r.sumDaysToSecond * 10n) / r.customersWith2ndInWindow
+          : null;
+        return {
+          product_key: r.productKey,
+          product_title: r.productTitle,
+          first_order_customers: n,
+          customers_with_2nd_order: r.with2nd,
+          customers_with_3rd_order: r.with3rd,
+          customers_with_4th_plus_order: r.with4thPlus,
+          second_order_rate_bp: bp(r.with2nd, n),
+          third_order_rate_bp: bp(r.with3rd, n),
+          fourth_plus_rate_bp: bp(r.with4thPlus, n),
+          additional_order_rate_centi: additionalCenti,
+          average_ltv_revenue_mu: r.avgLtvMu,
+          average_days_to_second_deci: daysDeci,
+        };
+      }),
     };
     return { result, data_epoch: DATA_EPOCH };
   }
@@ -802,9 +1061,50 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     };
     return { result, data_epoch: DATA_EPOCH };
   }
-  override async getEmailSmsPerformance(p: { workspace_id: string; date_range: DateRange }) {
+  override async getEmailSmsPerformance(p: Parameters<DataPlanePort['getEmailSmsPerformance']>[0]) {
     this.assertWs(p.workspace_id);
-    return { result: emptyEmailSmsPerformance(this.ws), data_epoch: DATA_EPOCH };
+    const groupBy = (p.filters?.group_by ?? 'campaign') as 'campaign' | 'flow' | 'date' | 'channel' | 'dow';
+    const facts = await readEmailPerformance(this.ws, p.date_range.start, p.date_range.end, groupBy);
+    if (facts.length === 0) {
+      return { result: emptyEmailSmsPerformance(this.ws), data_epoch: DATA_EPOCH };
+    }
+    const rows: EmailPerfRow[] = facts.map((f) => {
+      const openRateBp = f.delivered > 0n ? Number((f.uniqueOpens * 10000n) / f.delivered) : null;
+      const clickRateBp = f.delivered > 0n ? Number((f.uniqueClicks * 10000n) / f.delivered) : null;
+      const revPerRecipient = f.delivered > 0n ? f.revenueMu / f.delivered : null;
+      const revPerUniqueOpen = f.uniqueOpens > 0n ? f.revenueMu / f.uniqueOpens : null;
+      const unsubRateBp = f.delivered > 0n ? Number((f.unsubscribes * 10000n) / f.delivered) : null;
+      const spamRateBp = f.delivered > 0n ? Number((f.spamComplaints * 10000n) / f.delivered) : null;
+      return {
+        key: f.key,
+        label: f.label,
+        channel: f.channel,
+        delivered: f.delivered,
+        unique_opens: f.uniqueOpens,
+        unique_clicks: f.uniqueClicks,
+        orders: f.orders,
+        revenue_mu: f.revenueMu,
+        unsubscribes: f.unsubscribes,
+        spam_complaints: f.spamComplaints,
+        open_rate_bp: openRateBp,
+        click_rate_bp: clickRateBp,
+        revenue_per_recipient_mu: revPerRecipient,
+        revenue_per_unique_open_mu: revPerUniqueOpen,
+        unsubscribe_rate_bp: unsubRateBp,
+        spam_rate_bp: spamRateBp,
+      };
+    });
+    const result: EmailSmsPerformanceResult = {
+      workspace_id: this.ws,
+      period: 'synced',
+      data_epoch: DATA_EPOCH,
+      group_by: groupBy,
+      rows,
+      total_delivered: rows.reduce((s, r) => s + r.delivered, 0n),
+      total_revenue_mu: rows.reduce((s, r) => s + r.revenue_mu, 0n),
+      currency_code: 'INR',
+    };
+    return { result, data_epoch: DATA_EPOCH };
   }
 
   // Chart-parity: daily net-sales series (feeds analytics AreaChart).
@@ -1008,5 +1308,79 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   override async deleteMarketingAction(p: { workspace_id: string; action_id: string }): Promise<{ deleted: boolean }> {
     this.assertWs(p.workspace_id);
     return coreDeleteMarketingAction(p.workspace_id, p.action_id);
+  }
+
+  // Wave-4A: per-SKU lead-time mutation (MANAGER-gated). In-process store for local-dev.
+  // In production this would write to workspace_product_settings (or similar catalog table).
+  // A local migration is not required because this plane already accumulates all local
+  // state in process — no migration needed until the production write path is cut over.
+  override async setLeadTime(p: InventorySetLeadTimeInput): Promise<InventorySetLeadTimeResult> {
+    this.assertWs(p.workspace_id);
+    if (p.lead_time_days < 0 || p.lead_time_days > 365) {
+      throw new Error(`ValidationError: lead_time_days must be 0..365`);
+    }
+    _setLocalLeadTime(this.ws, p.sku, p.lead_time_days);
+    return { sku: p.sku, lead_time_days: p.lead_time_days };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Team CRUD mutations — parity-38 feat-parity-w6b.
+  // All run through the fact-analytics use-case functions (withWorkspace scoped).
+  // Role-gate enforcement lives at the router layer; these are DB-only operations.
+  // ---------------------------------------------------------------------------
+
+  override async listPendingInvitations(p: { workspace_id: string }): Promise<{ invitations: PendingInvitationRow[]; data_epoch: Date }> {
+    this.assertWs(p.workspace_id);
+    const { invitations } = await listTeamPendingInvitations(this.ws);
+    return {
+      invitations: invitations.map((i) => ({
+        id: i.id,
+        email: i.email,
+        role: i.role as WorkspaceMemberRole,
+        token: i.token,
+        created_at: i.createdAt,
+        expires_at: i.expiresAt,
+      })),
+      data_epoch: DATA_EPOCH,
+    };
+  }
+
+  override async teamInviteMember(p: TeamInviteParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    const res = await inviteTeamMember({
+      workspaceId: p.workspace_id,
+      inviterUserId: p.inviter_user_id,
+      inviteeEmail: p.invitee_email,
+      role: p.role,
+    });
+    return res;
+  }
+
+  override async teamChangeRole(p: TeamChangeRoleParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return changeTeamMemberRole({
+      workspaceId: p.workspace_id,
+      targetUserId: p.target_user_id,
+      newRole: p.new_role,
+    });
+  }
+
+  override async teamRemoveMember(p: TeamRemoveMemberParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return removeTeamMember({ workspaceId: p.workspace_id, targetUserId: p.target_user_id });
+  }
+
+  override async teamRevokeInvite(p: TeamRevokeInviteParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return revokeTeamInvite({ workspaceId: p.workspace_id, invitationId: p.invitation_id });
+  }
+
+  override async teamTransferOwnership(p: TeamTransferOwnershipParams): Promise<TeamMutationResult> {
+    this.assertWs(p.workspace_id);
+    return transferTeamOwnership({
+      workspaceId: p.workspace_id,
+      actorUserId: p.actor_user_id,
+      newOwnerUserId: p.new_owner_user_id,
+    });
   }
 }

@@ -29,11 +29,11 @@ import {
   completeCallback,
   listConnectors,
   disconnect,
-} from '../../application/connectors/connector-use-cases.js'
-import * as oauthState from '../../application/connectors/oauth-state.js'
+} from '../../application/contexts/connectors/connector-use-cases.js'
+import * as oauthState from '../../application/contexts/connectors/oauth-state.js'
 import { withWorkspace } from '../../infrastructure/db/workspace-context.js'
 import { _resetPoolForTest } from '../../infrastructure/db/workspace-context.js'
-import type { ProviderHttp } from '../../application/connectors/provider-config.js'
+import type { ProviderHttp } from '../../application/contexts/connectors/provider-config.js'
 
 const IS_INTEGRATION = process.env['INTEGRATION_TEST'] === 'true'
 const SUPER_URL = process.env['TEST_SUPER_URL'] ?? 'postgresql://postgres:postgres@localhost:5432/brain_dev'

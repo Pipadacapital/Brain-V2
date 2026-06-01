@@ -1,0 +1,9 @@
+[project]
+name = "brain_agents"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+description = "Agent base + the 15 product agents' shared scaffolding (spec: pylibs/brain_agents). Agent base class, daily-tick, Decision-Log writer, graduation tracker, memory query. Consumed by intelligence-service (Phase-2 build)."
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

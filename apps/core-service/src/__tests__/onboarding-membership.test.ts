@@ -21,7 +21,7 @@ import {
   acceptInvitation,
   OnboardingError,
   type DbRunners,
-} from '../application/onboarding/onboarding-use-cases.js'
+} from '../application/contexts/onboarding/onboarding-use-cases.js'
 
 // ---------------------------------------------------------------------------
 // Mock DB runners — capture queries; return scripted rows per query text.
