@@ -53,18 +53,25 @@ first run by catching genuine drift (see below) — it is not a rubber stamp. Wh
 adding a check, include the negative control in its docstring (e.g. "drop the RLS
 policy → C3 goes red").
 
-## Known drift (caught by this suite, pending disposition)
+## Time-boxed allowlist (C10 — bounded admin-table OFFSET)
 
-- **C10 — OFFSET pagination (RED).** `apps/core-service/src/application/contexts/`
-  `product-cogs/product-cogs-use-cases.ts` and `store-browser/store-browser-use-cases.ts`
-  use `LIMIT … OFFSET` for page-number table UIs. This violates the canon's
-  OFFSET-ban. Disposition (keyset conversion vs. a documented bounded-admin
-  exception) is a Founder/architect decision, tracked separately. Until resolved,
-  C10 keeps the gate red — which is the honest state: there is real drift to fix
-  before this gate can be wired blocking in CI.
+The suite's first run caught real `LIMIT … OFFSET` pagination in two admin browse
+files (`store-browser/store-browser-use-cases.ts`, `product-cogs/product-cogs-use-cases.ts`)
+— 4 page-number table queries. Disposition (Rohan, 2026-06-01): keyset conversion
+is its own req (`docs/req-keyset-pagination-admin-tables.md`, gated before
+Scale-tier onboarding); meanwhile each query bounds OFFSET `<= MAX_OFFSET`
+(`apps/core-service/src/application/shared/pagination.ts` → `boundedOffset`) so the
+unbounded deep-page cliff is removed **today** (deep pages return an empty
+`capped: true` "refine your filters" result, never a huge OFFSET scan).
+
+These two files are therefore an explicit, time-boxed **allowlist** in
+`check_pagination.py` / `conformance.yaml` — the gate is GREEN as a known state.
+It stays **non-vacuous**: OFFSET introduced in any *other* file still fails C10
+(verified by planting a probe). When the keyset req lands, delete the allowlist
+entries and C10 enforces clean everywhere.
 
 ## Wiring into CI (roadmap Phase A3)
 
 Add a job that runs `python tests/conformance/run_conformance.py --with-behavioral`
-on every PR, alongside `tools/check-metrics-parity.sh`. Gate is green once the C10
-drift is dispositioned.
+on every PR, alongside `tools/check-metrics-parity.sh`. The gate is green now (C10
+dispositioned), so it can be wired as blocking.

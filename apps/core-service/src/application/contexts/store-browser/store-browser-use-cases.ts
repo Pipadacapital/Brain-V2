@@ -16,6 +16,7 @@
 
 import type { PoolClient } from 'pg'
 import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
+import { boundedOffset } from '../../shared/pagination.js'
 
 // ── Common pagination shape ──────────────────────────────────────────────────
 export interface Paged<T> {
@@ -24,6 +25,9 @@ export interface Paged<T> {
   page: number
   pageSize: number
   totalPages: number
+  // C10: true when the requested page is beyond MAX_OFFSET — rows are empty and
+  // the caller should prompt the user to refine filters (deep-page guard).
+  capped?: boolean
 }
 
 function clampPage(p?: number): number { return Math.max(1, p ?? 1) }
@@ -64,7 +68,7 @@ export async function listOrders(
 ): Promise<Paged<StoreOrderRow>> {
   const page = clampPage(opts.page)
   const pageSize = clampSize(opts.pageSize)
-  const offset = (page - 1) * pageSize
+  const { offset, capped } = boundedOffset(page, pageSize)
   const search = (opts.search ?? '').trim()
   const status = opts.status ?? 'all'
   const cod = opts.cod ?? 'all'
@@ -89,6 +93,12 @@ export async function listOrders(
       args,
     )
     const total = Number(cnt.rows[0]?.n ?? '0')
+
+    // C10 deep-page guard: refuse pages past MAX_OFFSET — return an empty,
+    // "refine your filters" page instead of running an O(n) deep-OFFSET scan.
+    if (capped) {
+      return { rows: [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), capped: true }
+    }
 
     args.push(pageSize, offset)
     const rows = await tx.query<{
@@ -171,7 +181,7 @@ export async function listStoreProducts(
 ): Promise<Paged<StoreProductRow>> {
   const page = clampPage(opts.page)
   const pageSize = clampSize(opts.pageSize)
-  const offset = (page - 1) * pageSize
+  const { offset, capped } = boundedOffset(page, pageSize)
   const search = (opts.search ?? '').trim()
   const status = opts.status ?? 'all'
 
@@ -193,6 +203,12 @@ export async function listStoreProducts(
       args,
     )
     const total = Number(cnt.rows[0]?.n ?? '0')
+
+    // C10 deep-page guard: refuse pages past MAX_OFFSET — return an empty,
+    // "refine your filters" page instead of running an O(n) deep-OFFSET scan.
+    if (capped) {
+      return { rows: [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), capped: true }
+    }
 
     args.push(pageSize, offset)
     const rows = await tx.query<{
@@ -258,7 +274,7 @@ export async function listStoreCustomers(
 ): Promise<Paged<StoreCustomerRow>> {
   const page = clampPage(opts.page)
   const pageSize = clampSize(opts.pageSize)
-  const offset = (page - 1) * pageSize
+  const { offset, capped } = boundedOffset(page, pageSize)
   const search = (opts.search ?? '').trim()
   const minOrders = opts.minOrders ?? 0
   const consent = opts.consent ?? 'all'
@@ -285,6 +301,12 @@ export async function listStoreCustomers(
       args,
     )
     const total = Number(cnt.rows[0]?.n ?? '0')
+
+    // C10 deep-page guard: refuse pages past MAX_OFFSET — return an empty,
+    // "refine your filters" page instead of running an O(n) deep-OFFSET scan.
+    if (capped) {
+      return { rows: [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), capped: true }
+    }
 
     args.push(pageSize, offset)
     const rows = await tx.query<{
