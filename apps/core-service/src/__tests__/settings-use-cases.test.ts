@@ -21,6 +21,7 @@ import {
   deleteMiscExpense,
   getFounderSalary,
   setFounderSalary,
+  getWorkspaceSettings,
   updateWorkspaceSettings,
   deleteWorkspace,
   createGoal,
@@ -521,6 +522,22 @@ describe('Workspace settings', () => {
   it('[-] updateWorkspaceSettings NOT_FOUND for unknown workspace', async () => {
     const { runners } = makeMockRunners(WS_A)
     await expect(updateWorkspaceSettings(WS_B, { timezone: 'UTC' }, runners))
+      .rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('[+] getWorkspaceSettings reads back the current tax/filter/COGS config', async () => {
+    const { runners } = makeMockRunners(WS_A)
+    // write tax + COGS, then read back via the new getter (the write-only gap fix)
+    await updateWorkspaceSettings(WS_A, { tax_percent_bp: 1800, override_all_cogs_bp: 1000 }, runners)
+    const row = await getWorkspaceSettings(WS_A, runners)
+    expect(row.id).toBe(WS_A)
+    expect(row.tax_percent_bp).toBe(1800)
+    expect(row.override_all_cogs_bp).toBe(1000)
+  })
+
+  it('[-] getWorkspaceSettings NOT_FOUND for unknown workspace', async () => {
+    const { runners } = makeMockRunners(WS_A)
+    await expect(getWorkspaceSettings(WS_B, runners))
       .rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 })
