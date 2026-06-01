@@ -12,7 +12,9 @@
     "test": "turbo run test",
     "check:metrics-parity": "./tools/check-metrics-parity.sh",
     "check:conformance": "python3 tests/conformance/run_conformance.py",
-    "docker:build:ingestion": "docker build -f apps/ingestion-service/Dockerfile -t brain/ingestion:local ."
+    "docker:build:ingestion": "docker build -f apps/ingestion-service/Dockerfile -t brain/ingestion:local .",
+    "docker:build:analytics": "docker build -f apps/analytics-service/Dockerfile -t brain/analytics:local .",
+    "docker:build:intelligence": "docker build -f apps/intelligence-service/Dockerfile -t brain/intelligence:local ."
   },
   "devDependencies": {
     "turbo": "^2.3.3"

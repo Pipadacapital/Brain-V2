@@ -80,7 +80,9 @@ pylibs
 !apps/ingestion-service/pyproject.toml
 !apps/ingestion-service/src
 !apps/analytics-service/pyproject.toml
+!apps/analytics-service/src
 !apps/intelligence-service/pyproject.toml
+!apps/intelligence-service/src
 !pylibs
 **/.venv
 **/__pycache__

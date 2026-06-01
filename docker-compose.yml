@@ -198,6 +198,70 @@ services:
     networks:
       - brain-net
 
+  # -------------------------------------------------------------------------
+  # analytics-service (Python) — INTERNAL metric engine / ClickHouse query layer
+  # / Decision-Log writer. Phase-A PA-2a: own independently buildable/runnable
+  # image (health-only gRPC surface for now). PROFILE-GATED OFF by default.
+  #     docker compose --profile data up analytics-service
+  #
+  # Fail-closed gates: ap-south-1 CLICKHOUSE_HOST + a read-only DATABASE_URL role
+  # (from .env.docker). INTERNAL-ONLY: no host port; GRPC_INTERNAL_HOST=0.0.0.0
+  # binds the pod network (literal lives here, never in code). gRPC port 50052.
+  # -------------------------------------------------------------------------
+  analytics-service:
+    profiles: ["data"]
+    build:
+      context: .
+      dockerfile: apps/analytics-service/Dockerfile
+    container_name: brain-analytics-service
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GRPC_INTERNAL_HOST: 0.0.0.0
+      GRPC_INTERNAL_PORT: 50052
+    env_file:
+      - .env.docker
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; health_pb2_grpc.HealthStub(grpc.insecure_channel('127.0.0.1:50052')).Check(health_pb2.HealthCheckRequest(), timeout=2)\" || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    networks:
+      - brain-net
+
+  # -------------------------------------------------------------------------
+  # intelligence-service (Python) — INTERNAL Memory Layer / agents / LLM gateway
+  # orchestration. Phase-A PA-2b: own independently buildable/runnable image
+  # (health-only gRPC surface; daily-tick/Morning-Brief runtime is Phase-D).
+  # PROFILE-GATED OFF by default.
+  #     docker compose --profile data up intelligence-service
+  #
+  # Fail-closed gate: India residency (POSTGRES_REGION must be ap-south-1 if set).
+  # INTERNAL-ONLY: no host port; GRPC_INTERNAL_HOST=0.0.0.0 binds the pod network
+  # (literal lives here, never in code). gRPC port 50053.
+  # -------------------------------------------------------------------------
+  intelligence-service:
+    profiles: ["data"]
+    build:
+      context: .
+      dockerfile: apps/intelligence-service/Dockerfile
+    container_name: brain-intelligence-service
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GRPC_INTERNAL_HOST: 0.0.0.0
+      GRPC_INTERNAL_PORT: 50053
+      POSTGRES_REGION: ap-south-1
+    env_file:
+      - .env.docker
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; health_pb2_grpc.HealthStub(grpc.insecure_channel('127.0.0.1:50053')).Check(health_pb2.HealthCheckRequest(), timeout=2)\" || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    networks:
+      - brain-net
+
 # ---------------------------------------------------------------------------
 # Volumes — bind to the EXISTING volumes from the per-service dev compose
 # files (`apps/core-service/docker-compose.dev.yml` and
