@@ -34,7 +34,10 @@ SELECT
   coalesce(customer_ref, ''),
   coalesce(delivery_pincode, ''), coalesce(delivery_city, ''),
   gross_sales_mu, total_discount_mu, total_tax_mu, shipping_mu,
-  gross_sales_mu - total_discount_mu - total_tax_mu,
+  -- net_sales = gross - discount (tax is NOT subtracted here; it is removed downstream
+  -- at net_net_tax_mu per the metric registry). Subtracting tax here double-counted it
+  -- and understated every CM-waterfall metric (ADR-CONVERGENCE-001 finding A).
+  gross_sales_mu - total_discount_mu,
   coalesce(total_refund_mu, 0),
   currency_code, coalesce(payment_method, ''),
   coalesce(toUInt8(is_cod), 0), coalesce(order_type, ''),
