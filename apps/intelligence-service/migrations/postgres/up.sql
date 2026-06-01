@@ -225,4 +225,22 @@ DROP POLICY IF EXISTS rls_brand_fingerprint ON memory.brand_fingerprint;
 CREATE POLICY rls_brand_fingerprint ON memory.brand_fingerprint
     USING (workspace_id = current_setting('app.workspace_id', TRUE)::TEXT);
 
+-- ============================================================
+-- A4a — grant svc_intelligence its owned tables (ai.* + memory.*).
+-- One-writer-per-store: intelligence-service owns ai/memory; svc_intelligence has
+-- USAGE on ai+memory ONLY (no public USAGE — it cannot resolve core tables).
+-- NON-BYPASSRLS → rows stay workspace-scoped. (Role created by core-service
+-- initdb 02-create-service-roles.sql locally / the A4b live ceremony.)
+-- DO-block guards in case the role is not yet provisioned in a given environment.
+-- ============================================================
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'svc_intelligence') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON
+      ai.decision_log, ai.graduation, ai.workspace_action_cap, ai.insight_cache,
+      ai.cross_brand_pattern, memory.brand_fingerprint
+    TO svc_intelligence;
+  END IF;
+END $$;
+
 COMMIT;

@@ -27,8 +27,9 @@ import check_money_types, check_clickhouse, check_rls, check_decision_log  # noq
 import check_memory, check_llm_gateway, check_pagination, check_layering  # noqa: E402
 import behavioral  # noqa: E402
 
-# Advisory checks WARN instead of failing the gate.
-_ADVISORY = {"C12"}
+# Advisory checks WARN instead of failing the gate. (C12 graduated to BLOCKING in
+# A4 once per-service roles + grants + the deny-matrix proof landed.)
+_ADVISORY: set[str] = set()
 
 _GREEN, _RED, _YELLOW, _GREY, _RESET = "\033[32m", "\033[31m", "\033[33m", "\033[90m", "\033[0m"
 _COLOR = {Status.PASS: _GREEN, Status.FAIL: _RED, Status.WARN: _YELLOW, Status.SKIP: _GREY}
