@@ -10,7 +10,9 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "check:metrics-parity": "./tools/check-metrics-parity.sh"
+    "check:metrics-parity": "./tools/check-metrics-parity.sh",
+    "check:conformance": "python3 tests/conformance/run_conformance.py",
+    "docker:build:ingestion": "docker build -f apps/ingestion-service/Dockerfile -t brain/ingestion:local ."
   },
   "devDependencies": {
     "turbo": "^2.3.3"

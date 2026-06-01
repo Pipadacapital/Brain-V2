@@ -163,6 +163,41 @@ services:
     networks:
       - brain-net
 
+  # -------------------------------------------------------------------------
+  # ingestion-service (Python) — INTERNAL connector ingestion + WebhookIngest
+  # gRPC listener. Phase-A PA-1: its own independently buildable/runnable image.
+  #
+  # PROFILE-GATED OFF by default: plain `docker compose up` is byte-for-byte
+  # unchanged. Start explicitly with:
+  #     docker compose --profile data up ingestion-service
+  #
+  # Targets the LIVE ap-south-1 Supabase (DPDP residency gate) — NOT the local
+  # postgres-dev — so it has no depends_on here. Requires DATABASE_URL +
+  # DIRECT_URL (ap-south-1) + ALLOWED_WORKSPACE_IDS in .env.docker. INTERNAL-ONLY:
+  # no host port mapping (reachable on brain-net only); GRPC_INTERNAL_HOST=0.0.0.0
+  # binds the container/pod network (the 0.0.0.0 literal lives here, never in code).
+  # -------------------------------------------------------------------------
+  ingestion-service:
+    profiles: ["data"]
+    build:
+      context: .
+      dockerfile: apps/ingestion-service/Dockerfile
+    container_name: brain-ingestion-service
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      GRPC_INTERNAL_HOST: 0.0.0.0
+      GRPC_INTERNAL_PORT: 50051
+    env_file:
+      - .env.docker
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; health_pb2_grpc.HealthStub(grpc.insecure_channel('127.0.0.1:50051')).Check(health_pb2.HealthCheckRequest(), timeout=2)\" || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    networks:
+      - brain-net
+
 # ---------------------------------------------------------------------------
 # Volumes — bind to the EXISTING volumes from the per-service dev compose
 # files (`apps/core-service/docker-compose.dev.yml` and
