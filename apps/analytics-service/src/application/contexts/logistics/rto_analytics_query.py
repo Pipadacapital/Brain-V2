@@ -29,7 +29,7 @@ from brain_metrics.registry.definitions import (
     rto_revenue_lost_mu as _RTO_REVENUE_LOST_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

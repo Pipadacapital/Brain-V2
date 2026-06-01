@@ -34,7 +34,7 @@ from brain_metrics.registry.definitions import (
     _INVENTORY_INFINITE_DAYS,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

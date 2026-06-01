@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.marketing.marketing_efficiency_query import (
+from src.application.contexts.marketing.marketing_efficiency_query import (
     MarketingEfficiencyQuery,
     MarketingEfficiencyFacts,
 )

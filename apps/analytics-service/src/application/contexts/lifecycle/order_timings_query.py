@@ -37,7 +37,7 @@ from brain_metrics.registry.definitions import (
     reactivation_window_days as _REACTIVATION_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

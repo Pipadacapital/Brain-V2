@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.ltv.ltv_summary_query import (
+from src.application.contexts.ltv.ltv_summary_query import (
     LtvSummaryQuery,
     LtvFacts,
     LtvDimFact,

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.marketing.distributions_query import (
+from src.application.contexts.marketing.distributions_query import (
     DistributionsQuery,
     DistributionsFacts,
     DistributionsProductFact,

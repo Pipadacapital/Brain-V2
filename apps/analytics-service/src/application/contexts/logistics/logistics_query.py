@@ -21,7 +21,7 @@ from brain_metrics.registry.definitions import (
     rto_rate_bp as _RTO_RATE_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

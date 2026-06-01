@@ -35,7 +35,7 @@ from brain_metrics.registry.definitions import (
     repeat_rate_bp as _REPEAT_RATE_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

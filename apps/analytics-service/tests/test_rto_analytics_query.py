@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.logistics.rto_analytics_query import (
+from src.application.contexts.logistics.rto_analytics_query import (
     RtoAnalyticsQuery,
     RtoFacts,
     CourierRtoFacts,

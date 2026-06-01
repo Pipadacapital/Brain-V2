@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.pnl.pnl_statement_query import (
+from src.application.contexts.pnl.pnl_statement_query import (
     PnlStatementQuery,
     RtoProvisionFacts,
     VariableCostFacts,

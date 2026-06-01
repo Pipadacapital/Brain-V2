@@ -36,7 +36,7 @@ from brain_metrics.registry.definitions import (
     first_product_second_order_rate_bp as _SECOND_ORDER_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.logistics.cod_prepaid_query import (
+from src.application.contexts.logistics.cod_prepaid_query import (
     CodPrepaidQuery,
     CodPrepaidFacts,
     FeeInputs,

@@ -26,8 +26,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.pnl.cm_waterfall_query import CmWaterfallQuery
-from src.application.pnl.pnl_statement_query import (
+from src.application.contexts.pnl.cm_waterfall_query import CmWaterfallQuery
+from src.application.contexts.pnl.pnl_statement_query import (
     RtoProvisionFacts,
     ShippingRtoFacts,
     VariableCostFacts,
@@ -272,7 +272,7 @@ class TestWaterfallBackwardsCompat:
 
 class TestSingleSourceOfTruth:
     def test_cm_subtotals_match_statement(self) -> None:
-        from src.application.pnl.pnl_statement_query import PnlStatementQuery
+        from src.application.contexts.pnl.pnl_statement_query import PnlStatementQuery
         client = _client({_WS_A: [_row(_WS_A, date(2026, 4, 1))]})
         stmt = PnlStatementQuery().execute(_WS_A, _DATE_RANGE, _VAR, RtoProvisionFacts(), _client=client)
         client2 = _client({_WS_A: [_row(_WS_A, date(2026, 4, 1))]})

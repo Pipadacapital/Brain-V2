@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.settings.calendar_report_query import (
+from src.application.contexts.settings.calendar_report_query import (
     CalendarReportQuery,
     CalendarReportFacts,
     CalendarPeriodFact,

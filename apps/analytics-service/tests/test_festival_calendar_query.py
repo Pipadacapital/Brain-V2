@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.application.settings.festival_calendar_query import (
+from src.application.contexts.settings.festival_calendar_query import (
     FestivalCalendarQuery,
     FestivalFacts,
     FestivalFact,

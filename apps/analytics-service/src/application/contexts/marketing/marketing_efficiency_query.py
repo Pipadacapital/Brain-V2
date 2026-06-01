@@ -35,7 +35,7 @@ from brain_metrics.registry.definitions import (
     blended_roas_x100 as _ROAS_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,

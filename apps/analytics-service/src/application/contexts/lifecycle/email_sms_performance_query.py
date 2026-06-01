@@ -37,7 +37,7 @@ from brain_metrics.registry.definitions import (
     email_revenue_per_recipient_mu as _RPR_DEF,
 )
 
-from ...infrastructure.clickhouse.query_gateway import (
+from ....infrastructure.clickhouse.query_gateway import (
     DateRange,
     UnscopedQueryError,
     query_metrics,
