@@ -48,20 +48,33 @@ GRANT CONNECT ON DATABASE brain_dev TO svc_core, svc_ingestion, svc_intelligence
 --     connection exists only for the startup read-only-role probe).
 -- ---------------------------------------------------------------------------
 GRANT USAGE ON SCHEMA public            TO svc_core, svc_ingestion, svc_analytics_ro;
-GRANT USAGE ON SCHEMA legacy_aggregates TO svc_core;
-GRANT USAGE ON SCHEMA ai                TO svc_intelligence;
-GRANT USAGE ON SCHEMA memory            TO svc_intelligence;
 
 -- ---------------------------------------------------------------------------
--- DEFAULT PRIVILEGES — ONLY for NON-OVERLAPPING schemas (single owner).
--- For shared `public` we deliberately DO NOT set default privileges (it would
--- mis-grant cross-owner tables); new public tables are granted explicitly in
--- the owning service's migration, and conformance C12 fails if a new public
--- table is left ungranted to its owner.
+-- Schema-dependent grants (ai / memory / legacy_aggregates) + their DEFAULT
+-- PRIVILEGES. GUARDED: on a FRESH volume this file runs at initdb BEFORE the
+-- later manual migrations create those schemas, so an unguarded GRANT USAGE
+-- aborts initdb (the postgres container exits). We skip-if-absent here and
+-- (re-)apply once the schemas exist — re-running this file after the schema
+-- migrations is idempotent and completes the grants. For shared `public` we
+-- deliberately set NO default privileges (would mis-grant cross-owner tables);
+-- new public tables are granted explicitly in the owning service's migration
+-- (conformance C12 fails if a new public table is left ungranted to its owner).
 -- ---------------------------------------------------------------------------
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ai
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO svc_intelligence;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA memory
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO svc_intelligence;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA legacy_aggregates
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO svc_core;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'legacy_aggregates') THEN
+    GRANT USAGE ON SCHEMA legacy_aggregates TO svc_core;
+    ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA legacy_aggregates
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO svc_core;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ai') THEN
+    GRANT USAGE ON SCHEMA ai TO svc_intelligence;
+    ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA ai
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO svc_intelligence;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'memory') THEN
+    GRANT USAGE ON SCHEMA memory TO svc_intelligence;
+    ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA memory
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO svc_intelligence;
+  END IF;
+END $$;
