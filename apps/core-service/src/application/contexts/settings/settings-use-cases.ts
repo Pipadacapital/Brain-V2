@@ -1013,6 +1013,92 @@ export async function resetFestivalDefaults(
 }
 
 // ---------------------------------------------------------------------------
+// CONFIG ROW READS (with ids) — for the management UIs' edit/delete.
+//
+// The dashboard reads (settings.costs/goals/festivals → analytics-service aggregates)
+// carry NO source Postgres row id, so the UI could create but not target an existing
+// row for edit/delete. These reads return the config rows straight from core-service
+// Postgres WITH their ids (the same Row shapes update*/delete* operate on). Scoped
+// under withWorkspace — RLS-fenced to the caller's tenant.
+// ---------------------------------------------------------------------------
+
+export async function listCosts(
+  workspaceId: string,
+  runners: DbRunners = defaultRunners,
+): Promise<CostRow[]> {
+  const fn = 'listCosts'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query<CostRow>(
+        `SELECT id, workspace_id, cost_type, name, amount_mu, is_percent, currency_code,
+                billing_mode, effective_from::text, effective_to::text, created_at::text
+           FROM workspace_costs
+          WHERE workspace_id = $1
+          ORDER BY effective_from DESC, created_at DESC`,
+        [workspaceId],
+      )
+      log.debug({ fn, workspaceId, count: res.rows.length, duration_ms: Date.now() - t0 }, 'listCosts done')
+      return res.rows.map((r) => ({ ...r, amount_mu: BigInt(r.amount_mu) }))
+    })
+  } catch (err) {
+    log.error({ fn, err, workspaceId, duration_ms: Date.now() - t0 }, 'listCosts failed')
+    throw err
+  }
+}
+
+export async function listGoals(
+  workspaceId: string,
+  runners: DbRunners = defaultRunners,
+): Promise<GoalRow[]> {
+  const fn = 'listGoals'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query<GoalRow>(
+        `SELECT id, workspace_id, metric_name, period_type, period_start::text,
+                goal_value, goal_unit, goal_type, created_at::text, updated_at::text
+           FROM workspace_metric_goals
+          WHERE workspace_id = $1
+          ORDER BY period_start DESC, metric_name ASC`,
+        [workspaceId],
+      )
+      log.debug({ fn, workspaceId, count: res.rows.length, duration_ms: Date.now() - t0 }, 'listGoals done')
+      return res.rows.map((r) => ({ ...r, goal_value: BigInt(r.goal_value) }))
+    })
+  } catch (err) {
+    log.error({ fn, err, workspaceId, duration_ms: Date.now() - t0 }, 'listGoals failed')
+    throw err
+  }
+}
+
+export async function listFestivals(
+  workspaceId: string,
+  runners: DbRunners = defaultRunners,
+): Promise<FestivalRow[]> {
+  const fn = 'listFestivals'
+  const t0 = Date.now()
+  try {
+    return await runners.withWorkspace(workspaceId, async (tx: PoolClient) => {
+      const res = await tx.query<FestivalRow>(
+        `SELECT id, workspace_id, name, start_date::text, end_date::text, color,
+                expected_multiplier_bp, regions, categories, is_template, is_active,
+                created_at::text, updated_at::text
+           FROM workspace_festivals
+          WHERE workspace_id = $1
+          ORDER BY start_date DESC, name ASC`,
+        [workspaceId],
+      )
+      log.debug({ fn, workspaceId, count: res.rows.length, duration_ms: Date.now() - t0 }, 'listFestivals done')
+      return res.rows
+    })
+  } catch (err) {
+    log.error({ fn, err, workspaceId, duration_ms: Date.now() - t0 }, 'listFestivals failed')
+    throw err
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 8. MARKETING ACTIONS CRUD — marketing_actions
 // Operator-logged events (email blasts, promotions, etc.) that overlay the
 // calendar report. Money fields: NONE (no spend on this table — spend lives

@@ -44,13 +44,14 @@ vi.mock('@/domain/store/hooks.js', () => ({
 }));
 
 // tRPC mutation/query mocks
-const { createCostMutate, deleteCostMutate, createMiscMutate, deleteMiscMutate, setFounderSalaryMutate, invalidate } = vi.hoisted(() => ({
+const { createCostMutate, deleteCostMutate, createMiscMutate, deleteMiscMutate, setFounderSalaryMutate, invalidate, EMPTY_LIST_RESULT } = vi.hoisted(() => ({
   createCostMutate: vi.fn(),
   deleteCostMutate: vi.fn(),
   createMiscMutate: vi.fn(),
   deleteMiscMutate: vi.fn(),
   setFounderSalaryMutate: vi.fn(),
   invalidate: vi.fn(),
+  EMPTY_LIST_RESULT: { data: { rows: [], total: 0 }, isLoading: false, error: null },
 }));
 
 let createCostOnSuccess: ((row: Record<string, unknown>) => void) | undefined;
@@ -91,6 +92,11 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
       costs: {
         useQuery: () => ({ data: COSTS_DATA, isLoading: false, error: null }),
       },
+      listCosts: {
+        // Stable reference (mirrors react-query) — a fresh object each call would make
+        // the component's hydration useEffect re-fire forever (worker crash).
+        useQuery: () => EMPTY_LIST_RESULT,
+      },
       getFounderSalary: {
         useQuery: () => ({ data: FOUNDER_DATA, isLoading: false, error: null }),
       },
@@ -127,6 +133,7 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
     useUtils: () => ({
       settings: {
         costs: { invalidate },
+        listCosts: { invalidate },
         getFounderSalary: { invalidate },
       },
     }),

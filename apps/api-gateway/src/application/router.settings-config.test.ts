@@ -13,7 +13,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../core-service/src/application/contexts/settings/index.ts', async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
-  return { ...actual, getWorkspaceSettings: vi.fn() };
+  return {
+    ...actual,
+    getWorkspaceSettings: vi.fn(),
+    listCosts: vi.fn(),
+    listGoals: vi.fn(),
+    listFestivals: vi.fn(),
+  };
 });
 
 import { createBrainRouter } from './router.js';
@@ -26,7 +32,7 @@ import {
 } from '../infrastructure/loopback-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
 import type { WorkspaceContext } from './trpc.js';
-import { getWorkspaceSettings } from '@brain/core-settings';
+import { getWorkspaceSettings, listCosts, listGoals, listFestivals } from '@brain/core-settings';
 
 function makeCtx(role: BrainClaim['workspaceRole']): WorkspaceContext {
   const claim = assembleClaim({
@@ -79,5 +85,35 @@ describe('settings.workspaceConfig', () => {
       code: 'FORBIDDEN',
     });
     expect(getWorkspaceSettings).not.toHaveBeenCalled();
+  });
+});
+
+describe('settings config list reads (row ids for edit/delete)', () => {
+  it('(+) ANALYST reads listCosts/listGoals/listFestivals with totals', async () => {
+    vi.mocked(listCosts).mockResolvedValue([
+      { id: 'cost-1', workspace_id: SUGANDH_LOK_WORKSPACE_ID, cost_type: 'SHIPPING', name: null, amount_mu: 2000n, is_percent: false, currency_code: 'INR', billing_mode: 'PER_ORDER', effective_from: '2026-01-01', effective_to: null, created_at: '2026-01-01' },
+    ]);
+    vi.mocked(listGoals).mockResolvedValue([
+      { id: 'goal-1', workspace_id: SUGANDH_LOK_WORKSPACE_ID, metric_name: 'revenue', period_type: 'MONTHLY', period_start: '2026-05-01', goal_value: 1000n, goal_unit: 'CURRENCY', goal_type: 'MINIMUM', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ]);
+    vi.mocked(listFestivals).mockResolvedValue([]);
+    const c = caller(makeCtx('ANALYST'));
+    const costs = await c.settings.listCosts();
+    expect(costs.total).toBe(1);
+    expect(costs.rows[0]?.id).toBe('cost-1');
+    const goals = await c.settings.listGoals();
+    expect(goals.rows[0]?.id).toBe('goal-1');
+    const fests = await c.settings.listFestivals();
+    expect(fests.total).toBe(0);
+  });
+
+  it('(-) VIEWER is FORBIDDEN on every list read; use-cases never run', async () => {
+    const c = caller(makeCtx('VIEWER'));
+    await expect(c.settings.listCosts()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(c.settings.listGoals()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(c.settings.listFestivals()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(listCosts).not.toHaveBeenCalled();
+    expect(listGoals).not.toHaveBeenCalled();
+    expect(listFestivals).not.toHaveBeenCalled();
   });
 });

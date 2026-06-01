@@ -49,9 +49,9 @@ Tests: core 7 + gateway 7 (incl. USER/OWNER→FORBIDDEN, no-claim→UNAUTHORIZED
 ## Backend follow-ups (logged, non-blocking)
 - ✅ settings.getWorkspaceSettings read-getter (tax/filters readback) — DONE, commit 69871e0
   (core getWorkspaceSettings + gateway settings.workspaceConfig + form hydration + tests).
-- ⏳ costs/festivals/goals read queries should return row id for full server-row edit/delete —
-  TRACTABLE next chunk: needs NEW core-service config reads (list* returning ids, the current reads
-  are analytics-aggregate and carry no source Postgres id) + gateway procedures + UI wiring. Not yet done.
+- ✅ costs/festivals/goals reads return row id for full server-row edit/delete — DONE, commit 730cadb
+  (core listCosts/listGoals/listFestivals + gateway settings.list* + UI hydrates editable/deletable
+  lists with ids on load). Existing rows are now editable/deletable on reload, not only session-created.
 - 🔒 cohort CAC/LTV:CAC need cohort-attributed ad spend — DEFERRED (source facts don't exist locally).
 - 🔒 pincode revenue/top-courier, product NC/EC, email-sms fuller facts, order-composition — DEFERRED
   (need fact joins / new endpoints with data not present in brain_dev).

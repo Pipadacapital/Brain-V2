@@ -66,6 +66,9 @@ import {
   getWorkspaceSettings,
   updateWorkspaceSettings,
   deleteWorkspace,
+  listCosts,
+  listGoals,
+  listFestivals,
   createGoal,
   updateGoal,
   deleteGoal,
@@ -300,6 +303,56 @@ export function makeSettingsRouter(
       try {
         const row = await getWorkspaceSettings(ctx.workspaceId);
         return { ...row, request_id: ctx.requestId };
+      } catch (err) {
+        throw mapSettingsError(err, ctx.requestId);
+      }
+    }),
+
+    /**
+     * Config rows WITH ids — the source-of-truth list the management UIs target for
+     * edit/delete (the dashboard reads are analytics aggregates with no row id).
+     * requireRole(ANALYST). READ. Scoped to the caller's workspace.
+     */
+    listCosts: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.listCosts requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      try {
+        const rows = await listCosts(ctx.workspaceId);
+        return { rows, total: rows.length, request_id: ctx.requestId };
+      } catch (err) {
+        throw mapSettingsError(err, ctx.requestId);
+      }
+    }),
+
+    listGoals: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.listGoals requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      try {
+        const rows = await listGoals(ctx.workspaceId);
+        return { rows, total: rows.length, request_id: ctx.requestId };
+      } catch (err) {
+        throw mapSettingsError(err, ctx.requestId);
+      }
+    }),
+
+    listFestivals: workspaceProc.query(async ({ ctx }) => {
+      if (!requireRole(ctx.claim, 'ANALYST')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `settings.listFestivals requires ANALYST role. request_id=${ctx.requestId}`,
+        });
+      }
+      try {
+        const rows = await listFestivals(ctx.workspaceId);
+        return { rows, total: rows.length, request_id: ctx.requestId };
       } catch (err) {
         throw mapSettingsError(err, ctx.requestId);
       }

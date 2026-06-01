@@ -44,11 +44,13 @@ vi.mock('nuqs', async () => {
 // Mock data + hoisted mutation spies
 // ---------------------------------------------------------------------------
 
-const { createMutate, deleteMutate, invalidateGoals, invalidateCampaigns } = vi.hoisted(() => ({
+const { createMutate, deleteMutate, invalidateGoals, invalidateCampaigns, EMPTY_LIST_RESULT } = vi.hoisted(() => ({
   createMutate:        vi.fn(),
   deleteMutate:        vi.fn(),
   invalidateGoals:     vi.fn(),
   invalidateCampaigns: vi.fn(),
+  // Stable ref (mirrors react-query) so the hydration useEffect doesn't loop forever.
+  EMPTY_LIST_RESULT:   { data: { rows: [], total: 0 }, isLoading: false, error: null },
 }));
 
 let createOnSuccess: ((data: Record<string, unknown>) => void) | undefined;
@@ -114,6 +116,9 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
           error:      null,
         }),
       },
+      listGoals: {
+        useQuery: () => EMPTY_LIST_RESULT,
+      },
       createGoal: {
         useMutation: (opts: {
           onSuccess?: (d: Record<string, unknown>) => void;
@@ -135,7 +140,7 @@ vi.mock('@/infrastructure/trpc-client.js', () => ({
       },
     },
     useUtils: () => ({
-      settings: { goals: { invalidate: invalidateGoals } },
+      settings: { goals: { invalidate: invalidateGoals }, listGoals: { invalidate: invalidateGoals } },
       marketing: { platformCampaigns: { invalidate: invalidateCampaigns } },
     }),
   },

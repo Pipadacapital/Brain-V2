@@ -24,6 +24,9 @@ import {
   getWorkspaceSettings,
   updateWorkspaceSettings,
   deleteWorkspace,
+  listCosts,
+  listGoals,
+  listFestivals,
   createGoal,
   updateGoal,
   deleteGoal,
@@ -298,6 +301,17 @@ function makeMockRunners(workspaceId: string) {
       if (!row || row['workspace_id'] !== params[1]) return { rows: [] }
       festivals.delete(String(params[0]))
       return { rows: [{ id: params[0] }] }
+    }
+
+    // ---- config list reads (with ids) ----
+    if (/FROM workspace_costs WHERE workspace_id/i.test(s)) {
+      return { rows: [...costs.values()].filter((r) => r['workspace_id'] === params[0]) }
+    }
+    if (/FROM workspace_metric_goals WHERE workspace_id/i.test(s)) {
+      return { rows: [...goals.values()].filter((r) => r['workspace_id'] === params[0]) }
+    }
+    if (/FROM workspace_festivals WHERE workspace_id/i.test(s)) {
+      return { rows: [...festivals.values()].filter((r) => r['workspace_id'] === params[0]) }
     }
 
     // fallback — return empty (safe)
@@ -696,6 +710,49 @@ describe('Festivals CRUD', () => {
     seedFestival(FEST_ID, WS_A)
     await expect(deleteFestival(WS_B, FEST_ID, runners))
       .rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+})
+
+// ===========================================================================
+// CONFIG LIST READS (with ids) — listCosts / listGoals / listFestivals
+// ===========================================================================
+
+describe('Config list reads (row ids for edit/delete)', () => {
+  it('[+] listCosts returns created rows with id + bigint amount_mu', async () => {
+    const { runners } = makeMockRunners(WS_A)
+    await createCost(WS_A, { cost_type: 'SHIPPING', billing_mode: 'PER_ORDER', amount_mu: 2000n, effective_from: '2026-01-01' }, runners)
+    const rows = await listCosts(WS_A, runners)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBeTruthy()
+    expect(typeof rows[0].amount_mu).toBe('bigint')
+    expect(rows[0].amount_mu).toBe(2000n)
+    expect(rows[0].workspace_id).toBe(WS_A)
+  })
+
+  it('[+] listGoals returns created rows with id + bigint goal_value', async () => {
+    const { runners } = makeMockRunners(WS_A)
+    await createGoal(WS_A, { metric_name: 'revenue', period_type: 'MONTHLY', period_start: '2026-05-01', goal_value: 10_000_000n, goal_type: 'MINIMUM' }, runners)
+    const rows = await listGoals(WS_A, runners)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBeTruthy()
+    expect(typeof rows[0].goal_value).toBe('bigint')
+    expect(rows[0].goal_value).toBe(10_000_000n)
+  })
+
+  it('[+] listFestivals returns created rows with id', async () => {
+    const { runners } = makeMockRunners(WS_A)
+    await createFestival(WS_A, { name: 'Holi', start_date: '2026-03-25', end_date: '2026-03-26', expected_multiplier_bp: 20000 }, runners)
+    const rows = await listFestivals(WS_A, runners)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBeTruthy()
+    expect(rows[0].name).toBe('Holi')
+  })
+
+  it('[-] list reads return [] for a workspace with no rows (honest empty)', async () => {
+    const { runners } = makeMockRunners(WS_A)
+    expect(await listCosts(WS_A, runners)).toEqual([])
+    expect(await listGoals(WS_A, runners)).toEqual([])
+    expect(await listFestivals(WS_A, runners)).toEqual([])
   })
 })
 
