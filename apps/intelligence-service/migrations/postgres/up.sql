@@ -182,9 +182,13 @@ CREATE TABLE IF NOT EXISTS memory.brand_fingerprint (
 );
 
 -- HNSW index for k-NN queries (CF-C5-MEMORY-1: k>=5).
+-- Opclass = vector_cosine_ops: brand-fingerprint similarity is a function of
+-- direction (relative profile), not magnitude, so cosine is the correct metric.
+-- This is the SINGLE canonical pgvector index definition repo-wide (conformance
+-- check C14a enforces no second, distance-metric-divergent definition exists).
 CREATE INDEX IF NOT EXISTS idx_brand_fingerprint_hnsw
     ON memory.brand_fingerprint
-    USING hnsw (embedding vector_l2_ops)
+    USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
 -- ============================================================
