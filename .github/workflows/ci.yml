@@ -59,6 +59,12 @@ jobs:
       - name: Design-conformance + parity + paradigm + tenancy gates (C1–C14)
         run: python3 tests/conformance/run_conformance.py --with-behavioral
 
+      # Fact-schema drift gate (ADR-CONVERGENCE-001 P0-4): every connector fact's
+      # canonical money/join/partition columns must still be declared in each
+      # store's DDL. Static (no DB); uv provisions PyYAML ephemerally.
+      - name: Fact-schema drift gate (PG↔CH canonical columns)
+        run: uv run --with pyyaml python tests/conformance/check_fact_schema_drift.py
+
   typecheck:
     name: Backend typecheck (tsc --noEmit)
     runs-on: ubuntu-latest

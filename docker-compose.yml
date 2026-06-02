@@ -89,6 +89,9 @@ services:
       context: .
       dockerfile: apps/api-gateway/Dockerfile
     container_name: brain-api-gateway
+    # A crashed process exits non-zero (crash handlers) — restart it automatically
+    # rather than leaving the gateway down until a manual `compose up`.
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       GATEWAY_PORT: 3001
@@ -104,6 +107,10 @@ services:
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       # Read-from-CH flag — facts already migrated locally; reads go through CH.
       READ_FROM_CH: "true"
+      # Runtime env discriminator (local|staging|production). 'local' makes the
+      # prod env-validator a no-op; a real deploy sets BRAIN_ENV=production to
+      # enforce DATABASE_URL/CLICKHOUSE_*/CORS/custody + reject dev defaults.
+      BRAIN_ENV: local
     env_file:
       # All secret-bearing values (SUPABASE_*, OAuth client ids/secrets,
       # CONNECTOR_CUSTODY_KEY, redirect URIs) come from .env.docker — never
@@ -143,6 +150,7 @@ services:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
     container_name: brain-web
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3000

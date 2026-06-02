@@ -118,6 +118,25 @@ export function _resetPoolForTest(): void {
   _pool = undefined
 }
 
+/**
+ * Liveness probe for the Postgres plane — used by the gateway's /ready check.
+ * Resolves true when PG answers `SELECT 1`, false on any error (never throws).
+ * No workspace GUC — a bare connection ping, not a tenant read.
+ */
+export async function pingDb(): Promise<boolean> {
+  try {
+    const client = await getPool().connect()
+    try {
+      await client.query('SELECT 1')
+      return true
+    } finally {
+      client.release()
+    }
+  } catch {
+    return false
+  }
+}
+
 // ---------------------------------------------------------------------------
 // _rawQuery — probe-only: run a single query on a raw pool connection with
 // NO GUC set (no workspace context, no superadmin flag). This is the genuine

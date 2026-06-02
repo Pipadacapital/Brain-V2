@@ -18,6 +18,12 @@ export {
   type ConnectorStatusRow,
 } from './connector-use-cases.js'
 
+// Liveness probes for the data planes (gateway /ready check). pingCh is
+// re-exported here so the gateway doesn't take a direct @brain/lib-clickhouse-ts
+// dependency (core-connectors already depends on it).
+export { pingDb } from '../../../infrastructure/db/workspace-context.js'
+export { pingCh } from '@brain/lib-clickhouse-ts'
+
 export {
   generateNonce,
   hashState,

@@ -33,6 +33,10 @@ function client(): ClickHouseClient {
     password: process.env.CLICKHOUSE_PASSWORD ?? 'brain_app_pw',
     database: process.env.CLICKHOUSE_DATABASE ?? 'brain',
     application: 'brain-local-dev',
+    // Client-side request timeout — fast failover. If CH is slow/unreachable the
+    // read fails over to PG within this window instead of waiting out the 30s
+    // server-side max_execution_time. Overridable via CLICKHOUSE_REQUEST_TIMEOUT_MS.
+    request_timeout: Number(process.env.CLICKHOUSE_REQUEST_TIMEOUT_MS ?? 10000),
     // BigInts must survive the wire so integer minor units don't get clipped to JS Number.
     clickhouse_settings: {
       output_format_json_quote_64bit_integers: 1,
@@ -147,6 +151,20 @@ export async function chQuery<T = Record<string, unknown>>(
     format: 'JSONEachRow',
   })
   return result.json<T>()
+}
+
+/**
+ * Liveness probe for the ClickHouse plane — used by the gateway's /ready check.
+ * Resolves true when CH answers, false on any error (never throws). Bounded by
+ * the client request_timeout so a hung CH can't hang the readiness probe.
+ */
+export async function pingCh(): Promise<boolean> {
+  try {
+    const res = await client().ping()
+    return res.success === true
+  } catch {
+    return false
+  }
 }
 
 /** Test-only: dispose the singleton client (for graceful shutdown / hot-reload). */
