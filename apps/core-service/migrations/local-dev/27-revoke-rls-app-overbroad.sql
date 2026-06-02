@@ -1,3 +1,6 @@
+-- migrate: skip — HELD A4b cutover step, run manually by the operator (see below),
+--   NOT part of the automatic local/CI migration. Auto-running it revokes the grants
+--   the local gateway uses (DATABASE_URL connects as rls_app) and breaks every read.
 -- =============================================================================
 -- A4a — HELD ACTIVATION (A4b cutover step). Revoke rls_app's over-broad grants.
 --

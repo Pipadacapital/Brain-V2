@@ -1,6 +1,8 @@
 -- 0001_base_workspace_daily_metrics.sql
 -- ClickHouse base/raw layer for Brain metric engine.
 --
+-- migrate: skip — RUNBOOK-GATED, Stage-8 legacy metric-engine lineage applied by a
+--   separate Founder-gated runbook (see README.md), not the local/CI migrator.
 -- @paradigm: sql
 -- CF-C4-RATIO-DIVOP-1: NO `/` operator anywhere in this file.
 -- CF-C4-RESIDENCY-1: apply ONLY on a ClickHouse cluster in ap-south-1.
