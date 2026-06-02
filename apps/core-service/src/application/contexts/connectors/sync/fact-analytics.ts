@@ -151,9 +151,10 @@ export async function readStoreSummary(workspaceId: string, range?: FactDateRang
     const netNetTax = netSales - tax
     const netRevenue = netNetTax + shipping
     // Realized revenue: net-of-tax of NON-cancelled orders + their shipping share excluded
-    // for simplicity (shipping is revenue-neutral); realized = gross − discount − tax for live orders.
+    // realized net sales = gross − discount for live orders (kept contract; tax is
+    // NOT subtracted — net_net_tax is the separate tax-exclusive metric).
     const realizedRevenue =
-      BigInt(r?.realized_gross ?? '0') - BigInt(r?.realized_discount ?? '0') - BigInt(r?.realized_tax ?? '0')
+      BigInt(r?.realized_gross ?? '0') - BigInt(r?.realized_discount ?? '0')
     const realizedOrders = BigInt(r?.realized_orders ?? '0')
     const aov = realizedOrders > 0n ? realizedRevenue / realizedOrders : null
     return {
@@ -246,7 +247,7 @@ export async function readMarketing(workspaceId: string, range?: FactDateRange):
     const ncRes = await tx.query<{ nc_rev: string | null; nc_count: string | null }>(
       `WITH ranked AS (
          SELECT customer_ref,
-                (gross_sales_mu - total_discount_mu - total_tax_mu) AS net_mu,
+                (gross_sales_mu - total_discount_mu) AS net_mu,  -- net = gross − discount (contract)
                 row_number() OVER (PARTITION BY customer_ref ORDER BY processed_at NULLS LAST) AS rn
            FROM connector_order_facts
           WHERE customer_ref IS NOT NULL AND ${CANCELLED}${pgDateClause('processed_at', range)}
@@ -859,7 +860,7 @@ export async function readCodPrepaid(workspaceId: string): Promise<FactCodPrepai
          count(*) FILTER (WHERE payment_method='Prepaid')::text prepaid_orders,
          COALESCE(sum(gross_sales_mu) FILTER (WHERE payment_method='COD'),0)::text cod_gross,
          COALESCE(sum(gross_sales_mu) FILTER (WHERE payment_method='Prepaid'),0)::text prepaid_gross,
-         COALESCE(sum(gross_sales_mu - total_discount_mu - total_tax_mu),0)::text net,
+         COALESCE(sum(gross_sales_mu - total_discount_mu),0)::text net,  -- net = gross − discount (contract)
          count(*)::text orders
        FROM connector_order_facts WHERE ${CANCELLED}`,
     )
@@ -1061,7 +1062,7 @@ export async function readShipmentRows(
 // the share of the cohort that re-ordered within 90 days. CAC/payback are null (ad
 // spend is not cohort-attributed in the connector facts — honest).
 // ---------------------------------------------------------------------------
-const NET_EXPR = '(gross_sales_mu - total_discount_mu - total_tax_mu)'
+const NET_EXPR = '(gross_sales_mu - total_discount_mu)'  // net = gross − discount (contract; no tax)
 const MONTH_OFFSET =
   "LEAST(11, GREATEST(0, (date_part('year', age(o.processed_at, fo.cohort_dt))*12 + date_part('month', age(o.processed_at, fo.cohort_dt)))::int))"
 
@@ -1721,7 +1722,7 @@ export async function readPnlPeriodGrid(
          COALESCE(sum(total_discount_mu), 0)::text AS discounts,
          COALESCE(sum(total_tax_mu) FILTER (WHERE ${CANCELLED}), 0)::text AS tax,
          count(*) FILTER (WHERE ${CANCELLED})::text AS orders,
-         COALESCE(sum(gross_sales_mu) FILTER (WHERE financial_status = 'refunded'), 0)::text AS refunds
+         COALESCE(sum(gross_sales_mu) FILTER (WHERE lower(coalesce(financial_status,'')) = 'refunded'), 0)::text AS refunds
        FROM connector_order_facts
        WHERE processed_at >= $1::date
          AND processed_at <  $2::date + interval '1 day'
