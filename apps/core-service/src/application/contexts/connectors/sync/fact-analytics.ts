@@ -267,7 +267,7 @@ export interface FactCogs {
 // product cost_mu × (1 + markup) > fallback% of revenue for cost-less lines.
 export interface CogsSettings { overrideBp: number; fallbackBp: number; markupBp: number }
 
-async function readCogsSettings(workspaceId: string): Promise<CogsSettings> {
+export async function readCogsSettings(workspaceId: string): Promise<CogsSettings> {
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // RLS-scoped; max() guarantees a single row even when unset (→ 0/0/0).
     const r = await tx.query<{ ovr: string; fb: string; mk: string }>(

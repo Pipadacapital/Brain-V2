@@ -74,3 +74,25 @@ jobs:
           PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true"
       - name: turbo build (tsc --noEmit) — backend + libs, excludes web/mobile
         run: pnpm exec turbo run build --filter=!@brain/web --filter=!@brain/mobile
+
+  unit-tests:
+    name: Unit tests (vitest) — backend + libs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable && corepack prepare pnpm@11.0.9 --activate
+      - name: Install JS deps (frozen)
+        run: pnpm install --frozen-lockfile
+        env:
+          PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true"
+      # vitest across the backend TS packages (api-gateway + core-service +
+      # libs). web/mobile excluded (browser/Expo harness — tracked follow-up).
+      # The Python analytics/intelligence suites already run in invariant-gates
+      # (C4/C8 behavioral), so they are not duplicated here.
+      # --passWithNoTests so packages that declare a `test` script but have no
+      # test files yet (e.g. lib-logger) don't fail the gate.
+      - name: turbo test (vitest) — backend + libs, excludes web/mobile
+        run: pnpm exec turbo run test --filter=!@brain/web --filter=!@brain/mobile -- --passWithNoTests
