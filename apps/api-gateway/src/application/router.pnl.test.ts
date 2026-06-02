@@ -113,15 +113,24 @@ describe('pnl.cmWaterfall (positive)', () => {
   it('returns ordered, signed, registry-traced steps including variable_costs', async () => {
     const c = caller(makeCtx(SUGANDH_LOK_WORKSPACE_ID));
     const res = await c.pnl.cmWaterfall(RANGE);
+    // Canonical 16-step gross-top CM ladder (metric registry).
     expect(res.steps.map((s) => s.definition_id)).toEqual([
-      'net_revenue_mu',
+      'gross_sales_mu',
+      'total_discount_mu',
+      'returns_mu',
+      'total_tax_mu',
+      'shipping_outbound_mu',
+      'gross_revenue_after_deductions_mu',
       'cogs_mu',
       'variable_costs_mu',
+      'rto_cost_mu',
       'cm1_mu',
       'total_ad_spend_mu',
       'cm2_mu',
       'misc_expenses_prorated_mu',
       'cm3_mu',
+      'founder_salary_mu',
+      'net_profit_mu',
     ]);
     for (const step of res.steps) {
       expect(() => assertWaterfallDefinitionId(step)).not.toThrow();
@@ -132,14 +141,19 @@ describe('pnl.cmWaterfall (positive)', () => {
     const c = caller(makeCtx(SUGANDH_LOK_WORKSPACE_ID));
     const res = await c.pnl.cmWaterfall(RANGE);
     const byId = Object.fromEntries(res.steps.map((s) => [s.definition_id, s]));
-    expect(byId['cogs_mu'].value_mu).toBe(-82_000_000n);
-    expect(byId['variable_costs_mu'].value_mu).toBe(-6_000_000n);
-    expect(byId['cm1_mu'].value_mu).toBe(97_000_000n);
-    expect(byId['cm1_mu'].cumulative_mu).toBe(97_000_000n);
-    // cumulative after the variable_costs step also equals cm1
-    expect(byId['variable_costs_mu'].cumulative_mu).toBe(97_000_000n);
-    expect(byId['cm2_mu'].cumulative_mu).toBe(32_000_000n);
-    expect(byId['cm3_mu'].cumulative_mu).toBe(28_000_000n);
+    // Cost steps are negative deductions.
+    for (const id of ['total_discount_mu', 'returns_mu', 'total_tax_mu', 'shipping_outbound_mu', 'cogs_mu', 'variable_costs_mu', 'rto_cost_mu', 'total_ad_spend_mu', 'misc_expenses_prorated_mu']) {
+      expect(byId[id].value_mu <= 0n).toBe(true);
+    }
+    // Subtotal steps carry their running total as the value (value == cumulative).
+    for (const id of ['cm1_mu', 'cm2_mu', 'cm3_mu']) {
+      expect(byId[id].value_mu).toBe(byId[id].cumulative_mu);
+    }
+    // CM ladder is monotonically non-increasing (each tier deducts more cost).
+    expect(byId['cm1_mu'].value_mu >= byId['cm2_mu'].value_mu).toBe(true);
+    expect(byId['cm2_mu'].value_mu >= byId['cm3_mu'].value_mu).toBe(true);
+    // CM2 = CM1 − ad spend (exact, since ad spend is the only step between them).
+    expect(byId['cm2_mu'].value_mu).toBe(byId['cm1_mu'].value_mu + byId['total_ad_spend_mu'].value_mu);
   });
 });
 

@@ -108,10 +108,11 @@ describe('onboarding.complete — creates workspace (identity tier)', () => {
     storeHandle: 'brand-a',
   };
 
-  it('(+) returns workspaceId + redirectTo /dashboard', async () => {
+  it('(+) returns workspaceId + workspace-scoped redirectTo', async () => {
     vi.mocked(completeOnboarding).mockResolvedValue({ workspaceId: 'new-ws', slug: 'brand-a' });
     const out = await caller(identityOnlyCtx()).onboarding.complete(input);
-    expect(out).toMatchObject({ workspaceId: 'new-ws', slug: 'brand-a', redirectTo: '/dashboard' });
+    // Redirect is workspace-scoped (/w/<slug>/dashboard), not the bare /dashboard.
+    expect(out).toMatchObject({ workspaceId: 'new-ws', slug: 'brand-a', redirectTo: '/w/brand-a/dashboard' });
     // The verified sub + email flow into the use-case (NOT client-supplied).
     expect(completeOnboarding).toHaveBeenCalledWith(
       expect.objectContaining({ identity: { sub: SUB, email: 'newuser@brain.test', fullName: 'Owner' } }),
