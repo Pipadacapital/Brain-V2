@@ -108,8 +108,11 @@ export async function readStoreSummaryCH(workspaceId: string, range?: FactDateRa
   const netSales = gross - discount
   const netNetTax = netSales - tax
   const netRevenue = netNetTax + shipping
+  // Realized revenue = realized net SALES = gross − discount of non-cancelled
+  // orders (the kept contract; tax is NOT subtracted here — net_net_tax is the
+  // separate tax-exclusive metric). Aligns P&L/CM/KPI net to the store "Net Sales".
   const realizedRevenue =
-    BigInt(r.realized_gross ?? '0') - BigInt(r.realized_discount ?? '0') - BigInt(r.realized_tax ?? '0')
+    BigInt(r.realized_gross ?? '0') - BigInt(r.realized_discount ?? '0')
   const realizedOrders = BigInt(r.realized_orders ?? '0')
   const aov = realizedOrders > 0n ? realizedRevenue / realizedOrders : null
   return {
@@ -191,7 +194,7 @@ export async function readMarketingCH(workspaceId: string, range?: FactDateRange
     `WITH ranked AS (
        SELECT customer_ref,
               row_number() OVER (PARTITION BY customer_ref ORDER BY placed_at, vendor_order_id) AS rn,
-              (gross_sales_mu - discount_mu - tax_mu) AS net_mu
+              (gross_sales_mu - discount_mu) AS net_mu  -- net = gross − discount (contract)
          FROM brain.connector_order_facts
         WHERE workspace_id = {workspace_id:String}${ncDc.clause}
           AND customer_ref != ''
@@ -536,7 +539,7 @@ export async function readCodPrepaidCH(workspaceId: string): Promise<FactCodPrep
        toString(countIf(payment_method = 'Prepaid'))                                          AS prepaid_orders,
        toString(sumIf(gross_sales_mu, payment_method = 'COD'))                                AS cod_gross,
        toString(sumIf(gross_sales_mu, payment_method = 'Prepaid'))                            AS prepaid_gross,
-       toString(sumIf(gross_sales_mu - discount_mu - tax_mu, ${CANCELLED_OK}))                AS net,
+       toString(sumIf(gross_sales_mu - discount_mu, ${CANCELLED_OK}))                          AS net,
        toString(countIf(${CANCELLED_OK}))                                                     AS orders
      FROM brain.connector_order_facts
      WHERE workspace_id = {workspace_id:String}`,
@@ -558,7 +561,7 @@ export async function readCodPrepaidCH(workspaceId: string): Promise<FactCodPrep
 // readCohortsCH — acquisition-month cohorts + 90-day repeat + 12-mo cumulative.
 // CH equivalent of PG's set-based cohorts query (Phase-6 perf rewrite).
 // ---------------------------------------------------------------------------
-const COHORT_NET = `(gross_sales_mu - discount_mu - tax_mu)`
+const COHORT_NET = `(gross_sales_mu - discount_mu)`  // net = gross − discount (contract; no tax)
 const MONTH_OFFSET_CH = `LEAST(11, GREATEST(0, dateDiff('month', cohort_dt, toDate(placed_at))))`
 
 export async function readCohortsCH(workspaceId: string): Promise<FactCohortRow[]> {
@@ -606,7 +609,7 @@ export async function readCohortsCH(workspaceId: string): Promise<FactCohortRow[
       WHERE o.workspace_id = {workspace_id:String}
         AND o.customer_ref != ''
         AND o.cancelled_at IS NULL
-        AND o.financial_status NOT IN ('voided','refunded')
+        AND lower(coalesce(o.financial_status,'')) NOT IN ('voided','refunded')
       GROUP BY 1, 2`,
     { workspaceId },
   )
@@ -967,7 +970,7 @@ export async function readDailyAcquisitionCH(
             AND o.customer_ref = f.customer_ref
             AND toDate(o.placed_at) = f.acq_date
       WHERE o.cancelled_at IS NULL
-        AND o.financial_status NOT IN ('voided','refunded')
+        AND lower(coalesce(o.financial_status,'')) NOT IN ('voided','refunded')
         AND f.acq_date >= {from:Date}
         AND f.acq_date <= {to:Date}
       GROUP BY day
@@ -1091,7 +1094,7 @@ export async function readCalendarReportCH(
        LEFT JOIN firsts f ON f.customer_ref = o.customer_ref
       WHERE o.workspace_id = {workspace_id:String}
         AND o.cancelled_at IS NULL
-        AND o.financial_status NOT IN ('voided','refunded')
+        AND lower(coalesce(o.financial_status,'')) NOT IN ('voided','refunded')
       GROUP BY period
       ORDER BY period DESC
       LIMIT 90`,
