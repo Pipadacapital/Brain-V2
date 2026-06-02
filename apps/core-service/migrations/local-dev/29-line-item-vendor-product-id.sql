@@ -15,7 +15,14 @@
 -- has the column; it must be populated, not left '').
 --
 -- connector_line_item_facts is a VIEW over _hot, so the view is recreated to
--- expose the new column. Money: none. RLS: inherited from the _hot table.
+-- expose the new column. Money: none.
+--
+-- SECURITY (P0): the view MUST be created WITH (security_invoker = true) so it
+-- executes RLS as the CALLING role, not the view owner (postgres, which has
+-- BYPASSRLS). Without it the view fails OPEN — `rls_app` reads every tenant's
+-- rows through it. A prior revision of this migration omitted the option and
+-- re-introduced a cross-tenant leak; it is now mandatory + asserted in the
+-- conformance suite.
 -- =============================================================================
 
 ALTER TABLE public.connector_line_item_facts_hot
@@ -24,8 +31,13 @@ ALTER TABLE public.connector_line_item_facts_hot
 CREATE INDEX IF NOT EXISTS connector_line_item_facts_product_idx
   ON public.connector_line_item_facts_hot (workspace_id, vendor, vendor_product_id);
 
-CREATE OR REPLACE VIEW public.connector_line_item_facts AS
+CREATE OR REPLACE VIEW public.connector_line_item_facts
+  WITH (security_invoker = true) AS
   SELECT id, workspace_id, vendor, vendor_order_id, vendor_line_id,
          sku, title, quantity, unit_price_mu, gst_slab_bp, synced_at,
          vendor_product_id
     FROM public.connector_line_item_facts_hot;
+
+-- Belt-and-suspenders for environments where the view pre-existed without the
+-- option (CREATE OR REPLACE keeps existing reloptions on some PG versions).
+ALTER VIEW public.connector_line_item_facts SET (security_invoker = true);

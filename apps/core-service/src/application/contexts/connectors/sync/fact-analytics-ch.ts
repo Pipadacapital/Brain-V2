@@ -305,7 +305,11 @@ export async function readProductPerformanceCH(
        FROM ranked
       ORDER BY cm1_mu DESC
       LIMIT 200`,
-    { workspaceId, skipFinal: true },
+    // FINAL is required: connector_line_item_facts is a ReplacingMergeTree and a
+    // backfill re-insert leaves duplicate versions until merged. skipFinal here
+    // double-counted revenue/units (pf is already deduped via its argMax subquery,
+    // so auto-FINAL only decorates li, which is what we need).
+    { workspaceId },
   )
   const mapped: FactProductRow[] = rows.map((r) => {
     const orders = BigInt(r.orders ?? '0')
