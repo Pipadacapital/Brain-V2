@@ -34,6 +34,15 @@ sessions/conversion, pincode revenue/uniq/top-courier, NC/EC product splits, inv
 AI insight sheets, order-composition section, multi-account connector arrays. All match legacy
 structure/labels; the gaps need connector facts or backend endpoints, logged below.
 
+## Morning Brief — INTERIM deterministic brief shipped; LLM version is a tracked HOLD (advisor review P1-9)
+`getMorningBrief` now returns a DETERMINISTIC, grounded brief (realized net, blended
+MER, RTO rate, top product) — real numbers from the live facts, REVIEW_MANUALLY/
+NO_ACTION recs, and `expected_impact` explicitly "not estimated" (NO fabricated ₹).
+Honest-empty when the workspace has no orders. **HOLD:** the full Morning Brief —
+LLM-narrated insights with real ₹-impact projections + the faithfulness gate — is
+intelligence-service scope (small_llm grounded; `PageInsightNarration`/`InsightSignal`),
+NOT yet wired. Do not mistake the interim brief for the AI surface.
+
 ## Money formatting (₹ Indian lakh/crore) — Founder decision pending
 Kept Brain's lakh/crore formatMoney as-is (audit noted legacy used en-US grouping). Deliberate
 product-wide choice to ratify, not a regression.

@@ -56,6 +56,7 @@ import type {
   ProductPerformanceResult,
   PageInsightResult,
   MorningBrief,
+  ExpectedImpact,
   BackfillStatusResult,
   WorkspaceMembersResult,
   WorkspaceSettingsResult,
@@ -586,9 +587,79 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     return { result, data_epoch: DATA_EPOCH };
   }
 
-  override async getMorningBrief(_p: { workspace_id: string; date: string }): Promise<MorningBrief> {
-    this.assertWs(_p.workspace_id);
-    return { items: [], data_epoch: DATA_EPOCH, freshness_label: 'No brief generated yet' };
+  override async getMorningBrief(p: { workspace_id: string; date: string }): Promise<MorningBrief> {
+    this.assertWs(p.workspace_id);
+    // Deterministic, GROUNDED brief: every number below is a real metric read from
+    // the live facts (no fabrication). Recommendations are non-committal
+    // (REVIEW_MANUALLY) and expected_impact is explicitly "not estimated" — the
+    // ₹-impact projections + LLM narration are the intelligence-service's job
+    // (small_llm grounded + faithfulness gate); this is the honest interim surface.
+    // See docs/parity-fix/advisor-review-2026-06-02.md P1-9.
+    const [store, mk, ship, prod] = await Promise.all([
+      readStoreSummary(this.ws),
+      readMarketing(this.ws),
+      readShipmentAnalytics(this.ws),
+      readProductPerformance(this.ws),
+    ]);
+    if (!store.hasData) {
+      return { items: [], data_epoch: DATA_EPOCH, freshness_label: 'No orders synced yet — the brief populates once data is connected.' };
+    }
+    const inr = (mu: bigint): string => '₹' + (Number(mu) / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    const noImpact: ExpectedImpact = { revenue_mu: 0n, cm2_mu: 0n, currency_code: store.currencyCode, impact_label: 'Impact not estimated — review' };
+    const items: MorningBrief['items'] = [];
+
+    // 1) Realized revenue headline (net = gross − discount).
+    items.push({
+      insight_id: 'mb-revenue', title: `Realized net revenue ${inr(store.realizedRevenueMu)}`, severity: 'INFO',
+      confidence_display_pct: 99, summary: `${inr(store.realizedRevenueMu)} net (gross − discount) across ${store.orderCount.toString()} orders; AOV ${store.aovMu != null ? inr(store.aovMu) : 'n/a'}.`,
+      detail: `Gross ${inr(store.grossSalesMu)}, discounts ${inr(store.totalDiscountMu)}.`,
+      recommendation: { action: 'NO_ACTION', entity_id: 'store', rationale: 'Headline figure for the period.' },
+      expected_impact: noImpact, risk: 'LOW', data_epoch: DATA_EPOCH,
+    });
+
+    // 2) Blended MER (net revenue / ad spend) — flag below 2×.
+    const spend = mk.metaSpendMu + mk.googleSpendMu;
+    if (spend > 0n) {
+      const merBp = Number((mk.netRevenueMu * 10000n) / spend);
+      const merX = (merBp / 10000).toFixed(2);
+      items.push({
+        insight_id: 'mb-mer', title: `Blended MER ${merX}×`, severity: merBp < 20000 ? 'WARNING' : 'INFO',
+        confidence_display_pct: 90, summary: `Net revenue ${inr(mk.netRevenueMu)} on ad spend ${inr(spend)} → MER ${merX}×.`,
+        detail: `Meta ${inr(mk.metaSpendMu)}, Google ${inr(mk.googleSpendMu)}.`,
+        recommendation: { action: 'REVIEW_MANUALLY', entity_id: 'marketing', rationale: merBp < 20000 ? 'Blended MER under 2× — review ad efficiency by campaign.' : 'MER healthy; monitor by campaign.' },
+        expected_impact: noImpact, risk: 'LOW', data_epoch: DATA_EPOCH,
+      });
+    }
+
+    // 3) RTO rate (return-to-origin) — flag above 15%.
+    if (ship.totalShipments > 0n) {
+      const rtoBp = Number((ship.rtoCount * 10000n) / ship.totalShipments);
+      const rtoPct = (rtoBp / 100).toFixed(1);
+      items.push({
+        insight_id: 'mb-rto', title: `RTO rate ${rtoPct}%`, severity: rtoBp > 1500 ? 'WARNING' : 'INFO',
+        confidence_display_pct: 88, summary: `${ship.rtoCount.toString()} of ${ship.totalShipments.toString()} shipments returned to origin (${rtoPct}%).`,
+        detail: `COD shipments ${ship.codTotal.toString()}; COD-RTO ${ship.codRtoCount.toString()}.`,
+        recommendation: { action: 'REVIEW_MANUALLY', entity_id: 'logistics', rationale: rtoBp > 1500 ? 'RTO above 15% — review top return pincodes/SKUs and push prepaid.' : 'RTO within range; monitor.' },
+        expected_impact: noImpact, risk: rtoBp > 1500 ? 'MEDIUM' : 'LOW', data_epoch: DATA_EPOCH,
+      });
+    }
+
+    // 4) Top product by CM1 (merchandising signal).
+    const top = prod.rows[0];
+    if (top) {
+      items.push({
+        insight_id: 'mb-top-product', title: `Top product: ${top.label}`, severity: 'INFO',
+        confidence_display_pct: 85, summary: `${top.label} leads on contribution — CM1 ${inr(top.cm1Mu)} on revenue ${inr(top.revenueMu)}.`,
+        detail: `Units sold ${top.soldQty.toString()} across ${top.orders.toString()} orders.`,
+        recommendation: { action: 'NO_ACTION', entity_id: top.label, rationale: 'Your contribution leader for the period.' },
+        expected_impact: noImpact, risk: 'LOW', data_epoch: DATA_EPOCH,
+      });
+    }
+
+    // Rank: CRITICAL > WARNING > INFO.
+    const sevRank: Record<string, number> = { CRITICAL: 0, WARNING: 1, INFO: 2 };
+    items.sort((a, b) => (sevRank[a.severity] ?? 9) - (sevRank[b.severity] ?? 9));
+    return { items, data_epoch: DATA_EPOCH, freshness_label: 'Grounded in the latest synced facts' };
   }
 
   override async getBackfillStatus(p: { workspace_id: string }): Promise<{ result: BackfillStatusResult; data_epoch: Date }> {
