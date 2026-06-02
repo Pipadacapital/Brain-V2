@@ -444,20 +444,30 @@ export async function readShipmentRowsCH(
   cursor: string | undefined,
   pageSize: number,
 ): Promise<FactShipmentPage> {
-  const esc = (s: string): string => s.replace(/'/g, "''")
+  // Bind every user-supplied filter as a CH query param — NEVER interpolate.
+  // The previous single-quote-doubling escaper left backslashes unescaped, which
+  // was a live ClickHouse injection/DoS sink on the shipments console (a trailing
+  // backslash 500'd it). Length caps are defense-in-depth.
+  const params: Record<string, unknown> = {}
   const conds: string[] = []
-  if (filters.search && filters.search.trim() !== '') {
-    const term = esc(filters.search.trim())
-    conds.push(`(positionCaseInsensitive(vendor_shipment_id, '${term}') > 0 OR positionCaseInsensitive(vendor_order_id, '${term}') > 0)`)
+  const search = filters.search?.trim()
+  if (search) {
+    params.search = search.slice(0, 100)
+    conds.push('(positionCaseInsensitive(vendor_shipment_id, {search:String}) > 0 OR positionCaseInsensitive(vendor_order_id, {search:String}) > 0)')
   }
   if (filters.statuses && filters.statuses.length > 0) {
-    conds.push(`status IN (${filters.statuses.map((s) => `'${esc(s)}'`).join(',')})`)
+    params.statuses = filters.statuses.slice(0, 50).map((s) => String(s).slice(0, 64))
+    conds.push('status IN {statuses:Array(String)}')
   }
   if (filters.payment === 'COD') conds.push('is_cod = 1')
   else if (filters.payment === 'PREPAID') conds.push('is_cod = 0')
   if (filters.rtoOnly) conds.push(`${STATUS_BUCKET} = 'RTO'`)
   const filterWhere = conds.length > 0 ? ` AND ${conds.join(' AND ')}` : ''
-  const cursorWhere = cursor ? ` AND vendor_shipment_id < '${esc(cursor)}'` : ''
+  let cursorWhere = ''
+  if (cursor) {
+    params.cursor = String(cursor).slice(0, 128)
+    cursorWhere = ' AND vendor_shipment_id < {cursor:String}'
+  }
 
   const [rows, agg, statuses] = await Promise.all([
     chQuery<Record<string, unknown>>(
@@ -476,7 +486,7 @@ export async function readShipmentRowsCH(
         WHERE workspace_id = {workspace_id:String}${filterWhere}${cursorWhere}
         ORDER BY vendor_shipment_id DESC
         LIMIT ${pageSize + 1}`,
-      { workspaceId },
+      { workspaceId, params },
     ),
     chQuery<Record<string, string>>(
       `SELECT toString(count())                              AS total,
@@ -484,7 +494,7 @@ export async function readShipmentRowsCH(
               toString(countIf(${STATUS_BUCKET} = 'RTO'))       AS rto
          FROM brain.connector_shipment_facts
         WHERE workspace_id = {workspace_id:String}${filterWhere}`,
-      { workspaceId },
+      { workspaceId, params },
     ),
     chQuery<Record<string, string>>(
       `SELECT DISTINCT status FROM brain.connector_shipment_facts
