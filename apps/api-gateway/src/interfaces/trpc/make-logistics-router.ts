@@ -224,11 +224,13 @@ export function makeLogisticsRouter(
     shipments: workspaceProc
       .input(
         dateInput.extend({
-          cursor: z.string().optional(),
+          // Length/cardinality caps (defense-in-depth; the CH read also binds these
+          // as params, never interpolates). Keeps a pathological filter bounded.
+          cursor: z.string().max(128).optional(),
           page_size: z.number().int().min(1).max(200).default(50),
-          search: z.string().optional(),
-          statuses: z.array(z.string()).optional(),
-          channel_names: z.array(z.string()).optional(),
+          search: z.string().max(100).optional(),
+          statuses: z.array(z.string().max(64)).max(50).optional(),
+          channel_names: z.array(z.string().max(64)).max(50).optional(),
           payment: z.enum(['COD', 'PREPAID']).nullable().optional(),
           mapping: z.enum(['MATCHED', 'UNMATCHED']).nullable().optional(),
           rto_only: z.boolean().optional(),
