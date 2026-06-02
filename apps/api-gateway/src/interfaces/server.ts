@@ -35,6 +35,7 @@ import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
 import { assertShopifyOAuthSecretsPresent, pingDb, pingCh } from '@brain/core-connectors';
 import { createBrainRouter } from '../application/router.js';
+import { registry as metricsRegistry } from '../infrastructure/metrics.js';
 import { DispatchingDataPlane } from '../infrastructure/dispatching-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
 import type { IdentityContext } from '../application/trpc.js';
@@ -295,6 +296,15 @@ async function buildServer(cfg: GatewayAuthConfig) {
     return { status: ready ? 'ready' : 'not-ready', checks: { postgres: pg, clickhouse: ch }, ts: new Date().toISOString() };
   });
 
+  // Prometheus scrape target (P1-19). Dependency-free (never probes the DBs) so
+  // a scrape can't be the thing that hangs on a slow plane. Returns the registry's
+  // text exposition with its declared content-type. No auth: this is an internal
+  // surface — at deploy it's bound to the cluster, never the public ingress.
+  fastify.get('/metrics', async (_req, reply) => {
+    reply.header('Content-Type', metricsRegistry.contentType);
+    return metricsRegistry.metrics();
+  });
+
   await fastify.register(fastifyTRPCPlugin, {
     prefix: '/trpc',
     trpcOptions: {
@@ -456,6 +466,7 @@ async function main() {
     server.log.info(`  tRPC endpoint:   ${address}/trpc`);
     server.log.info(`  Health check:    ${address}/health`);
     server.log.info(`  Readiness:       ${address}/ready`);
+    server.log.info(`  Metrics:         ${address}/metrics`);
   } catch (err) {
     server.log.error(err, 'Failed to start api-gateway');
     process.exit(1);
