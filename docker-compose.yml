@@ -141,13 +141,15 @@ services:
       # default so a deploy opts in explicitly.
       REALTIME_FACTS_CONSUMER: "true"
       # Webhook intake: register POST /webhooks/:vendor locally + forward to the
-      # ingestion-service gRPC over brain-net. HELD OFF pending the gRPC transport
-      # fix (S2.1): (1) the gateway image must ship protos/ so the proto-loader
-      # client resolves, and (2) the Python servicer must register against grpcio-
-      # style stubs (currently stub-less — see docs/realtime-ingestion-plan.md).
-      # Flip to "true" once those land; everything else (verify, DB, Kafka) is wired.
+      # ingestion-service gRPC over brain-net. The gRPC transport + HMAC verify are
+      # now PROVEN working (a signed webhook reaches the intake). HELD OFF again
+      # pending S2.3 — the shared ingestion DB-write layer (_upsert_event) uses a
+      # non-psycopg conn API and has never run against a real connection. Flip to
+      # "true" once that's hardened. Prod ingress stays held regardless.
       BRAIN_WEBHOOKS_ENABLED: "false"
       WEBHOOK_INGEST_TARGET: ingestion-service:50051
+      # The gateway image ships protos/ at /workspace/protos (see Dockerfile).
+      WEBHOOK_INGEST_PROTO_DIR: /workspace/protos
       # Runtime env discriminator (local|staging|production). 'local' makes the
       # prod env-validator a no-op; a real deploy sets BRAIN_ENV=production to
       # enforce DATABASE_URL/CLICKHOUSE_*/CORS/custody + reject dev defaults.
@@ -250,6 +252,11 @@ services:
       DIRECT_URL: postgresql://rls_app:rls_app_pw@postgres-dev:5432/brain_dev
       # Workspace allowlist gate — local demo permits only Sugandhlok.
       ALLOWED_WORKSPACE_IDS: f165da80-e6d5-4c58-9aff-ec654b873bd7
+      # Webhook HMAC verify reads the shop secret via the app-secret provider, which
+      # shares CONNECTOR_CUSTODY_BACKING. 'local' → EnvAppSecretProvider reads
+      # SHOPIFY_CLIENT_SECRET (what the demo signs with). The env_file default
+      # 'local-aesgcm' is for credential custody (unused on the push/webhook path).
+      CONNECTOR_CUSTODY_BACKING: local
     env_file:
       - .env.docker
     depends_on:

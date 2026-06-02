@@ -38,4 +38,8 @@ dev = [
   "pytest-asyncio>=1.3.0",
   "testcontainers[postgres,kafka]>=4.14.2",
   "moto[secretsmanager]>=5.1.0",
+  # grpcio-tools: generates ingestion_pb2.py + ingestion_pb2_grpc.py for the grpcio server path.
+  # Stubs are committed into src/interfaces/grpc/_pb2/ (reproducible, no codegen step at test time).
+  # grpcio-tools version must stay aligned with the grpcio runtime dep above.
+  "grpcio-tools>=1.68.0,<2.0.0",
 ]

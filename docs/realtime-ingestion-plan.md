@@ -67,6 +67,32 @@ gap #2 (the pull path can later route through the same writer to stay CH-fresh).
   `syncConnector` for META/GOOGLE per connected workspace (their APIs can't push). Honestly
   labelled "polled every N min". Also fills the "no scheduler today" gap.
 
+## Build log + findings (the ingestion service was never integration-tested)
+
+Activating the path on real infra surfaced a series of layers that had only ever
+been exercised by mocked unit tests — each "Stage-8 ready" but never run end-to-end:
+
+- **S1** ✅ Redpanda + `connector_identity_map` + seed + Kafka env.
+- **S2** ✅ live DB+Kafka wiring into the intake (unit-green) + gateway plugin registration.
+- **S2.1** ✅ `BRAIN_ENV=local` residency-gate escape (fail-closed in prod); ingestion boots
+  against local PG; Kafka producer connects; gRPC server starts.
+- **S2.2** ✅ **gRPC transport made functional.** Root cause: repo Python stubs are
+  betterproto/grpclib but the servers run grpc.aio (grpcio) — so business RPCs were never
+  served (only health). Generated grpcio stubs for `ingestion.proto`, registered the
+  servicer; shipped `protos/` into the gateway image + a `WEBHOOK_INGEST_PROTO_DIR` override.
+  PROVEN: a signed webhook now reaches the verifier (HMAC passes with
+  `CONNECTOR_CUSTODY_BACKING=local` → `SHOPIFY_CLIENT_SECRET`) and invokes the intake.
+- **S2.3** ⬜ **NEXT BLOCKER — DB-write layer.** `_upsert_event` (shared by pull + push) calls
+  `conn.fetchone(sql, params)`, which is not psycopg's API; psycopg needs
+  `cur = await conn.execute(sql, params); await cur.fetchone()` with a dict row_factory.
+  The integration tests that would catch this are skipped (no DB in CI). Fix the shared
+  session/write layer (and un-skip the integration tests against a real PG so it can't
+  regress), then the webhook lands a `raw_shopify_orders` row + a Kafka message.
+- **S3** ⬜ TS Kafka→facts consumer (PG+CH) → dashboard. **S4** ⬜ demo + tests.
+
+Honest note: "real-time ingestion" here is really "make the ingestion write path work
+end-to-end against real infrastructure for the first time" — larger than a flag flip.
+
 ## Production note (out of scope for the local demo, Founder/Stage-8 gated)
 
 Live go-live still needs: public webhook ingress, seeding `connector_identity_map` for real

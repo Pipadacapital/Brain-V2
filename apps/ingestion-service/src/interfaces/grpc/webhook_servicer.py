@@ -531,23 +531,85 @@ class WebhookIngestServicer:
 
 
 # ---------------------------------------------------------------------------
-# Response factory helper — keeps the servicer free of stub imports
+# Response factory helper — builds the grpcio ReceiveWebhookResponse
 # ---------------------------------------------------------------------------
+
+# Module-level cache: resolved once, reused on every call.
+_ReceiveWebhookResponse = None  # type: ignore[assignment]
+
+
+def _get_response_class():
+    """
+    Return the grpcio-generated ReceiveWebhookResponse class.
+
+    @paradigm: sql — module-level lazy load, no IO.
+
+    Adds the committed _pb2 directory to sys.path on first call so the
+    generated stubs are importable without a manual codegen step.
+    Stubs live at src/interfaces/grpc/_pb2/brain/ingestion/v1/ingestion_pb2.py
+    (committed in the repo — DO NOT delete or move).
+
+    Falls back to SimpleNamespace if the stubs are somehow absent (defensive
+    only — stubs are committed; this path should never trigger in production).
+    """
+    global _ReceiveWebhookResponse
+    if _ReceiveWebhookResponse is not None:
+        return _ReceiveWebhookResponse
+
+    import pathlib
+    import sys
+
+    _pb2_dir = pathlib.Path(__file__).parent / "_pb2"
+    _pb2_dir_str = str(_pb2_dir)
+    if _pb2_dir_str not in sys.path:
+        sys.path.insert(0, _pb2_dir_str)
+
+    try:
+        from brain.ingestion.v1 import ingestion_pb2  # noqa: PLC0415
+        _ReceiveWebhookResponse = ingestion_pb2.ReceiveWebhookResponse
+        return _ReceiveWebhookResponse
+    except ImportError:
+        # Defensive fallback — stubs absent (should not happen post-commit).
+        # SimpleNamespace satisfies .outcome + .request_id access in tests.
+        logger.warning(
+            "webhook_servicer: grpcio stubs not found — _make_response falls back "
+            "to SimpleNamespace.  Run grpcio-tools codegen to fix this."
+        )
+        from types import SimpleNamespace
+
+        class _FallbackResponse:  # noqa: B024
+            def __init__(self, outcome, request_id):
+                self.outcome = outcome
+                self.request_id = request_id
+
+        return _FallbackResponse
 
 
 def _make_response(outcome: int, request_id: str):
     """
-    Build a ReceiveWebhookResponse-shaped object.
+    Build a ReceiveWebhookResponse proto message (grpcio-generated).
 
     @paradigm: sql — pure data construction, no IO.
 
-    Returns a SimpleNamespace with .outcome and .request_id matching the
-    proto-generated stub shape.  This approach decouples the servicer from
-    the generated stubs for unit testing.  The gRPC server layer (webhook_server.py)
-    wraps in the real generated stub when running live.
+    Uses the committed grpcio stubs at src/interfaces/grpc/_pb2/.
+    The grpcio server layer calls .SerializeToString() on this object
+    when sending the wire response — a SimpleNamespace would raise
+    AttributeError on that call.
+
+    Tests check .outcome and .request_id — both are present on the real
+    ReceiveWebhookResponse object so no test changes are needed.
+
+    OUTCOME_* integer values match the proto enum (VERIFY-FIRST-1):
+      OUTCOME_ACCEPTED = 1
+      OUTCOME_REJECTED = 2
+      OUTCOME_PARKED   = 3
+      OUTCOME_IGNORED  = 4
     """
-    from types import SimpleNamespace
-    return SimpleNamespace(outcome=outcome, request_id=request_id)
+    cls = _get_response_class()
+    resp = cls()
+    resp.outcome = outcome
+    resp.request_id = request_id
+    return resp
 
 
 # ---------------------------------------------------------------------------
