@@ -99,6 +99,17 @@ SELECT
   toUInt64(toUnixTimestamp(synced_at)), now()
 FROM postgresql('host.docker.internal:5432','brain_dev','connector_refund_facts','postgres','postgres');
 
+-- Collapse ReplacingMergeTree duplicate versions left by the re-inserts above.
+-- Without this, a read with skipFinal (or before background merge) double-counts —
+-- e.g. Product Performance showed 2x revenue/units until this was run. FINAL on
+-- read is the correctness guarantee; this just makes raw scans cheap + safe.
+OPTIMIZE TABLE brain.connector_order_facts      FINAL;
+OPTIMIZE TABLE brain.connector_line_item_facts  FINAL;
+OPTIMIZE TABLE brain.connector_ad_spend_facts   FINAL;
+OPTIMIZE TABLE brain.connector_shipment_facts   FINAL;
+OPTIMIZE TABLE brain.connector_product_facts    FINAL;
+OPTIMIZE TABLE brain.connector_refund_facts     FINAL;
+
 -- Verification
 SELECT 'product='||toString(count()) FROM brain.connector_product_facts;
 SELECT 'order='||toString(count()) FROM brain.connector_order_facts;
