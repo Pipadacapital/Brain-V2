@@ -268,13 +268,21 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
 
   // ---- FED BY CONNECTOR INGESTION (real data) --------------------------------
 
+  // Map the tRPC DateRange (ISO start/end) to the reader's {from,to} window, or
+  // undefined for lifetime. Threading this is what makes the dashboard date
+  // picker actually window the headline summaries (was silently ignored).
+  private rangeOf(p: { date_range?: DateRange }): { from: string; to: string } | undefined {
+    const dr = p.date_range;
+    return dr && dr.start && dr.end ? { from: dr.start, to: dr.end } : undefined;
+  }
+
   override async getStoreSummary(params: { workspace_id: string; date_range: DateRange }): Promise<{
     summary: StoreSummaryRow;
     ladder: StoreRevenueLadderStep[];
     data_epoch: Date;
   }> {
     this.assertWs(params.workspace_id);
-    const f = await readStoreSummary(this.ws);
+    const f = await readStoreSummary(this.ws, this.rangeOf(params));
     const summary: StoreSummaryRow = {
       workspace_id: this.ws,
       period: 'synced',
@@ -306,11 +314,12 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     data_epoch: Date;
   }> {
     this.assertWs(params.workspace_id);
-    const store = await readStoreSummary(this.ws);
-    const mk = await readMarketing(this.ws);
+    const range = this.rangeOf(params);
+    const store = await readStoreSummary(this.ws, range);
+    const mk = await readMarketing(this.ws, range);
     // CM2 = realized revenue − COGS − ad spend (COGS from migrated product cost).
     const totalSpend = mk.metaSpendMu + mk.googleSpendMu;
-    const cogs = (await readCogs(this.ws)).cogsMu;
+    const cogs = (await readCogs(this.ws, range)).cogsMu;
     const cm2 = store.realizedRevenueMu - cogs - totalSpend;
     const summary: KpiSummaryRow = {
       workspace_id: this.ws,
@@ -369,11 +378,12 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     data_epoch: Date;
   }> {
     this.assertWs(params.workspace_id);
-    const f = await readPnl(this.ws);
+    const range = this.rangeOf(params);
+    const f = await readPnl(this.ws, range);
     // COGS applies workspace_cogs_settings; variable costs come from the saved
     // workspace_costs stack (per_order × orders + percent × net).
     const netRevenue = f.netRevenueMu;
-    const cogs = (await readCogs(this.ws)).cogsMu;
+    const cogs = (await readCogs(this.ws, range)).cogsMu;
     const { variableMu: variable, miscMu: misc } = await this.resolveCosts(netRevenue, f.orderCount);
     const cm1 = netRevenue - cogs - variable;
     const cm2 = cm1 - f.totalAdSpendMu;
@@ -402,9 +412,10 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     data_epoch: Date;
   }> {
     this.assertWs(params.workspace_id);
-    const f = await readPnl(this.ws);
+    const range = this.rangeOf(params);
+    const f = await readPnl(this.ws, range);
     const head = f.netRevenueMu;
-    const cogs = (await readCogs(this.ws)).cogsMu;
+    const cogs = (await readCogs(this.ws, range)).cogsMu;
     const { variableMu: variable, miscMu: misc } = await this.resolveCosts(head, f.orderCount);
     const cm1 = head - cogs - variable;
     const cm2 = cm1 - f.totalAdSpendMu;
@@ -439,7 +450,7 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     data_epoch: Date;
   }> {
     this.assertWs(params.workspace_id);
-    const m = await readMarketing(this.ws);
+    const m = await readMarketing(this.ws, this.rangeOf(params));
     const totalSpend = m.metaSpendMu + m.googleSpendMu;
     const result: MarketingEfficiencyResult = {
       workspace_id: this.ws,
@@ -465,7 +476,7 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     data_epoch: Date;
   }> {
     this.assertWs(params.workspace_id);
-    const m = await readMarketing(this.ws);
+    const m = await readMarketing(this.ws, this.rangeOf(params));
     const totalSpend = m.metaSpendMu + m.googleSpendMu;
     const ncCm2 = m.newCustomerRevenueMu - totalSpend;
     const result: AcquisitionSummaryResult = {
@@ -1039,7 +1050,7 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getGoalAttainment(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    const [goals, f] = await Promise.all([coreListGoals(this.ws), readPnl(this.ws)]);
+    const [goals, f] = await Promise.all([coreListGoals(this.ws), readPnl(this.ws, this.rangeOf(p))]);
     const net = f.netRevenueMu;
     const spend = f.totalAdSpendMu;
     const rows: GoalEvaluationRow[] = goals.map((g) => {
@@ -1081,8 +1092,9 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getCostStack(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
+    const range = this.rangeOf(p);
     const [f, cogs, settings] = await Promise.all([
-      readPnl(this.ws), readCogs(this.ws), readCogsSettings(this.ws),
+      readPnl(this.ws, range), readCogs(this.ws, range), readCogsSettings(this.ws),
     ]);
     const net = f.netRevenueMu;
     const { costRows, variableMu, totalFixedMonthlyMu, totalPerOrderMu } = await this.resolveCosts(net, f.orderCount);

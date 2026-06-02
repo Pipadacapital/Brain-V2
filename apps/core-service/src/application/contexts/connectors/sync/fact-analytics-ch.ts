@@ -23,6 +23,7 @@ import type {
   FactCohortRow, FactLtv, FactLifecycleBucket, FactLifecycle, FactOrderTimings,
   FactCascadeRow, FactDistRow, FactCalendarRow,
   FactShipmentRow, FactShipmentPage, ShipmentRowFiltersLocal,
+  FactDateRange,
 } from './fact-analytics.js'
 import type {
   FactDailySalesRow, FactDailyAcquisitionRow, FactDistGraphPoint,
@@ -46,6 +47,14 @@ const STATUS_BUCKET = `multiIf(
 // 'VOIDED'/'REFUNDED', Woo lowercase). Without it, voided/refunded orders leak
 // into realized revenue (873 orders for the anchor workspace).
 const CANCELLED_OK = `cancelled_at IS NULL AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')`
+
+// Half-open date predicate for a Date/DateTime column, bound as CH params. Empty
+// when no range → lifetime. Used so the dashboard date-range picker actually
+// windows the headline summaries (was a no-op — every tile showed lifetime).
+function chDateClause(col: string, range?: FactDateRange): { clause: string; params: Record<string, unknown> } {
+  if (!range?.from || !range?.to) return { clause: '', params: {} }
+  return { clause: ` AND ${col} >= {from:Date} AND ${col} < addDays({to:Date}, 1)`, params: { from: range.from, to: range.to } }
+}
 
 // ---------------------------------------------------------------------------
 // readStoreSummary — first port (proof of the wire-up).
@@ -72,7 +81,8 @@ interface ChStoreRow {
   realized_orders: string | null
 }
 
-export async function readStoreSummaryCH(workspaceId: string): Promise<FactStoreSummary> {
+export async function readStoreSummaryCH(workspaceId: string, range?: FactDateRange): Promise<FactStoreSummary> {
+  const dc = chDateClause('placed_at', range)
   const rows = await chQuery<ChStoreRow>(
     `SELECT
        any(currency_code)                                              AS currency_code,
@@ -86,8 +96,8 @@ export async function readStoreSummaryCH(workspaceId: string): Promise<FactStore
        toString(sumIf(tax_mu,         ${CANCELLED_OK}))                AS realized_tax,
        toString(countIf(              ${CANCELLED_OK}))                AS realized_orders
      FROM brain.connector_order_facts
-     WHERE workspace_id = {workspace_id:String}`,
-    { workspaceId },
+     WHERE workspace_id = {workspace_id:String}${dc.clause}`,
+    { workspaceId, params: dc.params },
   )
   const r = rows[0] ?? ({} as ChStoreRow)
   const orders = BigInt(r.orders ?? '0')
@@ -126,13 +136,14 @@ interface ChAdSpendRow {
   spend: string | null
   currency_code: string | null
 }
-async function readAdSpendCH(workspaceId: string): Promise<{ meta: bigint; google: bigint; currency: string }> {
+async function readAdSpendCH(workspaceId: string, range?: FactDateRange): Promise<{ meta: bigint; google: bigint; currency: string }> {
+  const dc = chDateClause('date', range)
   const rows = await chQuery<ChAdSpendRow>(
     `SELECT vendor, toString(sum(spend_mu)) AS spend, any(currency_code) AS currency_code
        FROM brain.connector_ad_spend_facts
-      WHERE workspace_id = {workspace_id:String}
+      WHERE workspace_id = {workspace_id:String}${dc.clause}
       GROUP BY vendor`,
-    { workspaceId },
+    { workspaceId, params: dc.params },
   )
   let meta = 0n
   let google = 0n
@@ -149,9 +160,9 @@ async function readAdSpendCH(workspaceId: string): Promise<{ meta: bigint; googl
 // ---------------------------------------------------------------------------
 // readPnlCH — same shape as PG. Reuses readStoreSummaryCH + readAdSpendCH.
 // ---------------------------------------------------------------------------
-export async function readPnlCH(workspaceId: string): Promise<FactPnl> {
-  const store = await readStoreSummaryCH(workspaceId)
-  const spend = await readAdSpendCH(workspaceId)
+export async function readPnlCH(workspaceId: string, range?: FactDateRange): Promise<FactPnl> {
+  const store = await readStoreSummaryCH(workspaceId, range)
+  const spend = await readAdSpendCH(workspaceId, range)
   return {
     hasData: store.hasData,
     currencyCode: store.currencyCode,
@@ -169,9 +180,10 @@ export async function readPnlCH(workspaceId: string): Promise<FactPnl> {
 // processed-at) window; PG uses a window function, CH uses argMin over the partition
 // to find the first order per customer.
 // ---------------------------------------------------------------------------
-export async function readMarketingCH(workspaceId: string): Promise<FactMarketing> {
-  const store = await readStoreSummaryCH(workspaceId)
-  const spend = await readAdSpendCH(workspaceId)
+export async function readMarketingCH(workspaceId: string, range?: FactDateRange): Promise<FactMarketing> {
+  const store = await readStoreSummaryCH(workspaceId, range)
+  const spend = await readAdSpendCH(workspaceId, range)
+  const ncDc = chDateClause('placed_at', range)
 
   // New-customer net revenue = sum of (gross - discount - tax) for the first order of
   // each non-cancelled customer (cancelled_at IS NULL AND financial_status NOT IN voided/refunded).
@@ -181,7 +193,7 @@ export async function readMarketingCH(workspaceId: string): Promise<FactMarketin
               row_number() OVER (PARTITION BY customer_ref ORDER BY placed_at, vendor_order_id) AS rn,
               (gross_sales_mu - discount_mu - tax_mu) AS net_mu
          FROM brain.connector_order_facts
-        WHERE workspace_id = {workspace_id:String}
+        WHERE workspace_id = {workspace_id:String}${ncDc.clause}
           AND customer_ref != ''
           AND cancelled_at IS NULL
           AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
@@ -189,7 +201,7 @@ export async function readMarketingCH(workspaceId: string): Promise<FactMarketin
      SELECT toString(sumIf(net_mu, rn = 1)) AS nc_rev,
             toString(countIf(rn = 1))     AS nc_count
        FROM ranked`,
-    { workspaceId },
+    { workspaceId, params: ncDc.params },
   )
   const nc = ncRows[0] ?? {}
   return {
@@ -208,10 +220,11 @@ export async function readMarketingCH(workspaceId: string): Promise<FactMarketin
 // readCogsCH — sum(li.quantity × pf.cost_mu) joined li → pf on vendor_product_id.
 // Same shape as PG. Uses LEFT JOIN so lines with no costed product contribute 0.
 // ---------------------------------------------------------------------------
-export async function readCogsCH(workspaceId: string, settings: CogsSettings): Promise<FactCogs> {
+export async function readCogsCH(workspaceId: string, settings: CogsSettings, range?: FactDateRange): Promise<FactCogs> {
   const ovr = settings.overrideBp | 0
   const fb = settings.fallbackBp | 0
   const mk = settings.markupBp | 0
+  const dc = chDateClause('li.order_date', range)
   // Same precedence as PG readCogs: override% of revenue > product cost×(1+markup)
   // > fallback% of revenue for cost-less lines. li gets FINAL (the re-inserted
   // vendor_product_id versions must dedup); pf uses an explicit argMax subquery.
@@ -234,8 +247,8 @@ export async function readCogsCH(workspaceId: string, settings: CogsSettings): P
        ON pf.workspace_id = li.workspace_id
       AND pf.vendor       = li.vendor
       AND pf.vendor_product_id = li.vendor_product_id
-     WHERE li.workspace_id = {workspace_id:String}`,
-    { workspaceId },
+     WHERE li.workspace_id = {workspace_id:String}${dc.clause}`,
+    { workspaceId, params: dc.params },
   )
   const r = rows[0] ?? {}
   return {
