@@ -19,7 +19,7 @@ import type { PoolClient } from 'pg'
 import { withWorkspace, withSuperadmin } from '../../../../infrastructure/db/workspace-context.js'
 import {
   readStoreSummaryCH, readPnlCH, readMarketingCH, readCogsCH, readProductPerformanceCH,
-  readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH,
+  readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH, readShipmentRowsCH,
   readCohortsCH, readLtvCH, readLifecycleStatesCH,
   readOrderTimingsCH, readFirstProductCascadeCH, readDistributionsCH,
   readDailyNetSalesCH, readDailyAcquisitionCH, readDistributionsGraphPointsCH,
@@ -83,7 +83,9 @@ const VENDOR_LABEL: Record<string, string> = {
   SHIPROCKET: 'Shiprocket',
 }
 
-const CANCELLED = "(cancelled_at IS NULL AND COALESCE(financial_status,'') NOT IN ('voided','refunded'))"
+// lower(): migrated financial_status is mixed-case (Shopify UPPERCASE, Woo lowercase);
+// without it voided/refunded orders leak into realized revenue.
+const CANCELLED = "(cancelled_at IS NULL AND lower(COALESCE(financial_status,'')) NOT IN ('voided','refunded'))"
 
 /**
  * Store summary + revenue ladder from connector_order_facts. Realized revenue
@@ -259,15 +261,44 @@ export interface FactCogs {
   coveredLines: bigint
   totalLines: bigint
 }
-export async function readCogs(workspaceId: string): Promise<FactCogs> {
-  if (READ_FROM_CH) {
-    try { return await readCogsCH(workspaceId) } catch { /* PG fallback */ }
-  }
+
+// COGS resolution settings (workspace_cogs_settings, in basis points). Legacy
+// cogs/resolve.ts precedence: override_all (all lines = override% of revenue) >
+// product cost_mu × (1 + markup) > fallback% of revenue for cost-less lines.
+export interface CogsSettings { overrideBp: number; fallbackBp: number; markupBp: number }
+
+async function readCogsSettings(workspaceId: string): Promise<CogsSettings> {
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // RLS-scoped; max() guarantees a single row even when unset (→ 0/0/0).
+    const r = await tx.query<{ ovr: string; fb: string; mk: string }>(
+      `SELECT COALESCE(max(override_all_cogs_bp),0)::text AS ovr,
+              COALESCE(max(fallback_cogs_bp),0)::text     AS fb,
+              COALESCE(max(cogs_markup_bp),0)::text       AS mk
+         FROM workspace_cogs_settings`,
+    )
+    const row = r.rows[0]
+    return { overrideBp: Number(row?.ovr ?? 0), fallbackBp: Number(row?.fb ?? 0), markupBp: Number(row?.mk ?? 0) }
+  })
+}
+
+export async function readCogs(workspaceId: string): Promise<FactCogs> {
+  const settings = await readCogsSettings(workspaceId)
+  if (READ_FROM_CH) {
+    try { return await readCogsCH(workspaceId, settings) } catch { /* PG fallback */ }
+  }
+  const { overrideBp: ovr, fallbackBp: fb, markupBp: mk } = settings
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // line_revenue = quantity × unit_price_mu. Integer math throughout (paise).
     const res = await tx.query<{ cogs: string | null; covered: string | null; total: string | null }>(
       `SELECT
-         COALESCE(sum(li.quantity * pf.cost_mu) FILTER (WHERE pf.cost_mu IS NOT NULL), 0)::text AS cogs,
-         count(*) FILTER (WHERE pf.cost_mu IS NOT NULL)::text AS covered,
+         COALESCE(sum(
+           CASE
+             WHEN ${ovr} > 0            THEN (li.quantity * li.unit_price_mu) * ${ovr} / 10000
+             WHEN pf.cost_mu IS NOT NULL THEN li.quantity * pf.cost_mu * (10000 + ${mk}) / 10000
+             WHEN ${fb} > 0             THEN (li.quantity * li.unit_price_mu) * ${fb} / 10000
+             ELSE 0
+           END), 0)::bigint::text AS cogs,
+         count(*) FILTER (WHERE ${ovr} > 0 OR pf.cost_mu IS NOT NULL OR ${fb} > 0)::text AS covered,
          count(*)::text AS total
        FROM connector_line_item_facts li
        LEFT JOIN connector_product_facts pf
@@ -871,13 +902,25 @@ export interface ShipmentRowFiltersLocal {
   rtoOnly?: boolean
 }
 
+const EMPTY_SHIPMENT_PAGE: FactShipmentPage = {
+  rows: [], nextCursor: null, totalCount: 0n, filteredCount: 0n,
+  deliveredCount: 0n, rtoCount: 0n, mappedCount: 0n, distinctStatuses: [],
+}
+
 export async function readShipmentRows(
   workspaceId: string,
   filters: ShipmentRowFiltersLocal,
   cursor: string | undefined,
   pageSize: number,
 ): Promise<FactShipmentPage> {
-  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+  if (READ_FROM_CH) {
+    try { return await readShipmentRowsCH(workspaceId, filters, cursor, pageSize) } catch { /* PG fallback */ }
+  }
+  // connector_shipment_facts is a CH-only fact — it has no PG table. The PG path
+  // below stays for the pre-CH flag world; on a missing relation (42P01) we return
+  // honest-empty rather than 500ing the logistics console.
+  try {
+    return await withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Build WHERE clauses for filters
     const conditions: string[] = []
 
@@ -984,7 +1027,11 @@ export async function readShipmentRows(
       mappedCount: 0n,
       distinctStatuses: statusRes.rows.map((r) => r.status).filter(Boolean),
     }
-  })
+    })
+  } catch {
+    // No connector_shipment_facts table in PG (CH-only fact) — honest-empty.
+    return EMPTY_SHIPMENT_PAGE
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1899,6 +1946,7 @@ export async function readEmailPerformance(
         ? `AND source_type = 'flow'`
         : ''
 
+    try {
     const res = await tx.query<Record<string, string>>(
       `SELECT ${g.keyExpr}            AS row_key,
               ${g.labelExpr}          AS row_label,
@@ -1929,5 +1977,11 @@ export async function readEmailPerformance(
       unsubscribes: BigInt(r.unsubscribes ?? '0'),
       spamComplaints: BigInt(r.spam_complaints ?? '0'),
     }))
+    } catch (e) {
+      // connector_email_send_facts isn't present in PG (no Klaviyo data migrated) —
+      // honest-empty rather than 500ing the lifecycle email/SMS page.
+      if ((e as { code?: string }).code === '42P01') return []
+      throw e
+    }
   })
 }

@@ -18,10 +18,11 @@
 
 import { chQuery } from '@brain/lib-clickhouse-ts'
 import type {
-  FactStoreSummary, FactPnl, FactMarketing, FactCogs, FactProductRow,
+  FactStoreSummary, FactPnl, FactMarketing, FactCogs, CogsSettings, FactProductRow,
   FactCourierRow, FactShipmentAnalytics, FactPincodeRow, FactCodPrepaid,
   FactCohortRow, FactLtv, FactLifecycleBucket, FactLifecycle, FactOrderTimings,
   FactCascadeRow, FactDistRow, FactCalendarRow,
+  FactShipmentRow, FactShipmentPage, ShipmentRowFiltersLocal,
 } from './fact-analytics.js'
 import type {
   FactDailySalesRow, FactDailyAcquisitionRow, FactDistGraphPoint,
@@ -41,7 +42,10 @@ const STATUS_BUCKET = `multiIf(
 // PG-parity filter for "realized" / "non-cancelled" orders:
 //   cancelled_at IS NULL AND financial_status NOT IN ('voided','refunded')
 // CH: same predicate (cancelled_at was added by the Phase-6 one-shot ALTER).
-const CANCELLED_OK = `cancelled_at IS NULL AND financial_status NOT IN ('voided','refunded')`
+// lower(): migrated financial_status is mixed-case (Shopify UPPERCASE
+// 'VOIDED'/'REFUNDED', Woo lowercase). Without it, voided/refunded orders leak
+// into realized revenue (873 orders for the anchor workspace).
+const CANCELLED_OK = `cancelled_at IS NULL AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')`
 
 // ---------------------------------------------------------------------------
 // readStoreSummary — first port (proof of the wire-up).
@@ -180,7 +184,7 @@ export async function readMarketingCH(workspaceId: string): Promise<FactMarketin
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
      )
      SELECT toString(sumIf(net_mu, rn = 1)) AS nc_rev,
             toString(countIf(rn = 1))     AS nc_count
@@ -204,11 +208,21 @@ export async function readMarketingCH(workspaceId: string): Promise<FactMarketin
 // readCogsCH — sum(li.quantity × pf.cost_mu) joined li → pf on vendor_product_id.
 // Same shape as PG. Uses LEFT JOIN so lines with no costed product contribute 0.
 // ---------------------------------------------------------------------------
-export async function readCogsCH(workspaceId: string): Promise<FactCogs> {
+export async function readCogsCH(workspaceId: string, settings: CogsSettings): Promise<FactCogs> {
+  const ovr = settings.overrideBp | 0
+  const fb = settings.fallbackBp | 0
+  const mk = settings.markupBp | 0
+  // Same precedence as PG readCogs: override% of revenue > product cost×(1+markup)
+  // > fallback% of revenue for cost-less lines. li gets FINAL (the re-inserted
+  // vendor_product_id versions must dedup); pf uses an explicit argMax subquery.
   const rows = await chQuery<{ cogs: string | null; covered: string | null; total: string | null }>(
     `SELECT
-       toString(sumIf(li.quantity * pf.cost_mu, pf.cost_mu > 0)) AS cogs,
-       toString(countIf(pf.cost_mu > 0))                         AS covered,
+       toString(sum(multiIf(
+         ${ovr} > 0,         intDiv(li.line_total_mu * ${ovr}, 10000),
+         pf.cost_mu > 0,     intDiv(li.quantity * pf.cost_mu * (10000 + ${mk}), 10000),
+         ${fb} > 0,          intDiv(li.line_total_mu * ${fb}, 10000),
+         toInt64(0))))                                            AS cogs,
+       toString(countIf(${ovr} > 0 OR pf.cost_mu > 0 OR ${fb} > 0)) AS covered,
        toString(count())                                         AS total
      FROM brain.connector_line_item_facts AS li
      LEFT JOIN (
@@ -221,7 +235,7 @@ export async function readCogsCH(workspaceId: string): Promise<FactCogs> {
       AND pf.vendor       = li.vendor
       AND pf.vendor_product_id = li.vendor_product_id
      WHERE li.workspace_id = {workspace_id:String}`,
-    { workspaceId, skipFinal: true },  // we did argMax manually for pf; FINAL on li is fine but the join blocks it
+    { workspaceId },
   )
   const r = rows[0] ?? {}
   return {
@@ -316,19 +330,19 @@ export async function readProductPerformanceCH(
 export async function readShipmentAnalyticsCH(workspaceId: string): Promise<FactShipmentAnalytics> {
   const a = await chQuery<Record<string, string>>(
     `SELECT
-       toString(count())                                  AS total,
-       toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))  AS delivered,
-       toString(countIf(${STATUS_BUCKET} = 'RTO'))        AS rto,
-       toString(0)                                        AS cod,
-       toString(count())                                  AS prepaid,
-       toString(0)                                        AS charges,
-       toString(0)                                        AS rto_charges,
-       toString(0)                                        AS fwd_charges,
-       toString(0)                                        AS cod_charges,
-       toString(0)                                        AS cod_rto,
-       toString(0)                                        AS cod_total,
-       toString(countIf(${STATUS_BUCKET} = 'RTO'))        AS prepaid_rto,
-       toString(count())                                  AS prepaid_total
+       toString(count())                                                  AS total,
+       toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))                  AS delivered,
+       toString(countIf(${STATUS_BUCKET} = 'RTO'))                        AS rto,
+       toString(countIf(is_cod = 1))                                      AS cod,
+       toString(countIf(is_cod = 0))                                      AS prepaid,
+       toString(0)                                                        AS charges,
+       toString(0)                                                        AS rto_charges,
+       toString(0)                                                        AS fwd_charges,
+       toString(0)                                                        AS cod_charges,
+       toString(countIf(is_cod = 1 AND ${STATUS_BUCKET} = 'RTO'))         AS cod_rto,
+       toString(countIf(is_cod = 1))                                      AS cod_total,
+       toString(countIf(is_cod = 0 AND ${STATUS_BUCKET} = 'RTO'))         AS prepaid_rto,
+       toString(countIf(is_cod = 0))                                      AS prepaid_total
      FROM brain.connector_shipment_facts
      WHERE workspace_id = {workspace_id:String}`,
     { workspaceId },
@@ -379,7 +393,7 @@ export async function readPincodesCH(workspaceId: string): Promise<FactPincodeRo
             toString(count())                                      AS cnt,
             toString(countIf(${STATUS_BUCKET} = 'RTO'))            AS rto,
             toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))      AS delivered,
-            toString(0)                                            AS cod
+            toString(countIf(is_cod = 1))                          AS cod
        FROM brain.connector_shipment_facts
       WHERE workspace_id = {workspace_id:String}
         AND delivery_pincode != ''
@@ -396,6 +410,102 @@ export async function readPincodesCH(workspaceId: string): Promise<FactPincodeRo
     deliveredCount: BigInt(x.delivered ?? '0'),
     codCount: BigInt(x.cod ?? '0'),
   }))
+}
+
+// ---------------------------------------------------------------------------
+// readShipmentRowsCH — per-shipment operational console (CH companion to
+// readShipmentRows). Keyset pagination on vendor_shipment_id (CH has no uuid id;
+// the shiprocket shipment id is the stable key). Charge columns are 0 — legacy
+// never populated shiprocket charges into the facts (they live in rawJson only).
+// ---------------------------------------------------------------------------
+export async function readShipmentRowsCH(
+  workspaceId: string,
+  filters: ShipmentRowFiltersLocal,
+  cursor: string | undefined,
+  pageSize: number,
+): Promise<FactShipmentPage> {
+  const esc = (s: string): string => s.replace(/'/g, "''")
+  const conds: string[] = []
+  if (filters.search && filters.search.trim() !== '') {
+    const term = esc(filters.search.trim())
+    conds.push(`(positionCaseInsensitive(vendor_shipment_id, '${term}') > 0 OR positionCaseInsensitive(vendor_order_id, '${term}') > 0)`)
+  }
+  if (filters.statuses && filters.statuses.length > 0) {
+    conds.push(`status IN (${filters.statuses.map((s) => `'${esc(s)}'`).join(',')})`)
+  }
+  if (filters.payment === 'COD') conds.push('is_cod = 1')
+  else if (filters.payment === 'PREPAID') conds.push('is_cod = 0')
+  if (filters.rtoOnly) conds.push(`${STATUS_BUCKET} = 'RTO'`)
+  const filterWhere = conds.length > 0 ? ` AND ${conds.join(' AND ')}` : ''
+  const cursorWhere = cursor ? ` AND vendor_shipment_id < '${esc(cursor)}'` : ''
+
+  const [rows, agg, statuses] = await Promise.all([
+    chQuery<Record<string, unknown>>(
+      `SELECT vendor_shipment_id                            AS id,
+              vendor_shipment_id,
+              vendor_order_id                               AS vendor_order_ref,
+              status,
+              ${STATUS_BUCKET}                              AS status_bucket,
+              is_cod,
+              courier_name,
+              delivery_pincode,
+              delivery_city,
+              toString(shipped_at)                          AS shipped_at,
+              toString(date)                                AS created_at
+         FROM brain.connector_shipment_facts
+        WHERE workspace_id = {workspace_id:String}${filterWhere}${cursorWhere}
+        ORDER BY vendor_shipment_id DESC
+        LIMIT ${pageSize + 1}`,
+      { workspaceId },
+    ),
+    chQuery<Record<string, string>>(
+      `SELECT toString(count())                              AS total,
+              toString(countIf(${STATUS_BUCKET} = 'DELIVERED')) AS delivered,
+              toString(countIf(${STATUS_BUCKET} = 'RTO'))       AS rto
+         FROM brain.connector_shipment_facts
+        WHERE workspace_id = {workspace_id:String}${filterWhere}`,
+      { workspaceId },
+    ),
+    chQuery<Record<string, string>>(
+      `SELECT DISTINCT status FROM brain.connector_shipment_facts
+        WHERE workspace_id = {workspace_id:String} AND status != ''
+        ORDER BY status LIMIT 50`,
+      { workspaceId },
+    ),
+  ])
+
+  const hasMore = rows.length > pageSize
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows
+  const lastRow = pageRows[pageRows.length - 1]
+  const nextCursor = hasMore && lastRow ? String(lastRow.id) : null
+  const a = agg[0] ?? {}
+
+  const mapped: FactShipmentRow[] = pageRows.map((r) => ({
+    id: String(r.id ?? ''),
+    vendorShipmentId: String(r.vendor_shipment_id ?? ''),
+    vendorOrderRef: r.vendor_order_ref ? String(r.vendor_order_ref) : null,
+    status: r.status != null ? String(r.status) : null,
+    statusBucket: r.status_bucket != null ? String(r.status_bucket) : null,
+    isCod: Number(r.is_cod) === 1,
+    codAmountMu: null,
+    shippingChargesMu: null,
+    courierName: r.courier_name ? String(r.courier_name) : null,
+    deliveryPincode: r.delivery_pincode ? String(r.delivery_pincode) : null,
+    deliveryCity: r.delivery_city ? String(r.delivery_city) : null,
+    shippedAt: r.shipped_at ? String(r.shipped_at) : null,
+    createdAt: r.created_at ? String(r.created_at) : null,
+  }))
+
+  return {
+    rows: mapped,
+    nextCursor,
+    totalCount: BigInt(a.total ?? '0'),
+    filteredCount: BigInt(a.total ?? '0'),
+    deliveredCount: BigInt(a.delivered ?? '0'),
+    rtoCount: BigInt(a.rto ?? '0'),
+    mappedCount: 0n,
+    distinctStatuses: statuses.map((s) => s.status).filter(Boolean),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -449,7 +559,7 @@ export async function readCohortsCH(workspaceId: string): Promise<FactCohortRow[
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
      )
      SELECT formatDateTime(toStartOfMonth(toDate(acq)), '%Y-%m') AS cohort,
             toString(countIf(rn = 1))                                                  AS new_customers,
@@ -468,7 +578,7 @@ export async function readCohortsCH(workspaceId: string): Promise<FactCohortRow[
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
         GROUP BY customer_ref
      )
      SELECT formatDateTime(toStartOfMonth(fo.cohort_dt), '%Y-%m')  AS cohort,
@@ -558,7 +668,7 @@ export async function readLifecycleStatesCH(workspaceId: string): Promise<FactLi
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
         GROUP BY customer_ref
      ),
      nowref AS (SELECT max(last_at) AS n FROM cust),

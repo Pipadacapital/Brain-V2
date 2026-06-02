@@ -30,7 +30,12 @@
  */
 
 import type { PoolClient } from 'pg'
+import { chQuery } from '@brain/lib-clickhouse-ts'
 import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
+
+// READ_FROM_CH overlays revenue/conversions/ROAS from the wider CH ad facts onto
+// the PG result (PG mirror carries only spend/impressions/clicks). Default OFF.
+const READ_FROM_CH = process.env.READ_FROM_CH === 'true'
 
 export type AdVendor = 'META' | 'GOOGLE'
 
@@ -148,6 +153,33 @@ export async function listCampaigns(
         currencyCode: r.currency_code ?? 'INR',
       }
     })
+
+    // Overlay real revenue / conversions / ROAS from the CH ad facts (the PG
+    // mirror only has spend/impressions/clicks). Best-effort: on any CH failure
+    // the PG honest-0 stands, so the page never breaks.
+    if (READ_FROM_CH && rows.length > 0) {
+      try {
+        const chRows = await chQuery<{ campaign_id: string; revenue_mu: string; conversions: string }>(
+          `SELECT campaign_id,
+                  toString(sum(revenue_mu))  AS revenue_mu,
+                  toString(sum(conversions)) AS conversions
+             FROM brain.connector_ad_spend_facts
+            WHERE workspace_id = {workspace_id:String}
+              AND vendor = {ad_vendor:String}
+              AND date >= {date_start:String} AND date <= {date_end:String}
+            GROUP BY campaign_id`,
+          { workspaceId, params: { ad_vendor: vendor, date_start: dateStart, date_end: dateEnd } },
+        )
+        const chMap = new Map(chRows.map((c) => [c.campaign_id, c]))
+        for (const r of rows) {
+          const ch = chMap.get(r.campaignId)
+          if (!ch) continue
+          r.revenueMu = BigInt(ch.revenue_mu ?? '0')
+          r.conversions = Number(ch.conversions ?? '0')
+          r.roasBp = r.spendMu > 0n ? Number((r.revenueMu * 10000n) / r.spendMu) : 0
+        }
+      } catch { /* CH overlay best-effort; PG honest-0 stands */ }
+    }
 
     const totals = rows.reduce(
       (a, r) => ({

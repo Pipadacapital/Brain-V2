@@ -44,7 +44,7 @@ def _row(ws: str) -> MetricRow:
 def _client(rows_by_ws: dict[str, list[MetricRow]]) -> MagicMock:
     mock = MagicMock()
 
-    def _query(sql: str, parameters: dict | None = None):
+    def _query(sql: str, parameters: dict | None = None, **_kwargs):
         ws = (parameters or {}).get("workspace_id", "")
         rows = rows_by_ws.get(ws, [])
         raw = [tuple(getattr(r, c, None) for c in _METRIC_COLUMNS) for r in rows]
