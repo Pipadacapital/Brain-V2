@@ -76,6 +76,47 @@ export function assertBootableAuthConfig(cfg: GatewayAuthConfig): string | null 
   return null;
 }
 
+// Real-prod discriminator. The LOCAL docker stack runs NODE_ENV=production, so
+// NODE_ENV cannot gate prod-only strictness. BRAIN_ENV ∈ local|staging|production
+// (default 'local') is the explicit signal; the prod deploy sets BRAIN_ENV=production.
+const DEFAULT_DEV_CORS_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:19000',
+  'http://localhost:19006',
+];
+
+export function isRealProd(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env['BRAIN_ENV'] ?? 'local').toLowerCase() === 'production';
+}
+
+/** CORS allow-list from CORS_ALLOWED_ORIGINS (comma-split); dev localhost default. */
+export function resolveCorsOrigins(env: NodeJS.ProcessEnv = process.env): string[] {
+  const raw = (env['CORS_ALLOWED_ORIGINS'] ?? '').trim();
+  if (raw) return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  return DEFAULT_DEV_CORS_ORIGINS;
+}
+
+/**
+ * Fail-fast env validation for a REAL production deploy (BRAIN_ENV=production).
+ * Returns a fatal message if required config is missing or a dev default would
+ * ship; null otherwise. In local/staging this is a no-op (defaults are fine).
+ * Prevents silent localhost/dev-password fallbacks reaching production.
+ */
+export function assertBootableRuntimeConfig(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (!isRealProd(env)) return null;
+  const problems: string[] = [];
+  for (const k of ['DATABASE_URL', 'CLICKHOUSE_URL', 'SUPABASE_URL', 'CORS_ALLOWED_ORIGINS']) {
+    if (!(env[k] ?? '').trim()) problems.push(`${k} unset`);
+  }
+  if ((env['CLICKHOUSE_PASSWORD'] ?? '') === 'brain_app_pw') problems.push('CLICKHOUSE_PASSWORD is the dev default');
+  if (/localhost|127\.0\.0\.1/.test(env['DATABASE_URL'] ?? '')) problems.push('DATABASE_URL points at localhost');
+  if (!(env['CONNECTOR_CUSTODY_KEY'] ?? '').trim() && !(env['CONNECTOR_CUSTODY_BACKING'] ?? '').trim()) {
+    problems.push('CONNECTOR_CUSTODY_KEY or CONNECTOR_CUSTODY_BACKING unset');
+  }
+  return problems.length ? `BRAIN_ENV=production but: ${problems.join('; ')}` : null;
+}
+
 // ---------------------------------------------------------------------------
 // Data plane + idempotency store (Phase-0: in-process).
 // ---------------------------------------------------------------------------
@@ -230,12 +271,7 @@ async function buildServer(cfg: GatewayAuthConfig) {
   const membershipResolver: MembershipResolver = new DbMembershipResolver(resolveMembership);
 
   await fastify.register(cors, {
-    origin: [
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:19000',
-      'http://localhost:19006',
-    ],
+    origin: resolveCorsOrigins(),
     credentials: true,
   });
 
@@ -362,6 +398,16 @@ async function main() {
   if (fatal) {
     // eslint-disable-next-line no-console
     console.error(`FATAL: ${fatal}`);
+    process.exit(1);
+  }
+
+  // Fail-fast on a misconfigured REAL production deploy (BRAIN_ENV=production) —
+  // missing DATABASE_URL/CLICKHOUSE_*/CORS/custody or a shipped dev default —
+  // instead of silently falling back to localhost / dev passwords.
+  const runtimeFatal = assertBootableRuntimeConfig();
+  if (runtimeFatal) {
+    // eslint-disable-next-line no-console
+    console.error(`FATAL: ${runtimeFatal}`);
     process.exit(1);
   }
 
