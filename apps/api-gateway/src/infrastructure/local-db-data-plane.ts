@@ -14,7 +14,7 @@
 // honestly empty until those connectors land — stated in the slice-E deferrals.
 
 import {
-  readStoreSummary, readPnl, readMarketing, readIntegrations, readCogs,
+  readStoreSummary, readPnl, readMarketing, readIntegrations, readCogs, readCogsSettings,
   readProductPerformance, readWorkspaceMembers, readWorkspaceSettings,
   readShipmentAnalytics, readPincodes, readCodPrepaid, readCohorts, readLtv,
   readLifecycleStates, readOrderTimings, readFirstProductCascade, readDistributions, readCalendarReport,
@@ -33,12 +33,18 @@ import {
   updateMarketingAction as coreUpdateMarketingAction,
   deleteMarketingAction as coreDeleteMarketingAction,
   listFestivals as coreListFestivals,
+  listCosts as coreListCosts,
+  listGoals as coreListGoals,
 } from '@brain/core-settings';
 import type {
   DataPlanePort,
   KpiSummaryRow,
   PnlWaterfallRow,
   PnlStatementRow,
+  CostStackRow,
+  CostKind,
+  GoalEvaluationRow,
+  GoalRag,
   StoreSummaryRow,
   StoreRevenueLadderStep,
   DateRange,
@@ -323,20 +329,55 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     return { summary, data_epoch: DATA_EPOCH };
   }
 
+  // Resolve the saved cost stack (workspace_costs) into CM inputs. Variable costs
+  // scale with volume — per_order × realized orders + percent × net — so they are
+  // correct at any period without proration. Monthly fixed costs are overhead
+  // (misc_expenses_prorated, below CM2); taken at face value (period-proration of
+  // overhead is a separate decision — workspace_misc_expenses has no reader yet).
+  private async resolveCosts(netSalesMu: bigint, orderCount: bigint): Promise<{
+    costRows: CostStackRow[]; variableMu: bigint; miscMu: bigint;
+    totalFixedMonthlyMu: bigint; totalPerOrderMu: bigint;
+  }> {
+    const costs = await coreListCosts(this.ws);
+    const costRows: CostStackRow[] = costs.map((c) => {
+      const kind: CostKind = c.is_percent ? 'percent' : (c.billing_mode === 'MONTHLY' ? 'fixed_monthly' : 'per_order');
+      return {
+        cost_type: c.cost_type,
+        name: c.name ?? c.cost_type,
+        kind,
+        amount_mu: c.is_percent ? 0n : c.amount_mu,
+        amount_bp: c.is_percent ? Number(c.amount_mu) : 0,
+        effective_from: c.effective_from,
+        currency_code: c.currency_code ?? 'INR',
+      };
+    });
+    const totalPerOrderMu = costRows.filter((r) => r.kind === 'per_order').reduce((a, r) => a + r.amount_mu, 0n);
+    const totalFixedMonthlyMu = costRows.filter((r) => r.kind === 'fixed_monthly').reduce((a, r) => a + r.amount_mu, 0n);
+    const percentMu = costRows.filter((r) => r.kind === 'percent')
+      .reduce((a, r) => a + (netSalesMu * BigInt(r.amount_bp)) / 10000n, 0n);
+    return {
+      costRows,
+      variableMu: totalPerOrderMu * orderCount + percentMu,
+      miscMu: totalFixedMonthlyMu,
+      totalFixedMonthlyMu,
+      totalPerOrderMu,
+    };
+  }
+
   override async getPnlStatement(params: { workspace_id: string; date_range: DateRange }): Promise<{
     statement: PnlStatementRow;
     data_epoch: Date;
   }> {
     this.assertWs(params.workspace_id);
     const f = await readPnl(this.ws);
-    // COGS now comes from migrated product cost (quantity × cost_mu). Variable costs
-    // (shipping/packaging) are not yet connector-fed → 0 (honest).
+    // COGS applies workspace_cogs_settings; variable costs come from the saved
+    // workspace_costs stack (per_order × orders + percent × net).
     const netRevenue = f.netRevenueMu;
     const cogs = (await readCogs(this.ws)).cogsMu;
-    const variable = 0n;
+    const { variableMu: variable, miscMu: misc } = await this.resolveCosts(netRevenue, f.orderCount);
     const cm1 = netRevenue - cogs - variable;
     const cm2 = cm1 - f.totalAdSpendMu;
-    const cm3 = cm2; // no prorated overheads ingested
+    const cm3 = cm2 - misc;
     const statement: PnlStatementRow = {
       workspace_id: this.ws,
       period: 'synced',
@@ -348,7 +389,7 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
       cm1_mu: cm1,
       total_ad_spend_mu: f.totalAdSpendMu,
       cm2_mu: cm2,
-      misc_expenses_prorated_mu: 0n,
+      misc_expenses_prorated_mu: misc,
       cm3_mu: cm3,
       true_cm2_mu: f.orderCount > 0n ? cm2 : null,
       order_count: f.orderCount,
@@ -364,16 +405,23 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     const f = await readPnl(this.ws);
     const head = f.netRevenueMu;
     const cogs = (await readCogs(this.ws)).cogsMu;
-    const cm1 = head - cogs;
+    const { variableMu: variable, miscMu: misc } = await this.resolveCosts(head, f.orderCount);
+    const cm1 = head - cogs - variable;
     const cm2 = cm1 - f.totalAdSpendMu;
+    const cm3 = cm2 - misc;
     const epoch = DATA_EPOCH;
     const c = f.currencyCode;
+    // 8-step CM waterfall (matches the metric-registry contract / pnl router test):
+    // net → cogs → variable → CM1 → ad spend → CM2 → misc → CM3.
     const steps: PnlWaterfallRow[] = [
       { definition_id: 'net_revenue_mu', label: 'Realized Revenue', value_mu: head, cumulative_mu: head, currency_code: c, data_epoch: epoch },
-      { definition_id: 'cogs_mu', label: 'COGS', value_mu: -cogs, cumulative_mu: cm1, currency_code: c, data_epoch: epoch },
+      { definition_id: 'cogs_mu', label: 'COGS', value_mu: -cogs, cumulative_mu: head - cogs, currency_code: c, data_epoch: epoch },
+      { definition_id: 'variable_costs_mu', label: 'Variable Costs', value_mu: -variable, cumulative_mu: cm1, currency_code: c, data_epoch: epoch },
       { definition_id: 'cm1_mu', label: 'CM1 (Gross Contribution)', value_mu: cm1, cumulative_mu: cm1, currency_code: c, data_epoch: epoch },
       { definition_id: 'total_ad_spend_mu', label: 'Ad Spend', value_mu: -f.totalAdSpendMu, cumulative_mu: cm2, currency_code: c, data_epoch: epoch },
       { definition_id: 'cm2_mu', label: 'CM2 (After Ads)', value_mu: cm2, cumulative_mu: cm2, currency_code: c, data_epoch: epoch },
+      { definition_id: 'misc_expenses_prorated_mu', label: 'Misc / Overhead', value_mu: -misc, cumulative_mu: cm3, currency_code: c, data_epoch: epoch },
+      { definition_id: 'cm3_mu', label: 'CM3 (After Overhead)', value_mu: cm3, cumulative_mu: cm3, currency_code: c, data_epoch: epoch },
     ];
     return { steps, data_epoch: epoch };
   }
@@ -991,11 +1039,74 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getGoalAttainment(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyGoalAttainment(this.ws), data_epoch: DATA_EPOCH };
+    const [goals, f] = await Promise.all([coreListGoals(this.ws), readPnl(this.ws)]);
+    const net = f.netRevenueMu;
+    const spend = f.totalAdSpendMu;
+    const rows: GoalEvaluationRow[] = goals.map((g) => {
+      const metric = g.metric_name.toLowerCase();
+      // actual is computed in the goal's unit: MER/ROAS in bp (ratio ×10000), money in mu, count as count.
+      let actual = 0n;
+      if (metric === 'mer' || metric === 'roas') actual = spend > 0n ? (net * 10000n) / spend : 0n;
+      else if (metric === 'net_revenue' || metric === 'revenue' || metric === 'net_sales') actual = net;
+      else if (metric === 'ad_spend' || metric === 'spend') actual = spend;
+      else if (metric === 'orders') actual = f.orderCount;
+      const goalValue = g.goal_value;
+      // MAXIMUM = a cap (lower is better); TARGET/MINIMUM = higher is better.
+      const higherBetter = g.goal_type !== 'MAXIMUM';
+      const attainmentBp = goalValue > 0n ? Number((actual * 10000n) / goalValue) : null;
+      const varianceAbs = actual > goalValue ? actual - goalValue : goalValue - actual;
+      let rag: GoalRag = 'amber';
+      if (attainmentBp !== null) {
+        const meets = higherBetter ? attainmentBp >= 10000 : attainmentBp <= 10000;
+        const close = higherBetter ? attainmentBp >= 8000 : attainmentBp <= 12000;
+        rag = meets ? 'green' : close ? 'amber' : 'red';
+      }
+      return {
+        metric_name: g.metric_name,
+        period_type: g.period_type as GoalEvaluationRow['period_type'],
+        period_start: g.period_start,
+        goal_type: g.goal_type as GoalEvaluationRow['goal_type'],
+        goal_value: goalValue,
+        actual,
+        attainment_bp: attainmentBp,
+        variance_abs: varianceAbs,
+        higher_better: higherBetter,
+        rag,
+      };
+    });
+    return {
+      result: { workspace_id: this.ws, period: 'synced', data_epoch: DATA_EPOCH, rows, total_rows: BigInt(rows.length) },
+      data_epoch: DATA_EPOCH,
+    };
   }
   override async getCostStack(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyCostStack(this.ws), data_epoch: DATA_EPOCH };
+    const [f, cogs, settings] = await Promise.all([
+      readPnl(this.ws), readCogs(this.ws), readCogsSettings(this.ws),
+    ]);
+    const net = f.netRevenueMu;
+    const { costRows, variableMu, totalFixedMonthlyMu, totalPerOrderMu } = await this.resolveCosts(net, f.orderCount);
+    const resolvedCogs = cogs.cogsMu;
+    return {
+      result: {
+        workspace_id: this.ws,
+        period: 'synced',
+        data_epoch: DATA_EPOCH,
+        override_all_bp: settings.overrideBp,
+        fallback_bp: settings.fallbackBp,
+        markup_bp: settings.markupBp,
+        cogs_mode: settings.overrideBp > 0 ? 'override' as const : 'product+fallback' as const,
+        cost_rows: costRows,
+        total_fixed_monthly_mu: totalFixedMonthlyMu,
+        total_per_order_mu: totalPerOrderMu,
+        net_sales_mu: net,
+        resolved_cogs_mu: resolvedCogs,
+        variable_costs_mu: variableMu,
+        cm1_mu: net - resolvedCogs - variableMu,
+        currency_code: f.currencyCode,
+      },
+      data_epoch: DATA_EPOCH,
+    };
   }
   override async getFestivalCalendar(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);

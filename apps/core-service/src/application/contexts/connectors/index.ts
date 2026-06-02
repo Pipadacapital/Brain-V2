@@ -97,6 +97,8 @@ export {
   readMarketing,
   readIntegrations,
   readCogs,
+  readCogsSettings,
+  type CogsSettings,
   readProductPerformance,
   readWorkspaceMembers,
   readWorkspaceSettings,
