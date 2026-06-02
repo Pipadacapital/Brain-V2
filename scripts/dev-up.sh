@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Brain — one-shot local bring-up.
+#
+#   ./scripts/dev-up.sh        (or:  make up)
+#
+# Idempotent: ensures the external data volumes exist, starts the databases,
+# applies the schema migrations ONLY on a fresh DB (detected by a marker table),
+# then builds + starts the api-gateway + web, and waits for /ready.
+# Safe to re-run — on an already-initialised DB it skips the migration step.
+# =============================================================================
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+COMPOSE="docker compose --env-file .env.docker"
+PG="docker exec -i brain-postgres-dev psql -U postgres -d brain_dev"
+CH="docker exec -i brain-clickhouse-dev clickhouse-client --user brain_app --password brain_app_pw"
+
+say() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
+
+# 0. .env.docker must exist (compose reads it + bakes the web build-args).
+if [ ! -f .env.docker ]; then
+  if [ -f .env.docker.example ]; then
+    cp .env.docker.example .env.docker
+    echo "WARNING: created .env.docker from the example — fill in SUPABASE_* / OAuth / custody before a real run."
+  else
+    echo "FATAL: .env.docker is missing and there is no .env.docker.example to copy."; exit 1
+  fi
+fi
+
+# 1. External data volumes (compose declares them external: true).
+say "Ensuring data volumes exist"
+docker volume create core-service_brain-pgdata-dev    >/dev/null
+docker volume create analytics-service_brain-chdata-dev >/dev/null
+
+# 2. Databases first, then wait until both are healthy.
+say "Starting databases (postgres-dev + clickhouse-dev)"
+$COMPOSE up -d postgres-dev clickhouse-dev
+say "Waiting for databases to be healthy"
+for _ in $(seq 1 60); do
+  pg=$(docker inspect -f '{{.State.Health.Status}}' brain-postgres-dev 2>/dev/null || echo starting)
+  ch=$(docker inspect -f '{{.State.Health.Status}}' brain-clickhouse-dev 2>/dev/null || echo starting)
+  [ "$pg" = healthy ] && [ "$ch" = healthy ] && break
+  sleep 2
+done
+echo "  postgres=$pg clickhouse=$ch"
+
+# 3. Apply migrations ONLY if the schema isn't there yet (fresh volume).
+initialised=$($PG -tAc "SELECT to_regclass('public.connector_order_facts_hot') IS NOT NULL" 2>/dev/null || echo f)
+if [ "$initialised" = "t" ]; then
+  say "Schema already present — skipping migrations"
+else
+  say "Fresh DB — applying Postgres migrations (local-dev/*.sql, in order)"
+  for f in $(ls apps/core-service/migrations/local-dev/[0-9]*.sql | grep -v down | sort); do
+    echo "  + $f"; $PG -v ON_ERROR_STOP=1 < "$f"
+  done
+  say "Applying ClickHouse fact migrations (0003 → 0011)"
+  for f in $(ls apps/analytics-service/migrations/clickhouse/000[3-9]*.sql \
+                apps/analytics-service/migrations/clickhouse/001[0-1]*.sql 2>/dev/null | sort); do
+    echo "  + $f"; $CH --multiquery < "$f"
+  done
+  echo "  NOTE: schema only — no rows. Real-data load is the Founder-gated tools/migrate-legacy step;"
+  echo "        for a demo UI set BRAIN_GATEWAY_LOCAL_HARNESS=true on the gateway."
+fi
+
+# 4. Build + start the app.
+say "Building + starting api-gateway + web"
+$COMPOSE up -d --build api-gateway web
+
+# 5. Wait for the gateway to report ready (probes PG + CH).
+say "Waiting for the gateway /ready"
+for _ in $(seq 1 40); do
+  if curl -fs localhost:3001/ready >/dev/null 2>&1; then break; fi
+  sleep 3
+done
+echo ""
+$COMPOSE ps
+echo ""
+echo "  /ready : $(curl -s localhost:3001/ready 2>/dev/null || echo 'not-ready-yet')"
+echo ""
+say "Up. Web → http://localhost:3000   API → http://localhost:3001"

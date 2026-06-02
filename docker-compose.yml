@@ -128,7 +128,10 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-      start_period: 15s
+      # The container installs workspace deps on first boot (~60s) before the
+      # server listens — give it room so compose doesn't mark it unhealthy and
+      # fail web's `depends_on: condition: service_healthy`.
+      start_period: 120s
     networks:
       - brain-net
 
