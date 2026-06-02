@@ -261,15 +261,44 @@ export interface FactCogs {
   coveredLines: bigint
   totalLines: bigint
 }
-export async function readCogs(workspaceId: string): Promise<FactCogs> {
-  if (READ_FROM_CH) {
-    try { return await readCogsCH(workspaceId) } catch { /* PG fallback */ }
-  }
+
+// COGS resolution settings (workspace_cogs_settings, in basis points). Legacy
+// cogs/resolve.ts precedence: override_all (all lines = override% of revenue) >
+// product cost_mu × (1 + markup) > fallback% of revenue for cost-less lines.
+export interface CogsSettings { overrideBp: number; fallbackBp: number; markupBp: number }
+
+async function readCogsSettings(workspaceId: string): Promise<CogsSettings> {
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // RLS-scoped; max() guarantees a single row even when unset (→ 0/0/0).
+    const r = await tx.query<{ ovr: string; fb: string; mk: string }>(
+      `SELECT COALESCE(max(override_all_cogs_bp),0)::text AS ovr,
+              COALESCE(max(fallback_cogs_bp),0)::text     AS fb,
+              COALESCE(max(cogs_markup_bp),0)::text       AS mk
+         FROM workspace_cogs_settings`,
+    )
+    const row = r.rows[0]
+    return { overrideBp: Number(row?.ovr ?? 0), fallbackBp: Number(row?.fb ?? 0), markupBp: Number(row?.mk ?? 0) }
+  })
+}
+
+export async function readCogs(workspaceId: string): Promise<FactCogs> {
+  const settings = await readCogsSettings(workspaceId)
+  if (READ_FROM_CH) {
+    try { return await readCogsCH(workspaceId, settings) } catch { /* PG fallback */ }
+  }
+  const { overrideBp: ovr, fallbackBp: fb, markupBp: mk } = settings
+  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+    // line_revenue = quantity × unit_price_mu. Integer math throughout (paise).
     const res = await tx.query<{ cogs: string | null; covered: string | null; total: string | null }>(
       `SELECT
-         COALESCE(sum(li.quantity * pf.cost_mu) FILTER (WHERE pf.cost_mu IS NOT NULL), 0)::text AS cogs,
-         count(*) FILTER (WHERE pf.cost_mu IS NOT NULL)::text AS covered,
+         COALESCE(sum(
+           CASE
+             WHEN ${ovr} > 0            THEN (li.quantity * li.unit_price_mu) * ${ovr} / 10000
+             WHEN pf.cost_mu IS NOT NULL THEN li.quantity * pf.cost_mu * (10000 + ${mk}) / 10000
+             WHEN ${fb} > 0             THEN (li.quantity * li.unit_price_mu) * ${fb} / 10000
+             ELSE 0
+           END), 0)::bigint::text AS cogs,
+         count(*) FILTER (WHERE ${ovr} > 0 OR pf.cost_mu IS NOT NULL OR ${fb} > 0)::text AS covered,
          count(*)::text AS total
        FROM connector_line_item_facts li
        LEFT JOIN connector_product_facts pf

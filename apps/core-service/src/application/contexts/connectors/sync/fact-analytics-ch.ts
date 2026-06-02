@@ -18,7 +18,7 @@
 
 import { chQuery } from '@brain/lib-clickhouse-ts'
 import type {
-  FactStoreSummary, FactPnl, FactMarketing, FactCogs, FactProductRow,
+  FactStoreSummary, FactPnl, FactMarketing, FactCogs, CogsSettings, FactProductRow,
   FactCourierRow, FactShipmentAnalytics, FactPincodeRow, FactCodPrepaid,
   FactCohortRow, FactLtv, FactLifecycleBucket, FactLifecycle, FactOrderTimings,
   FactCascadeRow, FactDistRow, FactCalendarRow,
@@ -208,11 +208,21 @@ export async function readMarketingCH(workspaceId: string): Promise<FactMarketin
 // readCogsCH — sum(li.quantity × pf.cost_mu) joined li → pf on vendor_product_id.
 // Same shape as PG. Uses LEFT JOIN so lines with no costed product contribute 0.
 // ---------------------------------------------------------------------------
-export async function readCogsCH(workspaceId: string): Promise<FactCogs> {
+export async function readCogsCH(workspaceId: string, settings: CogsSettings): Promise<FactCogs> {
+  const ovr = settings.overrideBp | 0
+  const fb = settings.fallbackBp | 0
+  const mk = settings.markupBp | 0
+  // Same precedence as PG readCogs: override% of revenue > product cost×(1+markup)
+  // > fallback% of revenue for cost-less lines. li gets FINAL (the re-inserted
+  // vendor_product_id versions must dedup); pf uses an explicit argMax subquery.
   const rows = await chQuery<{ cogs: string | null; covered: string | null; total: string | null }>(
     `SELECT
-       toString(sumIf(li.quantity * pf.cost_mu, pf.cost_mu > 0)) AS cogs,
-       toString(countIf(pf.cost_mu > 0))                         AS covered,
+       toString(sum(multiIf(
+         ${ovr} > 0,         intDiv(li.line_total_mu * ${ovr}, 10000),
+         pf.cost_mu > 0,     intDiv(li.quantity * pf.cost_mu * (10000 + ${mk}), 10000),
+         ${fb} > 0,          intDiv(li.line_total_mu * ${fb}, 10000),
+         toInt64(0))))                                            AS cogs,
+       toString(countIf(${ovr} > 0 OR pf.cost_mu > 0 OR ${fb} > 0)) AS covered,
        toString(count())                                         AS total
      FROM brain.connector_line_item_facts AS li
      LEFT JOIN (
@@ -225,7 +235,7 @@ export async function readCogsCH(workspaceId: string): Promise<FactCogs> {
       AND pf.vendor       = li.vendor
       AND pf.vendor_product_id = li.vendor_product_id
      WHERE li.workspace_id = {workspace_id:String}`,
-    { workspaceId, skipFinal: true },  // we did argMax manually for pf; FINAL on li is fine but the join blocks it
+    { workspaceId },
   )
   const r = rows[0] ?? {}
   return {

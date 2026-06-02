@@ -32,6 +32,7 @@ import {
   createMarketingAction as coreCreateMarketingAction,
   updateMarketingAction as coreUpdateMarketingAction,
   deleteMarketingAction as coreDeleteMarketingAction,
+  listFestivals as coreListFestivals,
 } from '@brain/core-settings';
 import type {
   DataPlanePort,
@@ -998,7 +999,33 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }
   override async getFestivalCalendar(p: { workspace_id: string; date_range: DateRange }) {
     this.assertWs(p.workspace_id);
-    return { result: emptyFestivalCalendar(this.ws), data_epoch: DATA_EPOCH };
+    // Read saved festivals (migrated from legacy workspace_festivals). Multiplier
+    // is stored in bp (40000 = 4.0×). Honest-empty when none are saved.
+    const rows = await coreListFestivals(this.ws);
+    const mapped = rows.map((r) => ({
+      name: r.name,
+      start_date: r.start_date,
+      end_date: r.end_date,
+      expected_multiplier_bp: r.expected_multiplier_bp,
+      regions: r.regions ?? [],
+      categories: r.categories ?? [],
+      color: r.color ?? '',
+      is_template: r.is_template,
+      is_active: r.is_active,
+    }));
+    const peak = mapped.reduce((m, r) => Math.max(m, r.expected_multiplier_bp ?? 0), 0);
+    return {
+      result: {
+        workspace_id: this.ws,
+        period: 'synced',
+        data_epoch: DATA_EPOCH,
+        year: null,
+        rows: mapped,
+        total_rows: BigInt(mapped.length),
+        peak_multiplier_bp: peak,
+      },
+      data_epoch: DATA_EPOCH,
+    };
   }
   override async getCalendarReport(p: Parameters<DataPlanePort['getCalendarReport']>[0]) {
     this.assertWs(p.workspace_id);
