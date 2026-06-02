@@ -315,12 +315,12 @@ export async function readCogs(workspaceId: string, range?: FactDateRange): Prom
       `SELECT
          COALESCE(sum(
            CASE
-             WHEN ${ovr} > 0            THEN (li.quantity * li.unit_price_mu) * ${ovr} / 10000
-             WHEN pf.cost_mu IS NOT NULL THEN li.quantity * pf.cost_mu * (10000 + ${mk}) / 10000
-             WHEN ${fb} > 0             THEN (li.quantity * li.unit_price_mu) * ${fb} / 10000
+             WHEN ${ovr} > 0       THEN (li.quantity * li.unit_price_mu) * ${ovr} / 10000
+             WHEN pf.cost_mu > 0   THEN li.quantity * pf.cost_mu * (10000 + ${mk}) / 10000
+             WHEN ${fb} > 0        THEN (li.quantity * li.unit_price_mu) * ${fb} / 10000
              ELSE 0
            END), 0)::bigint::text AS cogs,
-         count(*) FILTER (WHERE ${ovr} > 0 OR pf.cost_mu IS NOT NULL OR ${fb} > 0)::text AS covered,
+         count(*) FILTER (WHERE ${ovr} > 0 OR pf.cost_mu > 0 OR ${fb} > 0)::text AS covered,
          count(*)::text AS total
        FROM connector_line_item_facts li
        LEFT JOIN connector_product_facts pf
