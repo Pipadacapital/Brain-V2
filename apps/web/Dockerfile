@@ -39,10 +39,14 @@ COPY apps/mobile/package.json apps/mobile/
 COPY packages/config/package.json packages/config/
 COPY packages/eslint-config/package.json packages/eslint-config/
 COPY packages/lib-clickhouse-ts/package.json packages/lib-clickhouse-ts/
+COPY packages/lib-formatters/package.json packages/lib-formatters/
+COPY packages/lib-grpc-clients/package.json packages/lib-grpc-clients/
 COPY packages/lib-logger/package.json packages/lib-logger/
 COPY packages/lib-metrics/package.json packages/lib-metrics/
-COPY packages/proto-ts/package.json packages/proto-ts/
+COPY packages/state/package.json packages/state/
+COPY packages/trpc-client/package.json packages/trpc-client/
 COPY packages/ui/package.json packages/ui/
+COPY packages/ui-mobile/package.json packages/ui-mobile/
 
 ENV PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
 RUN pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true
@@ -68,7 +72,9 @@ COPY apps/core-service ./apps/core-service
 COPY packages/lib-logger ./packages/lib-logger
 COPY packages/lib-metrics ./packages/lib-metrics
 COPY packages/lib-clickhouse-ts ./packages/lib-clickhouse-ts
-COPY packages/proto-ts ./packages/proto-ts
+COPY packages/lib-formatters ./packages/lib-formatters
+COPY packages/state ./packages/state
+COPY packages/trpc-client ./packages/trpc-client
 COPY packages/config ./packages/config
 COPY packages/ui ./packages/ui
 COPY tsconfig.json ./tsconfig.json
@@ -114,7 +120,9 @@ COPY --from=builder /workspace/apps/web ./apps/web
 COPY --from=builder /workspace/packages/lib-logger ./packages/lib-logger
 COPY --from=builder /workspace/packages/lib-metrics ./packages/lib-metrics
 COPY --from=builder /workspace/packages/lib-clickhouse-ts ./packages/lib-clickhouse-ts
-COPY --from=builder /workspace/packages/proto-ts ./packages/proto-ts
+COPY --from=builder /workspace/packages/lib-formatters ./packages/lib-formatters
+COPY --from=builder /workspace/packages/state ./packages/state
+COPY --from=builder /workspace/packages/trpc-client ./packages/trpc-client
 COPY --from=builder /workspace/packages/config ./packages/config
 COPY --from=builder /workspace/packages/ui ./packages/ui
 # api-gateway is a TYPE-ONLY import (BrainRouter) — the built bundle already

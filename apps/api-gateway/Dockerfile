@@ -37,10 +37,14 @@ COPY apps/mobile/package.json apps/mobile/
 COPY packages/config/package.json packages/config/
 COPY packages/eslint-config/package.json packages/eslint-config/
 COPY packages/lib-clickhouse-ts/package.json packages/lib-clickhouse-ts/
+COPY packages/lib-formatters/package.json packages/lib-formatters/
+COPY packages/lib-grpc-clients/package.json packages/lib-grpc-clients/
 COPY packages/lib-logger/package.json packages/lib-logger/
 COPY packages/lib-metrics/package.json packages/lib-metrics/
-COPY packages/proto-ts/package.json packages/proto-ts/
+COPY packages/state/package.json packages/state/
+COPY packages/trpc-client/package.json packages/trpc-client/
 COPY packages/ui/package.json packages/ui/
+COPY packages/ui-mobile/package.json packages/ui-mobile/
 
 # Frozen install — fails if the lockfile would shift; matches CI behavior.
 # pnpm v10+ blocks build-scripts by default and ERRORS on ignored ones in
@@ -70,7 +74,6 @@ COPY apps/core-service ./apps/core-service
 COPY packages/lib-logger ./packages/lib-logger
 COPY packages/lib-metrics ./packages/lib-metrics
 COPY packages/lib-clickhouse-ts ./packages/lib-clickhouse-ts
-COPY packages/proto-ts ./packages/proto-ts
 COPY packages/config ./packages/config
 COPY tsconfig.json ./tsconfig.json
 
