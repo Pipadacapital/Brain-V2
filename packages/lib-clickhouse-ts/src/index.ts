@@ -84,16 +84,34 @@ function assertScoped(sql: string): void {
   }
 }
 
+// SQL keywords that can immediately follow a table reference — used to avoid
+// mistaking them for a table alias when deciding where FINAL goes.
+const POST_TABLE_KEYWORDS =
+  'ON|USING|WHERE|GROUP|ORDER|LIMIT|HAVING|PREWHERE|SETTINGS|FORMAT|UNION|JOIN|LEFT|RIGHT|INNER|FULL|CROSS|ANY|ALL|SEMI|ANTI|ASOF|GLOBAL|ARRAY|SAMPLE|FINAL'
+
 /** Add FINAL to fact-table references when missing (ReplacingMergeTree dedup). */
 function decorateWithFinal(sql: string): string {
-  // Walk the FACT_TABLES set; insert FINAL after `FROM brain.<table>` or `FROM <table>`
-  // when no `FINAL` already follows. Conservative — only matches the literal table name.
-  let out = sql
-  for (const t of FACT_TABLES) {
-    const re = new RegExp(`(\\bFROM\\s+(?:brain\\.)?${t})(?!\\s+FINAL)\\b`, 'gi')
-    out = out.replace(re, '$1 FINAL')
-  }
-  return out
+  // Decorate BOTH `FROM` and `JOIN` references to fact tables (a JOINed RMT
+  // table needs FINAL too, else it reads un-merged duplicate versions — e.g.
+  // order_facts JOINed without FINAL doubled new-customer revenue).
+  //
+  // FINAL must go AFTER the table's optional alias: ClickHouse parses
+  // `FROM t AS o FINAL` and `FROM t o FINAL`, but `FROM t FINAL AS o` is a
+  // SYNTAX_ERROR. We match the table ref + an optional alias (an identifier
+  // that is NOT `AS` or a SQL keyword, so `JOIN t ON ...` / `FROM t WHERE ...`
+  // don't swallow ON/WHERE), then use a function replacer to append FINAL only
+  // when it is not already present (idempotent).
+  const tableAlt = [...FACT_TABLES].join('|')
+  const re = new RegExp(
+    `\\b(?:FROM|JOIN)\\s+(?:brain\\.)?(?:${tableAlt})\\b` + // FROM/JOIN [brain.]table
+      `(?:\\s+(?:AS\\s+)?(?!(?:AS|${POST_TABLE_KEYWORDS})\\b)[A-Za-z_]\\w*)?`, // optional alias
+    'gi',
+  )
+  return sql.replace(re, (match, offset: number, str: string) => {
+    // Idempotent: if FINAL already follows this table reference, leave it.
+    if (/^\s+FINAL\b/i.test(str.slice(offset + match.length))) return match
+    return `${match} FINAL`
+  })
 }
 
 // ---------------------------------------------------------------------------

@@ -95,7 +95,7 @@ def _build_mock_client(ws_a_rows: list, ws_b_rows: list):
     """
     mock = MagicMock()
 
-    def _query(sql: str, parameters: dict | None = None):
+    def _query(sql: str, parameters: dict | None = None, **_kwargs):
         parameters = parameters or {}
         workspace_filter = parameters.get("workspace_id", "")
 
@@ -123,7 +123,7 @@ def _build_unscoped_mock_client(ws_a_rows: list, ws_b_rows: list):
     """
     mock = MagicMock()
 
-    def _query_unscoped(sql: str, parameters: dict | None = None):
+    def _query_unscoped(sql: str, parameters: dict | None = None, **_kwargs):
         # BUG: ignores workspace_id — returns ALL rows regardless of scope.
         all_rows = ws_a_rows + ws_b_rows
         raw = [tuple(getattr(r, col) for col in _METRIC_COLUMNS) for r in all_rows]

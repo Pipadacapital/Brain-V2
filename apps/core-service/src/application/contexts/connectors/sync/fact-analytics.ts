@@ -83,7 +83,9 @@ const VENDOR_LABEL: Record<string, string> = {
   SHIPROCKET: 'Shiprocket',
 }
 
-const CANCELLED = "(cancelled_at IS NULL AND COALESCE(financial_status,'') NOT IN ('voided','refunded'))"
+// lower(): migrated financial_status is mixed-case (Shopify UPPERCASE, Woo lowercase);
+// without it voided/refunded orders leak into realized revenue.
+const CANCELLED = "(cancelled_at IS NULL AND lower(COALESCE(financial_status,'')) NOT IN ('voided','refunded'))"
 
 /**
  * Store summary + revenue ladder from connector_order_facts. Realized revenue

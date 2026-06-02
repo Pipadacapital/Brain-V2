@@ -41,7 +41,10 @@ const STATUS_BUCKET = `multiIf(
 // PG-parity filter for "realized" / "non-cancelled" orders:
 //   cancelled_at IS NULL AND financial_status NOT IN ('voided','refunded')
 // CH: same predicate (cancelled_at was added by the Phase-6 one-shot ALTER).
-const CANCELLED_OK = `cancelled_at IS NULL AND financial_status NOT IN ('voided','refunded')`
+// lower(): migrated financial_status is mixed-case (Shopify UPPERCASE
+// 'VOIDED'/'REFUNDED', Woo lowercase). Without it, voided/refunded orders leak
+// into realized revenue (873 orders for the anchor workspace).
+const CANCELLED_OK = `cancelled_at IS NULL AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')`
 
 // ---------------------------------------------------------------------------
 // readStoreSummary — first port (proof of the wire-up).
@@ -180,7 +183,7 @@ export async function readMarketingCH(workspaceId: string): Promise<FactMarketin
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
      )
      SELECT toString(sumIf(net_mu, rn = 1)) AS nc_rev,
             toString(countIf(rn = 1))     AS nc_count
@@ -449,7 +452,7 @@ export async function readCohortsCH(workspaceId: string): Promise<FactCohortRow[
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
      )
      SELECT formatDateTime(toStartOfMonth(toDate(acq)), '%Y-%m') AS cohort,
             toString(countIf(rn = 1))                                                  AS new_customers,
@@ -468,7 +471,7 @@ export async function readCohortsCH(workspaceId: string): Promise<FactCohortRow[
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
         GROUP BY customer_ref
      )
      SELECT formatDateTime(toStartOfMonth(fo.cohort_dt), '%Y-%m')  AS cohort,
@@ -558,7 +561,7 @@ export async function readLifecycleStatesCH(workspaceId: string): Promise<FactLi
         WHERE workspace_id = {workspace_id:String}
           AND customer_ref != ''
           AND cancelled_at IS NULL
-          AND financial_status NOT IN ('voided','refunded')
+          AND lower(coalesce(financial_status,'')) NOT IN ('voided','refunded')
         GROUP BY customer_ref
      ),
      nowref AS (SELECT max(last_at) AS n FROM cust),
