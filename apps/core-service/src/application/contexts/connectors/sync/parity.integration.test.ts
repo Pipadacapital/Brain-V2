@@ -47,6 +47,16 @@ function canon(x: unknown): unknown {
 }
 const eq = (pg: unknown, ch: unknown): void => expect(canon(pg)).toEqual(canon(ch))
 
+// Tolerant money compare: PG (`/`) and CH (`intDiv`) truncate the per-line fallback
+// the same way mathematically, but accumulate sub-rupee off-by-one differences
+// across hundreds of thousands of lines. Assert agreement within a tight relative
+// bound (0.1%) — this still fails on real drift (the cogs bug it caught was 3.3%).
+const eqApprox = (pg: bigint, ch: bigint, relBp = 10): void => {
+  const diff = pg > ch ? pg - ch : ch - pg
+  const bound = (ch > 0n ? ch : pg) * BigInt(relBp) / 10000n
+  expect(diff <= bound, `|${pg} - ${ch}| = ${diff} exceeds ${relBp}bp bound ${bound}`).toBe(true)
+}
+
 describe.skipIf(!RUN)('PG↔CH parity (integration)', () => {
   beforeAll(() => {
     if (process.env.READ_FROM_CH === 'true') {
@@ -63,17 +73,28 @@ describe.skipIf(!RUN)('PG↔CH parity (integration)', () => {
   it('readLtv', async () => eq(await PG.readLtv(WS), await CH.readLtvCH(WS)))
   it('readDistributions', async () => eq(await PG.readDistributions(WS), await CH.readDistributionsCH(WS)))
   it('readDailyNetSales', async () => eq(await PG.readDailyNetSales(WS, FROM, TO), await CH.readDailyNetSalesCH(WS, FROM, TO)))
+  it('readCogs (semantic parity; ≤0.1% for cross-dialect rounding)', async () => {
+    const pg = await PG.readCogs(WS)
+    const ch = await CH.readCogsCH(WS, await PG.readCogsSettings(WS))
+    eqApprox(pg.cogsMu, ch.cogsMu)
+    expect(pg.coveredLines).toBe(ch.coveredLines)
+    expect(pg.totalLines).toBe(ch.totalLines)
+  })
 
   // NOTE: shipment/pincode are CH-ONLY facts (no PG table) — no PG plane to compare.
 
   // --- KNOWN PG↔CH DRIFT found by this gate (tracked follow-ups; un-skip on fix) ---
-  // The dual SQL genuinely diverges here; each needs its own reconciliation:
-  //  - readCogs:        PG ₹19.14Cr vs CH ₹19.79Cr (cost-coverage/fallback base differs)
-  //  - readProductPerf:  PG 245 product rows vs CH 199 (grouping/empty-pid handling differs)
-  //  - readLifecycle:    recency-bucket counts differ (CH dateDiff now runs; "now" basis differs)
-  //  - readOrderTimings: aggregate fields differ beyond firstOrders
-  it.skip('readCogs [KNOWN DRIFT — tracked]', async () => eq(await PG.readCogs(WS), await CH.readCogsCH(WS, await PG.readCogsSettings(WS))))
-  it.skip('readProductPerformance [KNOWN DRIFT — tracked]', async () => eq(await PG.readProductPerformance(WS), await CH.readProductPerformanceCH(WS)))
+  // readCogs is now RECONCILED (PG aligned to legacy `cost>0 → cost, else fallback`;
+  // active above). Remaining:
+  //  - readProductPerformance: NOT a data drift — both planes have the SAME 246
+  //    distinct products. The row-count gap (PG 245 vs CH 199) is CH's LIMIT 200 +
+  //    a CH grade-SQL error (Float64×String) that makes the CH path throw, so prod
+  //    correctly serves the full set via PG. Activating CH would SHOW FEWER products
+  //    (regression) until the grade SQL + LIMIT/ordering are reconciled. Tracked.
+  //  - readLifecycle:    CH SQL throws (DateTime−DateTime); prod uses PG. Recency
+  //    "now" basis also differs. Tracked.
+  //  - readOrderTimings: aggregate fields differ beyond firstOrders. Tracked.
+  it.skip('readProductPerformance [CH path errors → PG serves; tracked]', async () => eq(await PG.readProductPerformance(WS), await CH.readProductPerformanceCH(WS)))
   it.skip('readLifecycleStates [KNOWN DRIFT — tracked]', async () => eq(await PG.readLifecycleStates(WS), await CH.readLifecycleStatesCH(WS)))
   it.skip('readOrderTimings [KNOWN DRIFT — tracked]', async () => eq(await PG.readOrderTimings(WS), await CH.readOrderTimingsCH(WS)))
 })
