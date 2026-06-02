@@ -93,8 +93,10 @@ function assertScoped(sql: string): void {
 const POST_TABLE_KEYWORDS =
   'ON|USING|WHERE|GROUP|ORDER|LIMIT|HAVING|PREWHERE|SETTINGS|FORMAT|UNION|JOIN|LEFT|RIGHT|INNER|FULL|CROSS|ANY|ALL|SEMI|ANTI|ASOF|GLOBAL|ARRAY|SAMPLE|FINAL'
 
-/** Add FINAL to fact-table references when missing (ReplacingMergeTree dedup). */
-function decorateWithFinal(sql: string): string {
+/** Add FINAL to fact-table references when missing (ReplacingMergeTree dedup).
+ *  Exported for tests (P1-13) — this regex broke prod twice (FINAL-before-alias
+ *  syntax error + un-decorated JOINs double-counting), so it carries a suite. */
+export function decorateWithFinal(sql: string): string {
   // Decorate BOTH `FROM` and `JOIN` references to fact tables (a JOINed RMT
   // table needs FINAL too, else it reads un-merged duplicate versions — e.g.
   // order_facts JOINed without FINAL doubled new-customer revenue).
