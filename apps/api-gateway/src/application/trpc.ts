@@ -13,6 +13,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
 import type { BrainClaim } from '@brain/core-auth';
 import { createLogger } from '@brain/lib-logger';
+import { trpcDuration, trpcErrors } from '../infrastructure/metrics.js';
 
 // Module-scoped logger used by the tRPC tracing middleware. Bound to the
 // 'api-gateway' service; per-procedure log lines carry the procedure path +
@@ -165,11 +166,18 @@ const tracingMiddleware = t.middleware(async ({ ctx, path, type, next }) => {
   const result = await next({ ctx });
   const duration_ms = Date.now() - started;
 
+  // Prometheus latency series (P1-19) — same measurement the log line uses, so
+  // the histogram and the structured log can never disagree on duration.
+  trpcDuration.observe({ path, type, ok: String(result.ok) }, duration_ms);
+
   if (result.ok) {
     trpcLog.info({ ...baseFields, ok: true, duration_ms }, 'procedure done');
   } else {
     const code = result.error.code;
     const isCallerError = CALLER_ERROR_CODES.has(code);
+    // Mirror the log's caller-vs-server split into the error counter so the
+    // on-call dashboard can alert on kind=server without caller-error noise.
+    trpcErrors.inc({ path, type, code, kind: isCallerError ? 'caller' : 'server' });
     const fields = {
       ...baseFields,
       ok: false,
