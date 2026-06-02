@@ -33,7 +33,7 @@ import {
 
 import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
-import { assertShopifyOAuthSecretsPresent } from '@brain/core-connectors';
+import { assertShopifyOAuthSecretsPresent, pingDb, pingCh } from '@brain/core-connectors';
 import { createBrainRouter } from '../application/router.js';
 import { DispatchingDataPlane } from '../infrastructure/dispatching-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
@@ -239,12 +239,25 @@ async function buildServer(cfg: GatewayAuthConfig) {
     credentials: true,
   });
 
+  // Liveness: the process is up. Cheap + dependency-free (never probes the DBs)
+  // so a transient DB blip doesn't kill the container via the healthcheck.
   fastify.get('/health', async () => ({
     status: 'ok',
     service: 'api-gateway',
     authMode: 'real-supabase-jwt',
     ts: new Date().toISOString(),
   }));
+
+  // Readiness: probes the data planes (PG + CH). Returns 503 when a dependency is
+  // down so a K8s readinessProbe / LB stops routing traffic until it recovers.
+  // Both pings are bounded (PG pool connect, CH client request_timeout) and never
+  // throw — a hung plane reports not-ready rather than hanging the probe.
+  fastify.get('/ready', async (_req, reply) => {
+    const [pg, ch] = await Promise.all([pingDb(), pingCh()]);
+    const ready = pg && ch;
+    reply.code(ready ? 200 : 503);
+    return { status: ready ? 'ready' : 'not-ready', checks: { postgres: pg, clickhouse: ch }, ts: new Date().toISOString() };
+  });
 
   await fastify.register(fastifyTRPCPlugin, {
     prefix: '/trpc',
@@ -364,11 +377,39 @@ async function main() {
 
   const server = await buildServer(cfg);
 
+  // Process-level crash safety: a thrown error outside the request lifecycle must
+  // be logged (structured, for the incident trail) and exit non-zero so the
+  // container orchestrator restarts a clean process — never linger half-dead.
+  process.on('unhandledRejection', (reason) => {
+    server.log.fatal({ err: reason }, 'unhandledRejection — exiting for restart');
+    process.exit(1);
+  });
+  process.on('uncaughtException', (err) => {
+    server.log.fatal({ err }, 'uncaughtException — exiting for restart');
+    process.exit(1);
+  });
+
+  // Graceful drain on SIGTERM/SIGINT (rolling deploy / Ctrl-C): stop accepting
+  // new connections, finish in-flight requests, then exit 0.
+  let shuttingDown = false;
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      server.log.info({ signal }, 'shutting down — draining connections');
+      server.close().then(
+        () => process.exit(0),
+        (err) => { server.log.error({ err }, 'error during shutdown'); process.exit(1); },
+      );
+    });
+  }
+
   try {
     const address = await server.listen({ port: GATEWAY_PORT, host: '0.0.0.0' });
     server.log.info(`api-gateway listening on ${address} (auth: real Supabase JWT)`);
     server.log.info(`  tRPC endpoint:   ${address}/trpc`);
     server.log.info(`  Health check:    ${address}/health`);
+    server.log.info(`  Readiness:       ${address}/ready`);
   } catch (err) {
     server.log.error(err, 'Failed to start api-gateway');
     process.exit(1);

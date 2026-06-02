@@ -89,6 +89,9 @@ services:
       context: .
       dockerfile: apps/api-gateway/Dockerfile
     container_name: brain-api-gateway
+    # A crashed process exits non-zero (crash handlers) — restart it automatically
+    # rather than leaving the gateway down until a manual `compose up`.
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       GATEWAY_PORT: 3001
@@ -143,6 +146,7 @@ services:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
     container_name: brain-web
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3000

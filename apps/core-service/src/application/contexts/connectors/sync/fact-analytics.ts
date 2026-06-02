@@ -16,7 +16,13 @@
  */
 
 import type { PoolClient } from 'pg'
+import { packageLogger } from '@brain/lib-logger'
 import { withWorkspace, withSuperadmin } from '../../../../infrastructure/db/workspace-context.js'
+
+// Logged CH→PG fallback. The 18 read functions try ClickHouse first and fall back
+// to Postgres; the fallback was previously SILENT (a bare `catch {}`), which hid
+// the decorateWithFinal bug for an entire rollout. Now every CH failure is logged.
+const log = packageLogger('api-gateway', 'fact-analytics')
 import {
   readStoreSummaryCH, readPnlCH, readMarketingCH, readCogsCH, readProductPerformanceCH,
   readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH, readShipmentRowsCH,
@@ -175,7 +181,7 @@ async function readAdSpend(tx: PoolClient): Promise<{ meta: bigint; google: bigi
 
 export async function readPnl(workspaceId: string): Promise<FactPnl> {
   if (READ_FROM_CH) {
-    try { return await readPnlCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readPnlCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const store = await readStoreSummary(workspaceId)
   const spend = await withWorkspace(workspaceId, readAdSpend)
@@ -219,7 +225,7 @@ export async function readIntegrations(workspaceId: string): Promise<FactIntegra
 
 export async function readMarketing(workspaceId: string): Promise<FactMarketing> {
   if (READ_FROM_CH) {
-    try { return await readMarketingCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readMarketingCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const store = await readStoreSummary(workspaceId)
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
@@ -284,7 +290,7 @@ export async function readCogsSettings(workspaceId: string): Promise<CogsSetting
 export async function readCogs(workspaceId: string): Promise<FactCogs> {
   const settings = await readCogsSettings(workspaceId)
   if (READ_FROM_CH) {
-    try { return await readCogsCH(workspaceId, settings) } catch { /* PG fallback */ }
+    try { return await readCogsCH(workspaceId, settings) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const { overrideBp: ovr, fallbackBp: fb, markupBp: mk } = settings
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
@@ -357,7 +363,7 @@ export async function readProductPerformance(
         chRows = chRows.slice(st, st + filters.pageSize)
       }
       return { rows: chRows, totalCm1Mu: r.totalCm1Mu, totalUnfilteredRows }
-    } catch { /* PG fallback */ }
+    } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const params: string[] = []
@@ -728,7 +734,7 @@ export interface FactShipmentAnalytics {
 }
 export async function readShipmentAnalytics(workspaceId: string): Promise<FactShipmentAnalytics> {
   if (READ_FROM_CH) {
-    try { return await readShipmentAnalyticsCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readShipmentAnalyticsCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const a = await tx.query<Record<string, string>>(
@@ -794,7 +800,7 @@ export interface FactPincodeRow {
 }
 export async function readPincodes(workspaceId: string): Promise<FactPincodeRow[]> {
   if (READ_FROM_CH) {
-    try { return await readPincodesCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readPincodesCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
@@ -829,7 +835,7 @@ export interface FactCodPrepaid {
 }
 export async function readCodPrepaid(workspaceId: string): Promise<FactCodPrepaid> {
   if (READ_FROM_CH) {
-    try { return await readCodPrepaidCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readCodPrepaidCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
@@ -914,7 +920,7 @@ export async function readShipmentRows(
   pageSize: number,
 ): Promise<FactShipmentPage> {
   if (READ_FROM_CH) {
-    try { return await readShipmentRowsCH(workspaceId, filters, cursor, pageSize) } catch { /* PG fallback */ }
+    try { return await readShipmentRowsCH(workspaceId, filters, cursor, pageSize) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   // connector_shipment_facts is a CH-only fact — it has no PG table. The PG path
   // below stays for the pre-CH flag world; on a missing relation (42P01) we return
@@ -1052,7 +1058,7 @@ export interface FactCohortRow {
 }
 export async function readCohorts(workspaceId: string): Promise<FactCohortRow[]> {
   if (READ_FROM_CH) {
-    try { return await readCohortsCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readCohortsCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Set-based (no correlated subquery): one window pass to find each customer's
@@ -1136,7 +1142,7 @@ export interface FactLtv {
 }
 export async function readLtv(workspaceId: string): Promise<FactLtv> {
   if (READ_FROM_CH) {
-    try { return await readLtvCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readLtvCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const cohorts = await readCohorts(workspaceId)
   let totalCustomers = 0n
@@ -1180,7 +1186,7 @@ export interface FactLifecycleBucket { bucket: string; customerCount: bigint; re
 export interface FactLifecycle { buckets: FactLifecycleBucket[]; totalCustomers: bigint; netActive: bigint }
 export async function readLifecycleStates(workspaceId: string): Promise<FactLifecycle> {
   if (READ_FROM_CH) {
-    try { return await readLifecycleStatesCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readLifecycleStatesCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
@@ -1232,7 +1238,7 @@ export interface FactOrderTimings {
 }
 export async function readOrderTimings(workspaceId: string): Promise<FactOrderTimings> {
   if (READ_FROM_CH) {
-    try { return await readOrderTimingsCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readOrderTimingsCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
@@ -1298,7 +1304,7 @@ export async function readFirstProductCascade(
   observationDays?: number,
 ): Promise<{ rows: FactCascadeRow[]; totalCohort: bigint }> {
   if (READ_FROM_CH) {
-    try { return await readFirstProductCascadeCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readFirstProductCascadeCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const obsDays = Math.min(730, Math.max(30, observationDays ?? 365))
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
@@ -1408,7 +1414,7 @@ export async function readFirstProductCascade(
 export interface FactDistRow { product: string; orders: bigint; modeMu: bigint; meanMu: bigint }
 export async function readDistributions(workspaceId: string): Promise<{ rows: FactDistRow[]; globalMode: bigint; globalMean: bigint }> {
   if (READ_FROM_CH) {
-    try { return await readDistributionsCH(workspaceId) } catch { /* PG fallback */ }
+    try { return await readDistributionsCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<Record<string, string>>(
@@ -1456,7 +1462,7 @@ export async function readDailyNetSales(
   to: string,
 ): Promise<FactDailySalesRow[]> {
   if (READ_FROM_CH) {
-    try { return await readDailyNetSalesCH(workspaceId, from, to) } catch { /* PG fallback */ }
+    try { return await readDailyNetSalesCH(workspaceId, from, to) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<{ day: string; net: string; orders: string }>(
@@ -1502,7 +1508,7 @@ export async function readDailyAcquisition(
   to: string,
 ): Promise<FactDailyAcquisitionRow[]> {
   if (READ_FROM_CH) {
-    try { return await readDailyAcquisitionCH(workspaceId, from, to) } catch { /* PG fallback */ }
+    try { return await readDailyAcquisitionCH(workspaceId, from, to) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Step 1: identify first-order date per customer
@@ -1581,7 +1587,7 @@ export async function readDistributionsGraphPoints(
   metric: 'sales' | 'cm1',
 ): Promise<FactDistGraphPoint[]> {
   if (READ_FROM_CH) {
-    try { return await readDistributionsGraphPointsCH(workspaceId, metric) } catch { /* PG fallback */ }
+    try { return await readDistributionsGraphPointsCH(workspaceId, metric) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Pull raw per-line values (capped at 500 rows for performance; adequate for density)
@@ -1847,7 +1853,7 @@ export interface FactCalendarRow {
 }
 export async function readCalendarReport(workspaceId: string, grain: 'day' | 'week' | 'month'): Promise<FactCalendarRow[]> {
   if (READ_FROM_CH) {
-    try { return await readCalendarReportCH(workspaceId, grain) } catch { /* PG fallback */ }
+    try { return await readCalendarReportCH(workspaceId, grain) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const trunc = grain === 'week' ? 'week' : grain === 'month' ? 'month' : 'day'
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
