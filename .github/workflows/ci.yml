@@ -141,3 +141,22 @@ jobs:
       # is still a tracked follow-up.
       - name: web vitest
         run: pnpm --filter @brain/web exec vitest run
+
+  # Tenant-isolation negative tests (advisor review P1-14). Both harnesses spin
+  # their OWN disposable postgres:16-alpine via `docker run` (the ubuntu-latest
+  # runner has Docker), apply the REAL service-role file, and assert the deny
+  # matrix — deterministic, no live data, no DB service block needed:
+  #   - db-isolation:    GRANT-level isolation + every svc_ role is NON-BYPASSRLS
+  #   - rls-row-scoping: the ws_isolation RLS policy scopes ROWS at runtime
+  #     (context-less read → 0; tenant A can't see/insert tenant B's rows)
+  # These were runnable locally but DARK in CI; a tenancy regression could merge
+  # green. Now blocking.
+  tenancy-isolation:
+    name: Tenant isolation (RLS + grant deny-matrix)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GRANT-level service-role isolation
+        run: bash tests/integration/db-isolation/run.sh
+      - name: Runtime RLS row-scoping
+        run: bash tests/integration/rls-row-scoping/run.sh
