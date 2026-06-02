@@ -93,16 +93,27 @@ const VENDOR_LABEL: Record<string, string> = {
 // without it voided/refunded orders leak into realized revenue.
 const CANCELLED = "(cancelled_at IS NULL AND lower(COALESCE(financial_status,'')) NOT IN ('voided','refunded'))"
 
+// Date-range window for the headline summaries. from/to are inclusive 'YYYY-MM-DD'
+// (zod-validated at the gateway); the predicate is half-open [from, to+1day).
+export interface FactDateRange { from: string; to: string }
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+// AND-prefixed predicate for a timestamp/date column; '' when no (valid) range.
+function pgDateClause(col: string, range?: FactDateRange): string {
+  if (!range?.from || !range?.to || !ISO_DATE.test(range.from) || !ISO_DATE.test(range.to)) return ''
+  return ` AND ${col} >= '${range.from}'::date AND ${col} < '${range.to}'::date + interval '1 day'`
+}
+
 /**
  * Store summary + revenue ladder from connector_order_facts. Realized revenue
  * excludes cancelled/refunded orders (the honest billing base). Net of tax subtracts
  * the per-order tax (which the per-SKU line items roll up into total_tax_mu).
  */
-export async function readStoreSummary(workspaceId: string): Promise<FactStoreSummary> {
+export async function readStoreSummary(workspaceId: string, range?: FactDateRange): Promise<FactStoreSummary> {
   if (READ_FROM_CH) {
     // Flag-routed CH read with PG fallback (v2 §6, Founder no-regression rule).
-    try { return await readStoreSummaryCH(workspaceId) } catch { /* fall through */ }
+    try { return await readStoreSummaryCH(workspaceId, range) } catch { /* fall through */ }
   }
+  const dateClause = pgDateClause('processed_at', range)
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const res = await tx.query<{
       currency_code: string | null
@@ -127,7 +138,8 @@ export async function readStoreSummary(workspaceId: string): Promise<FactStoreSu
          COALESCE(sum(total_tax_mu) FILTER (WHERE ${CANCELLED}), 0)::text      AS realized_tax,
          COALESCE(sum(total_discount_mu) FILTER (WHERE ${CANCELLED}), 0)::text AS realized_discount,
          count(*) FILTER (WHERE ${CANCELLED})::text           AS realized_orders
-       FROM connector_order_facts`,
+       FROM connector_order_facts
+       WHERE TRUE${dateClause}`,
     )
     const r = res.rows[0]
     const orders = BigInt(r?.orders ?? '0')
@@ -162,10 +174,10 @@ export async function readStoreSummary(workspaceId: string): Promise<FactStoreSu
 }
 
 /** Ad spend split by vendor (Meta/Google) for the marketing surfaces. */
-async function readAdSpend(tx: PoolClient): Promise<{ meta: bigint; google: bigint; currency: string }> {
+async function readAdSpend(tx: PoolClient, range?: FactDateRange): Promise<{ meta: bigint; google: bigint; currency: string }> {
   const res = await tx.query<{ vendor: string; spend: string | null; currency_code: string | null }>(
     `SELECT vendor, COALESCE(sum(spend_mu),0)::text AS spend, max(currency_code) AS currency_code
-       FROM connector_ad_spend_facts GROUP BY vendor`,
+       FROM connector_ad_spend_facts WHERE TRUE${pgDateClause('spend_date', range)} GROUP BY vendor`,
   )
   let meta = 0n
   let google = 0n
@@ -179,12 +191,12 @@ async function readAdSpend(tx: PoolClient): Promise<{ meta: bigint; google: bigi
   return { meta, google, currency }
 }
 
-export async function readPnl(workspaceId: string): Promise<FactPnl> {
+export async function readPnl(workspaceId: string, range?: FactDateRange): Promise<FactPnl> {
   if (READ_FROM_CH) {
-    try { return await readPnlCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
+    try { return await readPnlCH(workspaceId, range) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
-  const store = await readStoreSummary(workspaceId)
-  const spend = await withWorkspace(workspaceId, readAdSpend)
+  const store = await readStoreSummary(workspaceId, range)
+  const spend = await withWorkspace(workspaceId, (tx) => readAdSpend(tx, range))
   return {
     hasData: store.hasData,
     currencyCode: store.currencyCode,
@@ -223,13 +235,13 @@ export async function readIntegrations(workspaceId: string): Promise<FactIntegra
   })
 }
 
-export async function readMarketing(workspaceId: string): Promise<FactMarketing> {
+export async function readMarketing(workspaceId: string, range?: FactDateRange): Promise<FactMarketing> {
   if (READ_FROM_CH) {
-    try { return await readMarketingCH(workspaceId) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
+    try { return await readMarketingCH(workspaceId, range) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
-  const store = await readStoreSummary(workspaceId)
+  const store = await readStoreSummary(workspaceId, range)
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
-    const spend = await readAdSpend(tx)
+    const spend = await readAdSpend(tx, range)
     // New-customer revenue: orders whose customer_ref is first-seen (proxy for aMER).
     const ncRes = await tx.query<{ nc_rev: string | null; nc_count: string | null }>(
       `WITH ranked AS (
@@ -237,7 +249,7 @@ export async function readMarketing(workspaceId: string): Promise<FactMarketing>
                 (gross_sales_mu - total_discount_mu - total_tax_mu) AS net_mu,
                 row_number() OVER (PARTITION BY customer_ref ORDER BY processed_at NULLS LAST) AS rn
            FROM connector_order_facts
-          WHERE customer_ref IS NOT NULL AND ${CANCELLED}
+          WHERE customer_ref IS NOT NULL AND ${CANCELLED}${pgDateClause('processed_at', range)}
        )
        SELECT COALESCE(sum(net_mu) FILTER (WHERE rn = 1),0)::text AS nc_rev,
               count(*) FILTER (WHERE rn = 1)::text                AS nc_count
@@ -287,12 +299,15 @@ export async function readCogsSettings(workspaceId: string): Promise<CogsSetting
   })
 }
 
-export async function readCogs(workspaceId: string): Promise<FactCogs> {
+export async function readCogs(workspaceId: string, range?: FactDateRange): Promise<FactCogs> {
   const settings = await readCogsSettings(workspaceId)
   if (READ_FROM_CH) {
-    try { return await readCogsCH(workspaceId, settings) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
+    try { return await readCogsCH(workspaceId, settings, range) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const { overrideBp: ovr, fallbackBp: fb, markupBp: mk } = settings
+  // Line items carry no date; window by joining the parent order's processed_at.
+  const dateFilter = (!range?.from || !range?.to) ? '' :
+    ` WHERE li.vendor_order_id IN (SELECT vendor_order_id FROM connector_order_facts WHERE TRUE${pgDateClause('processed_at', range)})`
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // line_revenue = quantity × unit_price_mu. Integer math throughout (paise).
     const res = await tx.query<{ cogs: string | null; covered: string | null; total: string | null }>(
@@ -308,7 +323,7 @@ export async function readCogs(workspaceId: string): Promise<FactCogs> {
          count(*)::text AS total
        FROM connector_line_item_facts li
        LEFT JOIN connector_product_facts pf
-         ON pf.workspace_id = li.workspace_id AND pf.vendor_product_id = li.vendor_product_id`,
+         ON pf.workspace_id = li.workspace_id AND pf.vendor_product_id = li.vendor_product_id${dateFilter}`,
     )
     const r = res.rows[0]
     return {
