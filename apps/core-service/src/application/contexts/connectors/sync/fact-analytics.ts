@@ -19,7 +19,7 @@ import type { PoolClient } from 'pg'
 import { withWorkspace, withSuperadmin } from '../../../../infrastructure/db/workspace-context.js'
 import {
   readStoreSummaryCH, readPnlCH, readMarketingCH, readCogsCH, readProductPerformanceCH,
-  readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH,
+  readShipmentAnalyticsCH, readPincodesCH, readCodPrepaidCH, readShipmentRowsCH,
   readCohortsCH, readLtvCH, readLifecycleStatesCH,
   readOrderTimingsCH, readFirstProductCascadeCH, readDistributionsCH,
   readDailyNetSalesCH, readDailyAcquisitionCH, readDistributionsGraphPointsCH,
@@ -873,13 +873,25 @@ export interface ShipmentRowFiltersLocal {
   rtoOnly?: boolean
 }
 
+const EMPTY_SHIPMENT_PAGE: FactShipmentPage = {
+  rows: [], nextCursor: null, totalCount: 0n, filteredCount: 0n,
+  deliveredCount: 0n, rtoCount: 0n, mappedCount: 0n, distinctStatuses: [],
+}
+
 export async function readShipmentRows(
   workspaceId: string,
   filters: ShipmentRowFiltersLocal,
   cursor: string | undefined,
   pageSize: number,
 ): Promise<FactShipmentPage> {
-  return withWorkspace(workspaceId, async (tx: PoolClient) => {
+  if (READ_FROM_CH) {
+    try { return await readShipmentRowsCH(workspaceId, filters, cursor, pageSize) } catch { /* PG fallback */ }
+  }
+  // connector_shipment_facts is a CH-only fact — it has no PG table. The PG path
+  // below stays for the pre-CH flag world; on a missing relation (42P01) we return
+  // honest-empty rather than 500ing the logistics console.
+  try {
+    return await withWorkspace(workspaceId, async (tx: PoolClient) => {
     // Build WHERE clauses for filters
     const conditions: string[] = []
 
@@ -986,7 +998,11 @@ export async function readShipmentRows(
       mappedCount: 0n,
       distinctStatuses: statusRes.rows.map((r) => r.status).filter(Boolean),
     }
-  })
+    })
+  } catch {
+    // No connector_shipment_facts table in PG (CH-only fact) — honest-empty.
+    return EMPTY_SHIPMENT_PAGE
+  }
 }
 
 // ---------------------------------------------------------------------------

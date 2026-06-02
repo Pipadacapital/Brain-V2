@@ -22,6 +22,7 @@ import type {
   FactCourierRow, FactShipmentAnalytics, FactPincodeRow, FactCodPrepaid,
   FactCohortRow, FactLtv, FactLifecycleBucket, FactLifecycle, FactOrderTimings,
   FactCascadeRow, FactDistRow, FactCalendarRow,
+  FactShipmentRow, FactShipmentPage, ShipmentRowFiltersLocal,
 } from './fact-analytics.js'
 import type {
   FactDailySalesRow, FactDailyAcquisitionRow, FactDistGraphPoint,
@@ -319,19 +320,19 @@ export async function readProductPerformanceCH(
 export async function readShipmentAnalyticsCH(workspaceId: string): Promise<FactShipmentAnalytics> {
   const a = await chQuery<Record<string, string>>(
     `SELECT
-       toString(count())                                  AS total,
-       toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))  AS delivered,
-       toString(countIf(${STATUS_BUCKET} = 'RTO'))        AS rto,
-       toString(0)                                        AS cod,
-       toString(count())                                  AS prepaid,
-       toString(0)                                        AS charges,
-       toString(0)                                        AS rto_charges,
-       toString(0)                                        AS fwd_charges,
-       toString(0)                                        AS cod_charges,
-       toString(0)                                        AS cod_rto,
-       toString(0)                                        AS cod_total,
-       toString(countIf(${STATUS_BUCKET} = 'RTO'))        AS prepaid_rto,
-       toString(count())                                  AS prepaid_total
+       toString(count())                                                  AS total,
+       toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))                  AS delivered,
+       toString(countIf(${STATUS_BUCKET} = 'RTO'))                        AS rto,
+       toString(countIf(is_cod = 1))                                      AS cod,
+       toString(countIf(is_cod = 0))                                      AS prepaid,
+       toString(0)                                                        AS charges,
+       toString(0)                                                        AS rto_charges,
+       toString(0)                                                        AS fwd_charges,
+       toString(0)                                                        AS cod_charges,
+       toString(countIf(is_cod = 1 AND ${STATUS_BUCKET} = 'RTO'))         AS cod_rto,
+       toString(countIf(is_cod = 1))                                      AS cod_total,
+       toString(countIf(is_cod = 0 AND ${STATUS_BUCKET} = 'RTO'))         AS prepaid_rto,
+       toString(countIf(is_cod = 0))                                      AS prepaid_total
      FROM brain.connector_shipment_facts
      WHERE workspace_id = {workspace_id:String}`,
     { workspaceId },
@@ -382,7 +383,7 @@ export async function readPincodesCH(workspaceId: string): Promise<FactPincodeRo
             toString(count())                                      AS cnt,
             toString(countIf(${STATUS_BUCKET} = 'RTO'))            AS rto,
             toString(countIf(${STATUS_BUCKET} = 'DELIVERED'))      AS delivered,
-            toString(0)                                            AS cod
+            toString(countIf(is_cod = 1))                          AS cod
        FROM brain.connector_shipment_facts
       WHERE workspace_id = {workspace_id:String}
         AND delivery_pincode != ''
@@ -399,6 +400,102 @@ export async function readPincodesCH(workspaceId: string): Promise<FactPincodeRo
     deliveredCount: BigInt(x.delivered ?? '0'),
     codCount: BigInt(x.cod ?? '0'),
   }))
+}
+
+// ---------------------------------------------------------------------------
+// readShipmentRowsCH — per-shipment operational console (CH companion to
+// readShipmentRows). Keyset pagination on vendor_shipment_id (CH has no uuid id;
+// the shiprocket shipment id is the stable key). Charge columns are 0 — legacy
+// never populated shiprocket charges into the facts (they live in rawJson only).
+// ---------------------------------------------------------------------------
+export async function readShipmentRowsCH(
+  workspaceId: string,
+  filters: ShipmentRowFiltersLocal,
+  cursor: string | undefined,
+  pageSize: number,
+): Promise<FactShipmentPage> {
+  const esc = (s: string): string => s.replace(/'/g, "''")
+  const conds: string[] = []
+  if (filters.search && filters.search.trim() !== '') {
+    const term = esc(filters.search.trim())
+    conds.push(`(positionCaseInsensitive(vendor_shipment_id, '${term}') > 0 OR positionCaseInsensitive(vendor_order_id, '${term}') > 0)`)
+  }
+  if (filters.statuses && filters.statuses.length > 0) {
+    conds.push(`status IN (${filters.statuses.map((s) => `'${esc(s)}'`).join(',')})`)
+  }
+  if (filters.payment === 'COD') conds.push('is_cod = 1')
+  else if (filters.payment === 'PREPAID') conds.push('is_cod = 0')
+  if (filters.rtoOnly) conds.push(`${STATUS_BUCKET} = 'RTO'`)
+  const filterWhere = conds.length > 0 ? ` AND ${conds.join(' AND ')}` : ''
+  const cursorWhere = cursor ? ` AND vendor_shipment_id < '${esc(cursor)}'` : ''
+
+  const [rows, agg, statuses] = await Promise.all([
+    chQuery<Record<string, unknown>>(
+      `SELECT vendor_shipment_id                            AS id,
+              vendor_shipment_id,
+              vendor_order_id                               AS vendor_order_ref,
+              status,
+              ${STATUS_BUCKET}                              AS status_bucket,
+              is_cod,
+              courier_name,
+              delivery_pincode,
+              delivery_city,
+              toString(shipped_at)                          AS shipped_at,
+              toString(date)                                AS created_at
+         FROM brain.connector_shipment_facts
+        WHERE workspace_id = {workspace_id:String}${filterWhere}${cursorWhere}
+        ORDER BY vendor_shipment_id DESC
+        LIMIT ${pageSize + 1}`,
+      { workspaceId },
+    ),
+    chQuery<Record<string, string>>(
+      `SELECT toString(count())                              AS total,
+              toString(countIf(${STATUS_BUCKET} = 'DELIVERED')) AS delivered,
+              toString(countIf(${STATUS_BUCKET} = 'RTO'))       AS rto
+         FROM brain.connector_shipment_facts
+        WHERE workspace_id = {workspace_id:String}${filterWhere}`,
+      { workspaceId },
+    ),
+    chQuery<Record<string, string>>(
+      `SELECT DISTINCT status FROM brain.connector_shipment_facts
+        WHERE workspace_id = {workspace_id:String} AND status != ''
+        ORDER BY status LIMIT 50`,
+      { workspaceId },
+    ),
+  ])
+
+  const hasMore = rows.length > pageSize
+  const pageRows = hasMore ? rows.slice(0, pageSize) : rows
+  const lastRow = pageRows[pageRows.length - 1]
+  const nextCursor = hasMore && lastRow ? String(lastRow.id) : null
+  const a = agg[0] ?? {}
+
+  const mapped: FactShipmentRow[] = pageRows.map((r) => ({
+    id: String(r.id ?? ''),
+    vendorShipmentId: String(r.vendor_shipment_id ?? ''),
+    vendorOrderRef: r.vendor_order_ref ? String(r.vendor_order_ref) : null,
+    status: r.status != null ? String(r.status) : null,
+    statusBucket: r.status_bucket != null ? String(r.status_bucket) : null,
+    isCod: Number(r.is_cod) === 1,
+    codAmountMu: null,
+    shippingChargesMu: null,
+    courierName: r.courier_name ? String(r.courier_name) : null,
+    deliveryPincode: r.delivery_pincode ? String(r.delivery_pincode) : null,
+    deliveryCity: r.delivery_city ? String(r.delivery_city) : null,
+    shippedAt: r.shipped_at ? String(r.shipped_at) : null,
+    createdAt: r.created_at ? String(r.created_at) : null,
+  }))
+
+  return {
+    rows: mapped,
+    nextCursor,
+    totalCount: BigInt(a.total ?? '0'),
+    filteredCount: BigInt(a.total ?? '0'),
+    deliveredCount: BigInt(a.delivered ?? '0'),
+    rtoCount: BigInt(a.rto ?? '0'),
+    mappedCount: 0n,
+    distinctStatuses: statuses.map((s) => s.status).filter(Boolean),
+  }
 }
 
 // ---------------------------------------------------------------------------
