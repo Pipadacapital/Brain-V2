@@ -1917,6 +1917,7 @@ export async function readEmailPerformance(
         ? `AND source_type = 'flow'`
         : ''
 
+    try {
     const res = await tx.query<Record<string, string>>(
       `SELECT ${g.keyExpr}            AS row_key,
               ${g.labelExpr}          AS row_label,
@@ -1947,5 +1948,11 @@ export async function readEmailPerformance(
       unsubscribes: BigInt(r.unsubscribes ?? '0'),
       spamComplaints: BigInt(r.spam_complaints ?? '0'),
     }))
+    } catch (e) {
+      // connector_email_send_facts isn't present in PG (no Klaviyo data migrated) —
+      // honest-empty rather than 500ing the lifecycle email/SMS page.
+      if ((e as { code?: string }).code === '42P01') return []
+      throw e
+    }
   })
 }

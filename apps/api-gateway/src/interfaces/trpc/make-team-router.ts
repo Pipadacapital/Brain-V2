@@ -165,6 +165,14 @@ export function makeTeamRouter(
         if (!requireRole(ctx.claim, 'MANAGER')) {
           throw new TRPCError({ code: 'FORBIDDEN', message: `team.changeRole requires MANAGER role. request_id=${ctx.requestId}` });
         }
+        // Privilege-escalation guard: only an OWNER may change the role of an
+        // OWNER or ADMIN (else a MANAGER could demote an OWNER → workspace takeover).
+        const membersResult = await dataPlane.getWorkspaceMembers({ workspace_id: ctx.workspaceId });
+        const target = membersResult.result.members.find((m) => m.user_id === input.user_id);
+        if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: `Member not found. request_id=${ctx.requestId}` });
+        if ((target.role === 'OWNER' || target.role === 'ADMIN') && ctx.claim.workspaceRole !== 'OWNER') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: `Only an OWNER can change the role of an OWNER or ADMIN. request_id=${ctx.requestId}` });
+        }
         const res = await dataPlane.teamChangeRole({
           workspace_id: ctx.workspaceId,
           actor_user_id: ctx.identity.sub,
