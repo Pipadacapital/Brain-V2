@@ -35,6 +35,7 @@ import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
 import { assertShopifyOAuthSecretsPresent, pingDb, pingCh } from '@brain/core-connectors';
 import { createBrainRouter } from '../application/router.js';
+import { webhookPlugin } from './route.webhook.js';
 import { registry as metricsRegistry } from '../infrastructure/metrics.js';
 import { DispatchingDataPlane } from '../infrastructure/dispatching-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
@@ -275,6 +276,15 @@ async function buildServer(cfg: GatewayAuthConfig) {
     origin: resolveCorsOrigins(),
     credentials: true,
   });
+
+  // Real-time webhook intake (POST /webhooks/:vendor) — verify-first, forwards to
+  // the ingestion-service over gRPC. HELD by default (NO-LIVE-1): only registered
+  // when BRAIN_WEBHOOKS_ENABLED=true, so the public-ingress hold holds for prod
+  // until the Stage-8 ceremony, while local-dev opts in to exercise the live path.
+  if ((process.env['BRAIN_WEBHOOKS_ENABLED'] ?? '').toLowerCase() === 'true') {
+    await fastify.register(webhookPlugin);
+    fastify.log.info('webhook intake ENABLED (POST /webhooks/:vendor → ingestion gRPC)');
+  }
 
   // Liveness: the process is up. Cheap + dependency-free (never probes the DBs)
   // so a transient DB blip doesn't kill the container via the healthcheck.

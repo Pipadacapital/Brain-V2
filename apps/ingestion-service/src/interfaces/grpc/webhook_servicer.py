@@ -27,17 +27,173 @@ SEAM: the grpc.aio server startup (webhook_server.py) imports this servicer.
 GENERALIZATION NOTE (G2 of 06-architecture-plan.md §0-GEN):
   Shopify is ONE registered vendor, not the shape.  Adding vendor #2 is ZERO
   change to this module — add a VendorWebhookSpec row to webhook_registry.py only.
+
+LIVE-WIRING SEAM (PUSH-INTAKE-LIVE-1):
+  Step 7 (push-intake) delegates to self._intake_runner, an injectable callable:
+
+    intake_runner(receive_webhook_fn, workspace_id, **receive_kwargs) -> None
+
+  Production default (_live_intake_runner):
+    Opens a with_workspace session and calls receive_webhook_fn with db_conn +
+    the module-level Kafka producer singleton.  DB commit + Kafka produce happen
+    inside a single with_workspace context (CF-C3-RLS-CONSUME-1).
+
+  Test passthrough (injected via WebhookIngestServicer(intake_runner=...)):
+    Calls receive_webhook_fn(**kwargs) directly — no DB, no Kafka.
+    Existing tests that inject receive_webhook_fn=_noop_receive also inject
+    intake_runner=_passthrough_intake_runner (via _make_servicer test helper)
+    so no DIRECT_URL is needed to run the unit test suite.
+
+KAFKA SINGLETON (KAFKA-LAZY-SINGLETON-1):
+  _KAFKA_PRODUCER is a module-level AIOKafkaProducer, started once, reused.
+  Constructed lazily on first webhook arrival if KAFKA_BOOTSTRAP_SERVERS is set.
+  If the env var is absent, the producer stays None (dry-run safe — _produce_kafka
+  is skipped in receive_webhook when kafka_producer=None).
+  Call start_kafka_producer() at server startup and stop_kafka_producer() at
+  shutdown to manage the asyncio producer lifecycle cleanly.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import grpc
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Kafka producer singleton (KAFKA-LAZY-SINGLETON-1)
+# ---------------------------------------------------------------------------
+#
+# One AIOKafkaProducer per process.  Started at server startup by
+# start_kafka_producer(); stopped at shutdown by stop_kafka_producer().
+# get_kafka_producer() returns the live producer or None if KAFKA_BOOTSTRAP_SERVERS
+# is not set (dry-run safe: receive_webhook skips produce when kafka_producer=None).
+#
+# NEVERLOG-1: KAFKA_BOOTSTRAP_SERVERS is a server address, not a secret — logging
+# the address (not credential) is safe.  No credentials are embedded in the bootstrap
+# URL for the local-dev path.
+# ---------------------------------------------------------------------------
+
+_KAFKA_PRODUCER = None  # type: ignore[assignment]  # AIOKafkaProducer | None
+
+
+async def start_kafka_producer() -> None:
+    """Construct and start the module-level AIOKafkaProducer singleton.
+
+    @paradigm: sql + io/event-handling — network IO only; no ML, no LLM.
+
+    Safe to call multiple times (idempotent: skipped if already started).
+    If KAFKA_BOOTSTRAP_SERVERS is not set, the producer stays None (dry-run safe).
+
+    Called by webhook_server.py at server startup, before accepting requests.
+    """
+    global _KAFKA_PRODUCER
+
+    if _KAFKA_PRODUCER is not None:
+        return  # Already started — idempotent.
+
+    bootstrap = os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "").strip()
+    if not bootstrap:
+        logger.info(
+            "webhook_servicer: KAFKA_BOOTSTRAP_SERVERS not set — "
+            "Kafka producer will be None (dry-run; webhooks land in DB only)."
+        )
+        return
+
+    try:
+        from aiokafka import AIOKafkaProducer  # noqa: PLC0415 — optional dep
+        _KAFKA_PRODUCER = AIOKafkaProducer(bootstrap_servers=bootstrap)
+        await _KAFKA_PRODUCER.start()
+        logger.info(
+            "webhook_servicer: Kafka producer started bootstrap=%r",
+            bootstrap,
+        )
+    except Exception:
+        # NEVERLOG-1: no credentials in this log path; bootstrap_servers is safe.
+        logger.exception(
+            "webhook_servicer: Kafka producer start FAILED bootstrap=%r "
+            "— producer stays None (dry-run fallback).",
+            bootstrap,
+        )
+        _KAFKA_PRODUCER = None
+
+
+async def stop_kafka_producer() -> None:
+    """Stop and clear the module-level AIOKafkaProducer singleton.
+
+    @paradigm: sql + io/event-handling — network IO only; no ML, no LLM.
+
+    Safe to call when the producer is already None (idempotent).
+    Called by webhook_server.py at graceful shutdown.
+    """
+    global _KAFKA_PRODUCER
+    if _KAFKA_PRODUCER is None:
+        return
+    try:
+        await _KAFKA_PRODUCER.stop()
+        logger.info("webhook_servicer: Kafka producer stopped.")
+    except Exception:
+        logger.exception("webhook_servicer: Kafka producer stop failed.")
+    finally:
+        _KAFKA_PRODUCER = None
+
+
+def get_kafka_producer():
+    """Return the live AIOKafkaProducer or None if not started / not configured.
+
+    @paradigm: sql — simple module-level read; no IO.
+    """
+    return _KAFKA_PRODUCER
+
+
+# ---------------------------------------------------------------------------
+# Intake runners — injectable seam (PUSH-INTAKE-LIVE-1)
+# ---------------------------------------------------------------------------
+
+
+async def _live_intake_runner(receive_webhook_fn, workspace_id: str, **kwargs) -> None:
+    """Live intake runner: opens with_workspace and calls receive_webhook_fn with db_conn.
+
+    @paradigm: sql + io/event-handling — DB session + Kafka produce; no ML, no LLM.
+
+    CF-C3-RLS-CONSUME-1: every write goes through with_workspace (session-mode
+    connection, tx-local set_config for RLS workspace context).
+
+    KAFKA-LAZY-SINGLETON-1: passes the module-level _KAFKA_PRODUCER (may be None
+    if KAFKA_BOOTSTRAP_SERVERS is not set — receive_webhook skips produce when None).
+
+    NEVERLOG-1: no PII or secrets in log lines.
+    """
+    from src.infrastructure.db.session_context import with_workspace
+
+    producer = get_kafka_producer()
+
+    async def _fn(conn):
+        return await receive_webhook_fn(
+            **kwargs,
+            workspace_id=workspace_id,
+            db_conn=conn,
+            kafka_producer=producer,
+        )
+
+    await with_workspace(workspace_id, _fn)
+
+
+async def _passthrough_intake_runner(receive_webhook_fn, workspace_id: str, **kwargs) -> None:
+    """Test/dry-run passthrough: calls receive_webhook_fn directly, no DB, no Kafka.
+
+    @paradigm: sql — pure pass-through delegation; no IO beyond what receive_webhook_fn does.
+
+    Used by:
+      - Tests that inject receive_webhook_fn=_noop_receive (servicer state-machine tests).
+      - Tests that call receive_webhook directly with db_conn=None (dry-run unit tests).
+    Inject via WebhookIngestServicer(intake_runner=_passthrough_intake_runner).
+    """
+    await receive_webhook_fn(**kwargs, workspace_id=workspace_id)
 
 # ---------------------------------------------------------------------------
 # Outcome constants — match the proto enum (brain.ingestion.v1 Outcome).
@@ -81,6 +237,13 @@ class WebhookIngestServicer:
       - allowed_workspace_ids: frozenset[str] from run_all_gates()
       - webhook_registry_override: dict[str, VendorWebhookSpec] (tests only — injected
         to register test-only vendors without touching WEBHOOK_VERIFIERS at module level)
+      - intake_runner: async callable(receive_webhook_fn, workspace_id, **kwargs) → None.
+          Production default: _live_intake_runner (opens with_workspace + injects db_conn
+          + Kafka producer singleton).
+          Test passthrough: _passthrough_intake_runner (calls receive_webhook_fn directly,
+          no DB, no Kafka — used by servicer state-machine tests that inject _noop_receive).
+          Inject via WebhookIngestServicer(intake_runner=_passthrough_intake_runner) in
+          test helpers to keep unit tests DB-free.
     """
 
     def __init__(
@@ -91,6 +254,7 @@ class WebhookIngestServicer:
         receive_webhook_fn=None,
         allowed_workspace_ids: frozenset[str] | None = None,
         webhook_registry_override: "dict | None" = None,
+        intake_runner=None,
     ) -> None:
         # @paradigm: sql — all injected callables are deterministic; no LLM.
         if app_secret_provider_factory is None:
@@ -103,9 +267,15 @@ class WebhookIngestServicer:
             from src.application.framework.webhook_intake import receive_webhook
             receive_webhook_fn = receive_webhook
 
+        # intake_runner: defaults to _live_intake_runner (with_workspace + Kafka singleton).
+        # Tests inject _passthrough_intake_runner to avoid needing DIRECT_URL.
+        if intake_runner is None:
+            intake_runner = _live_intake_runner
+
         self._secret_factory = app_secret_provider_factory
         self._identity_resolver = identity_resolver
         self._receive_webhook = receive_webhook_fn
+        self._intake_runner = intake_runner
         self._allowed_workspace_ids = allowed_workspace_ids or frozenset()
         # The registry override allows tests to inject a 2nd vendor spec
         # without modifying the module-level WEBHOOK_VERIFIERS (VENDOR-REGISTRY-DISPATCH-1).
@@ -328,13 +498,18 @@ class WebhookIngestServicer:
         # _set_correlation + assert_workspace_allowed.
         # vendor_event_id = spec.idempotency_header value (IDEMPOTENCY-ANCHOR-1).
         # No adapter.fetch, no window, no custody read (PUSH-INTAKE-1).
+        #
+        # PUSH-INTAKE-LIVE-1: delegates to self._intake_runner which opens
+        # with_workspace and injects db_conn + Kafka producer singleton.
+        # Tests inject _passthrough_intake_runner to skip DB/Kafka.
         # ----------------------------------------------------------------
         _inc_webhook_counter("webhook_received_total")
-        await self._receive_webhook(
+        await self._intake_runner(
+            self._receive_webhook,
+            workspace_id,
             vendor=vendor,
             raw_body=raw_body,
             headers=dict(request.headers),
-            workspace_id=workspace_id,
             vendor_event_id=vendor_event_id,
             topic=topic,
             request_id=request_id,

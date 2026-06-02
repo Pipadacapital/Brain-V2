@@ -67,6 +67,7 @@ from src.interfaces.grpc.webhook_servicer import (
     OUTCOME_PARKED,     # 3 — matches proto OUTCOME_PARKED
     OUTCOME_REJECTED,   # 2 — matches proto OUTCOME_REJECTED
     WebhookIngestServicer,
+    _passthrough_intake_runner,
 )
 from src.application.framework.webhook_registry import (
     VendorWebhookSpec,
@@ -160,6 +161,10 @@ def _make_servicer(
 
     registry_override allows tests to register test-only vendors without
     modifying the module-level WEBHOOK_VERIFIERS.
+
+    intake_runner is always _passthrough_intake_runner for unit tests — this
+    keeps the servicer state-machine tests DB-free (no DIRECT_URL required).
+    The passthrough calls receive_webhook_fn directly without with_workspace.
     """
     return WebhookIngestServicer(
         app_secret_provider_factory=_make_secret_provider(secret),
@@ -167,6 +172,7 @@ def _make_servicer(
         receive_webhook_fn=receive_fn or _noop_receive,
         allowed_workspace_ids=frozenset({_TEST_WID}),
         webhook_registry_override=registry_override,
+        intake_runner=_passthrough_intake_runner,
     )
 
 
@@ -284,7 +290,10 @@ def _make_combined_servicer(
     receive_fn=None,
     resolver=None,
 ) -> WebhookIngestServicer:
-    """Build a servicer with BOTH shopify + _test_token in the registry."""
+    """Build a servicer with BOTH shopify + _test_token in the registry.
+
+    intake_runner is always _passthrough_intake_runner for unit tests — DB-free.
+    """
     # The combined secret provider can serve both vendors.
     shopify_provider = MagicMock()
     shopify_provider.get_shopify_hmac_secret.return_value = _TEST_SECRET
@@ -297,6 +306,7 @@ def _make_combined_servicer(
         receive_webhook_fn=receive_fn or _noop_receive,
         allowed_workspace_ids=frozenset({_TEST_WID}),
         webhook_registry_override=_make_combined_registry(),
+        intake_runner=_passthrough_intake_runner,
     )
 
 

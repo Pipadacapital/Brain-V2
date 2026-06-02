@@ -61,6 +61,7 @@ async def start_webhook_grpc_server(
     identity_resolver=None,
     receive_webhook_fn=None,
     webhook_registry_override=None,
+    intake_runner=None,
 ) -> None:
     """
     Start the internal gRPC server for WebhookIngest.
@@ -78,6 +79,10 @@ async def start_webhook_grpc_server(
     GENERALIZATION: identity_resolver replaces the former shop_resolver parameter.
     The servicer now dispatches vendor-agnostically via the registry.
 
+    KAFKA-LAZY-SINGLETON-1: starts the module-level AIOKafkaProducer at server startup
+    (if KAFKA_BOOTSTRAP_SERVERS is set) and stops it on graceful shutdown.  The producer
+    is then injected into each receive_webhook call by the live intake_runner.
+
     Args:
         allowed_workspace_ids:      From run_all_gates() — injected into the servicer.
         host:                       Override bind host (default: 127.0.0.1 for local,
@@ -88,6 +93,8 @@ async def start_webhook_grpc_server(
                                     former shop_resolver).
         receive_webhook_fn:         Optional override for DI / testing.
         webhook_registry_override:  Optional registry dict override for DI / testing.
+        intake_runner:              Optional intake runner override for DI / testing.
+                                    Defaults to _live_intake_runner (with_workspace + Kafka).
     """
     try:
         import grpc
@@ -99,7 +106,16 @@ async def start_webhook_grpc_server(
             "Stage-3 dep declaration: grpcio>=1.70.0,<2.0.0"
         ) from exc
 
-    from src.interfaces.grpc.webhook_servicer import WebhookIngestServicer
+    from src.interfaces.grpc.webhook_servicer import (
+        WebhookIngestServicer,
+        start_kafka_producer,
+        stop_kafka_producer,
+    )
+
+    # KAFKA-LAZY-SINGLETON-1: start the producer before the server accepts requests.
+    # If KAFKA_BOOTSTRAP_SERVERS is not set, start_kafka_producer() is a no-op and
+    # the producer stays None (dry-run safe).
+    await start_kafka_producer()
 
     bind_host = host or os.environ.get("GRPC_INTERNAL_HOST", _GRPC_BIND_DEFAULT)
     bind_port = port or int(os.environ.get("GRPC_INTERNAL_PORT", str(_GRPC_INTERNAL_PORT_DEFAULT)))
@@ -111,6 +127,7 @@ async def start_webhook_grpc_server(
         receive_webhook_fn=receive_webhook_fn,
         allowed_workspace_ids=allowed_workspace_ids,
         webhook_registry_override=webhook_registry_override,
+        intake_runner=intake_runner,  # None → defaults to _live_intake_runner
     )
 
     server = grpc.aio.server()
@@ -149,4 +166,8 @@ async def start_webhook_grpc_server(
     )
     await server.start()
     logger.info("webhook_server: INTERNAL gRPC server ready address=%s", address)
-    await server.wait_for_termination()
+    try:
+        await server.wait_for_termination()
+    finally:
+        # KAFKA-LAZY-SINGLETON-1: stop the producer on graceful shutdown.
+        await stop_kafka_producer()
