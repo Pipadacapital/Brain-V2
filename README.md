@@ -15,6 +15,17 @@ This README covers two things:
 The whole stack is `docker-compose.yml` at the repo root: `postgres-dev` (OLTP),
 `clickhouse-dev` (OLAP), `api-gateway` (Fastify + tRPC), `web` (Next.js).
 
+### One command (recommended)
+After the one-time prerequisite below (`.env.docker`):
+```bash
+make up          # or: ./scripts/dev-up.sh
+```
+Idempotent — it ensures the data volumes exist, starts the DBs, applies the schema
+migrations **only on a fresh DB**, builds + starts the app, and waits for `/ready`.
+Other shortcuts: `make down`, `make logs` (`make logs S=web`), `make ps`, `make ready`.
+
+The manual equivalents are documented below if you want to run the steps yourself.
+
 ### Prerequisites
 - Docker Desktop (or Docker Engine + Compose v2) running.
 - Node 24 + pnpm 11 (only needed to run tests / migrations tooling on the host).
