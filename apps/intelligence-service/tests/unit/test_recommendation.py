@@ -13,8 +13,10 @@ import pytest
 from pydantic import ValidationError
 
 from domain.tools.recommendation import (
+    ExpectedImpact,
     InsightItem,
     RecommendationActionEnum,
+    RiskLevel,
     TypedRecommendation,
 )
 
@@ -66,5 +68,11 @@ class TestTypedRecommendation:
                 entity_id="ad_set_123",
                 rationale="High RTO correlates with this ad set.",
             ),
+            # CF-C6-MB-CONTRACT-COMPLETENESS-1 required fields (additive, Child 6).
+            confidence_display_pct=85,
+            expected_impact=ExpectedImpact(
+                revenue_mu=0, cm2_mu=0, currency_code="INR", impact_label="Impact not estimated",
+            ),
+            risk=RiskLevel.MEDIUM,
         )
         assert item.recommendation.action == RecommendationActionEnum.PAUSE_AD_SET

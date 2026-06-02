@@ -22,6 +22,12 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Without this, hatchling cannot infer the package dir (code lives flat under
+# src/) and `uv run pytest` fails to build the project — the suite was dark.
+# Mirrors analytics-service / intelligence-service.
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
