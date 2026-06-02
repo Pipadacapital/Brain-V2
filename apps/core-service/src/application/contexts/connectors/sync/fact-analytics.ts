@@ -324,7 +324,7 @@ export async function readCogs(workspaceId: string, range?: FactDateRange): Prom
          count(*)::text AS total
        FROM connector_line_item_facts li
        LEFT JOIN connector_product_facts pf
-         ON pf.workspace_id = li.workspace_id AND pf.vendor_product_id = li.vendor_product_id${dateFilter}`,
+         ON pf.workspace_id = li.workspace_id AND pf.vendor = li.vendor AND pf.vendor_product_id = li.vendor_product_id${dateFilter}`,
     )
     const r = res.rows[0]
     return {
