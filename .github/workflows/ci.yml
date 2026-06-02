@@ -160,3 +160,16 @@ jobs:
         run: bash tests/integration/db-isolation/run.sh
       - name: Runtime RLS row-scoping
         run: bash tests/integration/rls-row-scoping/run.sh
+
+  # Migrator correctness (advisor review P1-18). Proves scripts/migrate.sh against
+  # disposable postgres + clickhouse: clean from-scratch replay of every in-scope
+  # migration, idempotent re-run, adopt-existing (baseline), incremental apply, and
+  # drift abort. This is also the gate that a NEW migration actually replays clean —
+  # the old marker-probe in dev-up.sh would silently skip it. Needs Docker; no live data.
+  migrator:
+    name: Schema migrator (replay + drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: migrate.sh replay/idempotency/adopt/incremental/drift
+        run: bash tests/integration/migrator/run.sh

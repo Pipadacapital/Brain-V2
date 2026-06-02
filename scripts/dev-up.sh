@@ -45,23 +45,16 @@ for _ in $(seq 1 60); do
 done
 echo "  postgres=$pg clickhouse=$ch"
 
-# 3. Apply migrations ONLY if the schema isn't there yet (fresh volume).
-initialised=$($PG -tAc "SELECT to_regclass('public.connector_order_facts_hot') IS NOT NULL" 2>/dev/null || echo f)
-if [ "$initialised" = "t" ]; then
-  say "Schema already present — skipping migrations"
-else
-  say "Fresh DB — applying Postgres migrations (local-dev/*.sql, in order)"
-  for f in $(ls apps/core-service/migrations/local-dev/[0-9]*.sql | grep -v down | sort); do
-    echo "  + $f"; $PG -v ON_ERROR_STOP=1 < "$f"
-  done
-  say "Applying ClickHouse fact migrations (0003 → 0011)"
-  for f in $(ls apps/analytics-service/migrations/clickhouse/000[3-9]*.sql \
-                apps/analytics-service/migrations/clickhouse/001[0-1]*.sql 2>/dev/null | sort); do
-    echo "  + $f"; $CH --multiquery < "$f"
-  done
-  echo "  NOTE: schema only — no rows. Real-data load is the Founder-gated tools/migrate-legacy step;"
-  echo "        for a demo UI set BRAIN_GATEWAY_LOCAL_HARNESS=true on the gateway."
-fi
+# 3. Apply migrations via the tracked migrator (scripts/migrate.sh). It keeps a
+#    per-store ledger and applies ONLY un-applied files in order — so a migration
+#    added later actually runs (the old marker-probe here skipped EVERY migration
+#    once one table existed). Idempotent: re-run is a no-op. An existing pre-ledger
+#    volume is auto-adopted at head. Held/runbook-gated files (`-- migrate: skip`)
+#    are not auto-applied.
+say "Applying schema migrations (tracked migrator)"
+PSQL="$PG" CHCL="$CH" bash scripts/migrate.sh up
+echo "  NOTE: schema only — no rows. Real-data load is the Founder-gated tools/migrate-legacy step;"
+echo "        for a demo UI set BRAIN_GATEWAY_LOCAL_HARNESS=true on the gateway."
 
 # 4. Build + start the app.
 say "Building + starting api-gateway + web"

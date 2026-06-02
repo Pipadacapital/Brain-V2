@@ -1,6 +1,8 @@
 -- 0002_mv_computed_ratios.sql
 -- Materialized View: computed ratio columns over the base layer.
 --
+-- migrate: skip — RUNBOOK-GATED, Stage-8 legacy metric-engine lineage applied by a
+--   separate Founder-gated runbook (see README.md), not the local/CI migrator.
 -- @paradigm: sql
 -- CF-C4-RATIO-DIVOP-1: EVERY division uses intDiv() + explicit null-guard.
 --                       ZERO `/` operators on metric columns.
