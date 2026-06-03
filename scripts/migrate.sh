@@ -40,8 +40,13 @@ CHCL=${CHCL:-docker exec -i brain-clickhouse-dev clickhouse-client --user brain_
 
 # Marker tables that signal "this is an established pre-ledger DB at head" — used
 # only to auto-baseline on first `up` so an existing volume adopts cleanly.
+# IMPORTANT: the marker MUST be a table from the LAST schema-creating migration, not an
+# early one. Using an early table (e.g. connector_order_facts = CH 0003) made a PARTIALLY
+# migrated CH look "at head", so `up` baselined 0004..0011 as applied WITHOUT running them
+# — leaving brain.connector_shipment_facts (0007) missing and the logistics readers 500ing.
+# CH head = connector_raw_events (0010, last table-creating migration; 0011 only adds cols).
 PG_HEAD_MARKER=${PG_HEAD_MARKER:-public.connector_order_facts_hot}
-CH_HEAD_MARKER=${CH_HEAD_MARKER:-connector_order_facts}
+CH_HEAD_MARKER=${CH_HEAD_MARKER:-connector_raw_events}
 
 say()  { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }

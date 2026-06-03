@@ -21,9 +21,24 @@ cd "$(dirname "$0")/.."
 CH=${CH:-docker exec -i brain-clickhouse-dev clickhouse-client --user brain_app --password brain_app_pw}
 DDL_DIR="apps/analytics-service/migrations/clickhouse"
 
-echo "  + metric-engine DDL (0001 base, 0002 computed + MV) → local CH"
-$CH --multiquery < "$DDL_DIR/0001_base_workspace_daily_metrics.sql" >/dev/null
-$CH --multiquery < "$DDL_DIR/0002_mv_computed_ratios.sql"           >/dev/null
+# Idempotent CH schema SAFETY NET (local-dev): apply EVERY CH migration DDL
+# (0001..0011), not just the metric-engine pair. The tracked migrator (scripts/migrate.sh)
+# is the primary path, but its ledger/adopt-at-head heuristic can leave the local CH
+# with a partial connector schema (observed: only connector_order_facts present, so the
+# logistics readers 500 on a missing brain.connector_shipment_facts). Every file is
+# `CREATE ... IF NOT EXISTS`, so re-applying them here is a no-op when the migrator already
+# ran, and self-heals when it didn't. This guarantees the FULL local CH schema after
+# `make up`. Runs last in the bring-up so it wins regardless of migrator state.
+# PROD is unaffected: this script is local-only; prod uses the gated Stage-8 runbook.
+echo "  + CH schema DDL (0001..0011: metric-engine + all connector facts) → local CH"
+for f in $(ls "$DDL_DIR"/[0-9]*.sql | sort); do
+  name=$(basename "$f")
+  if $CH --multiquery < "$f" >/dev/null 2>/tmp/ch-seed-err; then
+    :
+  else
+    echo "    WARN: $name did not fully apply → $(head -1 /tmp/ch-seed-err)"
+  fi
+done
 
 # Recompute every workspace with connector facts, over its full order-date window.
 # PINNED to the local CH container (never prod). Best-effort: needs uv + the analytics

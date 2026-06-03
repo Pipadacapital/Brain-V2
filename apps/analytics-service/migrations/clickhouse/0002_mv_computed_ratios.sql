@@ -116,15 +116,20 @@ SELECT
     cm1_mu,
     cm2_mu,
 
-    -- CF-C4-PRORATED-DIVOP-1: calendar-aware proration using toDaysInMonth(date)
-    -- toDaysInMonth('2026-02-15') = 28; toDaysInMonth('2026-03-15') = 31
+    -- CF-C4-PRORATED-DIVOP-1: calendar-aware proration over days-in-month.
+    -- LOCAL-CH-COMPAT: dateDiff('day', toStartOfMonth, +1 month) == toDaysInMonth(date),
+    -- and works on BOTH CH 24.8 (local dev) and 24.9+ (prod) — so one migration applies
+    -- everywhere. (toDaysInMonth() alone fails on 24.8 with UNKNOWN_FUNCTION.)
+    -- days-in-month('2026-02-15') = 28; days-in-month('2026-03-15') = 31.
     -- NEVER: intDiv(misc_expenses_monthly_mu, 30) — wrong for Feb, Jan, etc.
-    if(toDaysInMonth(date) > 0, intDiv(misc_expenses_monthly_mu, toDaysInMonth(date)), NULL)
+    if(dateDiff('day', toStartOfMonth(date), addMonths(toStartOfMonth(date), 1)) > 0,
+       intDiv(misc_expenses_monthly_mu, dateDiff('day', toStartOfMonth(date), addMonths(toStartOfMonth(date), 1))), NULL)
         AS misc_expenses_prorated_mu,
 
     -- cm3 = cm2 - misc_expenses_prorated
     -- Carry NULL if misc is NULL (zero-monthly-cost workspace avoids NULLs in practice)
-    cm2_mu - if(toDaysInMonth(date) > 0, intDiv(misc_expenses_monthly_mu, toDaysInMonth(date)), 0)
+    cm2_mu - if(dateDiff('day', toStartOfMonth(date), addMonths(toStartOfMonth(date), 1)) > 0,
+                intDiv(misc_expenses_monthly_mu, dateDiff('day', toStartOfMonth(date), addMonths(toStartOfMonth(date), 1))), 0)
         AS cm3_mu,
 
     -- RTO rate (CF-C4-RATIO-DIVOP-1, Pattern A)
