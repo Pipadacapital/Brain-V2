@@ -453,3 +453,56 @@ def _optimize_partitions(client: Any, date_start: str, date_end: str) -> None:
         )
         logger.debug("recompute_daily_metrics: OPTIMIZE partition=%s", partition)
         client.command(sql)
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint (LOCAL bring-up + the future daily-tick scheduler call this).
+#   python -m application.contexts.metric_engine.recompute_daily <ws> <start> <end>
+#   python -m application.contexts.metric_engine.recompute_daily --all
+# --all enumerates every workspace with order facts over its full date window
+# (no-op-safe: zero facts → zero rows). The scheduler (Phase-D) calls the
+# function directly with real correlation ids; this CLI is for ops/seed.
+# ---------------------------------------------------------------------------
+def _enumerate_workspace_windows(client: Any) -> list[tuple[str, str, str]]:
+    """(workspace_id, min_order_date, max_order_date) for every workspace with facts."""
+    res = client.query(
+        "SELECT workspace_id, toString(min(order_date)), toString(max(order_date)) "
+        "FROM brain.connector_order_facts GROUP BY workspace_id"
+    )
+    return [(row[0], row[1], row[2]) for row in res.result_rows if row[0]]
+
+
+def _main(argv: "list[str] | None" = None) -> int:
+    import argparse
+
+    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(
+        prog="recompute_daily",
+        description="Metric-engine daily recompute (connector_*_facts -> workspace_daily_metrics).",
+    )
+    parser.add_argument("workspace_id", nargs="?", help="workspace to recompute (omit with --all)")
+    parser.add_argument("date_start", nargs="?", help="inclusive ISO YYYY-MM-DD")
+    parser.add_argument("date_end", nargs="?", help="inclusive ISO YYYY-MM-DD")
+    parser.add_argument("--all", action="store_true", dest="all_ws",
+                        help="recompute every workspace over its full order-date window")
+    args = parser.parse_args(argv)
+
+    client = _make_default_client()
+    if args.all_ws:
+        windows = _enumerate_workspace_windows(client)
+        total = 0
+        for ws, start, end in windows:
+            rows = recompute_daily_metrics(ws, start, end, ch_client=client)
+            logger.info("recompute --all: workspace=%s window=[%s,%s] rows=%d", ws, start, end, rows)
+            total += rows
+        logger.info("recompute --all: %d workspace(s), %d total base rows", len(windows), total)
+        return 0
+    if not (args.workspace_id and args.date_start and args.date_end):
+        parser.error("provide workspace_id date_start date_end, or --all")
+    rows = recompute_daily_metrics(args.workspace_id, args.date_start, args.date_end, ch_client=client)
+    logger.info("recompute: workspace=%s rows=%d", args.workspace_id, rows)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

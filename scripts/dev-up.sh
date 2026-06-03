@@ -62,6 +62,13 @@ echo "        for a demo UI set BRAIN_GATEWAY_LOCAL_HARNESS=true on the gateway.
 say "Applying local real-time webhook fixtures"
 PSQL="$PG" bash scripts/seed-local-realtime.sh
 
+# 3.6 LOCAL-ONLY metric-engine bring-up (workspace_daily_metrics DDL + MV + the
+#     daily rollup from connector facts). Lets query_metrics / the Morning Brief
+#     read real metrics; no-op-safe with no migrated data. Prod uses the gated
+#     Stage-8 runbook + a real scheduler, never here.
+say "Applying local metric-engine (DDL + daily recompute)"
+CH="$CH" bash scripts/seed-local-metric-engine.sh
+
 # 4. Build + start the app.
 say "Building + starting api-gateway + web"
 $COMPOSE up -d --build api-gateway web
