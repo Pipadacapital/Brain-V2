@@ -169,6 +169,27 @@ export async function pingCh(): Promise<boolean> {
   }
 }
 
+/**
+ * Insert a batch of rows into a ClickHouse table. Uses JSONEachRow format so each
+ * element of `rows` is a plain object matching the target table schema.
+ *
+ * This is the write companion to `chQuery` — used by the realtime-facts-consumer to
+ * upsert Kafka-sourced facts into brain.connector_order_facts / line_item_facts.
+ * ReplacingMergeTree(version) handles idempotency — a re-delivered message with a
+ * higher `version` wins at the next OPTIMIZE / FINAL read.
+ *
+ * @param table  Fully qualified table name, e.g. "brain.connector_order_facts"
+ * @param rows   Array of plain objects (keys = column names, values = JS primitives)
+ */
+export async function chInsert(table: string, rows: Record<string, unknown>[]): Promise<void> {
+  if (!rows.length) return
+  await client().insert({
+    table,
+    values: rows,
+    format: 'JSONEachRow',
+  })
+}
+
 /** Test-only: dispose the singleton client (for graceful shutdown / hot-reload). */
 export async function _closeChClient(): Promise<void> {
   if (_client) {

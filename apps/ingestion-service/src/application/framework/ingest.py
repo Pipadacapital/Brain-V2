@@ -47,8 +47,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
-from psycopg import AsyncConnection
-
 from src.bootstrap.startup_gates import assert_workspace_allowed
 from src.domain.framework.adapter import (
     ConnectorAdapter,
@@ -59,7 +57,7 @@ from src.domain.framework.adapter import (
 )
 from src.domain.framework.cursor import upsert_cursor
 from src.domain.framework.pii_manifest import PiiManifestViolation, check_pii_fields
-from src.infrastructure.db.session_context import with_workspace
+from src.infrastructure.db.session_context import DbConn, with_workspace
 from src.infrastructure.secrets.custody import CredentialCustody
 
 logger = logging.getLogger(__name__)
@@ -255,7 +253,7 @@ def _table_for(vendor: str, event_type: str) -> str:
 
 
 async def _upsert_event(
-    conn: AsyncConnection,
+    conn: DbConn,
     workspace_id: str,
     event: NormalizedEvent,
     manifest: PiiManifest,
@@ -301,10 +299,13 @@ async def _upsert_event(
 
     col_names = list(cols.keys())
     placeholders = ["%s" for _ in col_names]
+    # Exclude ingested_at from the loop — it is appended unconditionally as the
+    # last SET item.  Including it in the loop AND as the hardcoded suffix would
+    # produce "multiple assignments to same column" (SyntaxError on Postgres).
     update_clause = ", ".join(
         f"{c} = EXCLUDED.{c}"
         for c in col_names
-        if c not in ("workspace_id", "vendor_event_id")
+        if c not in ("workspace_id", "vendor_event_id", "ingested_at")
     )
 
     sql = f"""
@@ -483,7 +484,7 @@ async def ingest_batch(
     # back the cursor rolls back with it (no phantom-advance per the M4 contract).
     cursor_value = last_event_id  # adapter-defined opaque cursor position
 
-    async def _do_batch_and_cursor(conn: AsyncConnection) -> tuple[int, int]:
+    async def _do_batch_and_cursor(conn: DbConn) -> tuple[int, int]:
         upserted = 0
         deduped = 0
         for normalized, _ in normalized_events:

@@ -77,13 +77,32 @@ CREATE TABLE IF NOT EXISTS raw_shopify_orders (
     vendor               TEXT        NOT NULL DEFAULT 'shopify',
     event_type           TEXT        NOT NULL,
     occurred_at          TIMESTAMPTZ NOT NULL,
-    -- PII fields (email present; first_name/last_name on the customer table)
+    -- Order identity + status
     shopify_order_id     TEXT        NOT NULL,
-    email                TEXT,           -- DPDP §2(t) personal data; declared in PiiManifest
+    order_number         TEXT,
     financial_status     TEXT,
     fulfillment_status   TEXT,
-    total_price_raw      TEXT,           -- lands raw; NO conversion
+    -- PII fields — DPDP §2(t) personal data; all declared in SHOPIFY_PII_MANIFEST
+    -- (lawful_basis owner_brand_controller, purpose analytics_performance). The
+    -- table-level lawful_basis/purpose_code/ingested_at consent columns cover them.
+    -- NOTE (S2.4): order webhooks carry the buyer name; first_name/last_name added
+    -- to match ShopifyAdapter.normalize. FLAG FOR SECURITY REVIEW (Shreya) before
+    -- the live Stage-8 apply — confirm minimisation vs the manifest is acceptable.
+    email                TEXT,
+    first_name           TEXT,
+    last_name            TEXT,
+    -- Money — lands RAW as Shopify decimal strings; NO conversion (ACL converts).
+    total_price          TEXT,
+    subtotal_price       TEXT,
+    total_discounts      TEXT,
+    total_tax            TEXT,
+    total_price_raw      TEXT,           -- legacy alias (kept; nullable)
     currency             TEXT,
+    -- Vendor timestamps — land raw (ISO strings), NO conversion.
+    created_at           TEXT,
+    updated_at           TEXT,
+    closed_at            TEXT,
+    cancelled_at         TEXT,
     tags                 TEXT,
     raw_payload          JSONB       NOT NULL  -- full vendor JSON archived
 );

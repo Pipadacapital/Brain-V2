@@ -80,6 +80,34 @@ services:
       - brain-net
 
   # -------------------------------------------------------------------------
+  # Redpanda — Kafka-compatible event bus (real-time ingestion backbone).
+  # Single-broker dev-container mode (low memory). The Python ingestion-service
+  # PRODUCES verified webhook events to `integrations.<vendor>.v1`; the TS
+  # core-service consumer (in api-gateway) reads them and upserts facts.
+  # In prod this role is MSK (CDK) — never this container.
+  # -------------------------------------------------------------------------
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    container_name: brain-redpanda
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      # Advertise the in-network name so other containers connect via redpanda:9092.
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    ports:
+      - "19092:9092" # host access (e.g. rpk / debugging) — in-network uses redpanda:9092
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -qE 'Healthy:.+true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks:
+      - brain-net
+
+  # -------------------------------------------------------------------------
   # API Gateway (Fastify + tRPC) — Node 24, tsx runtime, shared pino logger.
   # JSON logs to stdout (captured by compose's logging driver — `docker compose
   # logs -f api-gateway`).
@@ -107,6 +135,19 @@ services:
       NEXT_PUBLIC_APP_URL: http://localhost:3000
       # Read-from-CH flag — facts already migrated locally; reads go through CH.
       READ_FROM_CH: "true"
+      # Real-time event bus: the core-service Kafka→facts consumer reads here.
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      # Enables the in-process Kafka→facts consumer (real-time ingestion). Off by
+      # default so a deploy opts in explicitly.
+      REALTIME_FACTS_CONSUMER: "true"
+      # Webhook intake: register POST /webhooks/:vendor locally + forward to the
+      # ingestion-service gRPC over brain-net. The gRPC transport + HMAC verify are
+      # now PROVEN working end-to-end on local-dev (S2.4): signed webhook → verify →
+      # raw_shopify_orders + Kafka. Local opt-in; prod ingress stays held regardless.
+      BRAIN_WEBHOOKS_ENABLED: "true"
+      WEBHOOK_INGEST_TARGET: ingestion-service:50051
+      # The gateway image ships protos/ at /workspace/protos (see Dockerfile).
+      WEBHOOK_INGEST_PROTO_DIR: /workspace/protos
       # Runtime env discriminator (local|staging|production). 'local' makes the
       # prod env-validator a no-op; a real deploy sets BRAIN_ENV=production to
       # enforce DATABASE_URL/CLICKHOUSE_*/CORS/custody + reject dev defaults.
@@ -122,6 +163,8 @@ services:
       postgres-dev:
         condition: service_healthy
       clickhouse-dev:
+        condition: service_healthy
+      redpanda:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3001/health | grep -q '\"status\":\"ok\"' || exit 1"]
@@ -198,8 +241,27 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       GRPC_INTERNAL_HOST: 0.0.0.0
       GRPC_INTERNAL_PORT: 50051
+      # Real-time event bus: produce verified webhook events here.
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      # Local-dev: BRAIN_ENV=local opens the residency-gate escape (fail-closed in
+      # staging/prod). Local DB on brain-net; DIRECT_URL = session-mode (:5432).
+      BRAIN_ENV: local
+      DATABASE_URL: postgresql://rls_app:rls_app_pw@postgres-dev:5432/brain_dev
+      DIRECT_URL: postgresql://rls_app:rls_app_pw@postgres-dev:5432/brain_dev
+      # Workspace allowlist gate — local demo permits only Sugandhlok.
+      ALLOWED_WORKSPACE_IDS: f165da80-e6d5-4c58-9aff-ec654b873bd7
+      # Webhook HMAC verify reads the shop secret via the app-secret provider, which
+      # shares CONNECTOR_CUSTODY_BACKING. 'local' → EnvAppSecretProvider reads
+      # SHOPIFY_CLIENT_SECRET (what the demo signs with). The env_file default
+      # 'local-aesgcm' is for credential custody (unused on the push/webhook path).
+      CONNECTOR_CUSTODY_BACKING: local
     env_file:
       - .env.docker
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres-dev:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; health_pb2_grpc.HealthStub(grpc.insecure_channel('127.0.0.1:50051')).Check(health_pb2.HealthCheckRequest(), timeout=2)\" || exit 1"]
       interval: 10s

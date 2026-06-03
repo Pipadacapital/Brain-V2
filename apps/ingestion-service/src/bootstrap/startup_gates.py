@@ -54,6 +54,20 @@ def assert_ap_south_1_residency(
 
     CF-C3-RESIDENCY-ASSERT-1: named error, both URLs checked.
     """
+    # Local-dev escape (BRAIN_ENV=local ONLY): the local Docker Postgres is not an
+    # ap-south-1 endpoint, so the residency markers are absent by design. This bypass
+    # is FAIL-CLOSED for staging/production — it activates EXCLUSIVELY when
+    # BRAIN_ENV=local, so a real deploy can never skip the assertion. The prod
+    # residency guarantee (CF-C3-RESIDENCY-ASSERT-1) is unchanged.
+    if os.environ.get("BRAIN_ENV", "").lower() == "local":
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[startup_gates] CF-C3-RESIDENCY-ASSERT-1: BRAIN_ENV=local — residency "
+            "assertion SKIPPED for local-dev ONLY (NEVER staging/production)."
+        )
+        return
+
     db_url = database_url or os.environ.get("DATABASE_URL", "")
     dir_url = direct_url or os.environ.get("DIRECT_URL", "")
 

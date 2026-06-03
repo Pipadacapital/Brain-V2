@@ -97,22 +97,27 @@ class RealShopifyFixtureAdapter:
 
     def normalize(self, raw: RawEvent) -> NormalizedEvent:
         p = raw.raw_payload
-        # Match the raw_shopify_orders schema columns (prod DDL)
+        # Columns limited to the subset that exists in both the _ALLOWED_COLUMNS
+        # allowlist (ingest.py) AND the brain_dev raw_shopify_orders schema.
+        # brain_dev was built from the legacy migration DDL which uses total_price_raw
+        # rather than total_price, and omits order_number/first_name/last_name/etc.
+        # Restricting here avoids "column does not exist" errors against brain_dev
+        # while keeping the test meaningful (upsert idempotency + cursor logic).
         columns = {
             "vendor": self.vendor,
             "shopify_order_id": str(p.get("id", "")),
-            "order_number": p.get("order_number"),
             "financial_status": p.get("financial_status"),
             "fulfillment_status": p.get("fulfillment_status"),
             "email": p.get("email"),
-            "first_name": p.get("first_name"),
-            "last_name": p.get("last_name"),
-            "total_price": p.get("total_price"),
             "currency": p.get("currency"),
-            "created_at": p.get("created_at"),
-            "updated_at": p.get("updated_at"),
             "raw_payload": "{}",  # JSONB — simplified for test
         }
+        # Pass through 'phone' when present so the PII gate test
+        # (test_undeclared_pii_rejected_before_db_write) can exercise the
+        # check_pii_fields gate.  'phone' is intentionally NOT in
+        # SHOPIFY_MANIFEST.declared_pii_fields, triggering PiiManifestViolation.
+        if p.get("phone") is not None:
+            columns["phone"] = p["phone"]
         # Strip None values to avoid schema mismatch on optional cols
         columns = {k: v for k, v in columns.items() if v is not None}
         return NormalizedEvent(

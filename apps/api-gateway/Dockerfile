@@ -76,6 +76,9 @@ COPY packages/lib-metrics ./packages/lib-metrics
 COPY packages/lib-clickhouse-ts ./packages/lib-clickhouse-ts
 COPY packages/config ./packages/config
 COPY tsconfig.json ./tsconfig.json
+# gRPC proto contract for the webhook-ingest client (@grpc/proto-loader loads it at
+# runtime). WEBHOOK_INGEST_PROTO_DIR points here. Required when BRAIN_WEBHOOKS_ENABLED.
+COPY protos ./protos
 
 # Pre-resolve workspace symlinks for the dependent app folders.
 COPY --from=deps /workspace/apps/api-gateway/node_modules ./apps/api-gateway/node_modules

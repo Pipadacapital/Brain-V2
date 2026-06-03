@@ -30,11 +30,16 @@ import {
   extractCorrelation,
   PII_REDACT_PATHS,
 } from '@brain/lib-logger';
+import {
+  startRealtimeFactsConsumer,
+  stopRealtimeFactsConsumer,
+} from '../infrastructure/realtime-facts-consumer.js';
 
 import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
 import { assertShopifyOAuthSecretsPresent, pingDb, pingCh } from '@brain/core-connectors';
 import { createBrainRouter } from '../application/router.js';
+import { webhookPlugin } from './route.webhook.js';
 import { registry as metricsRegistry } from '../infrastructure/metrics.js';
 import { DispatchingDataPlane } from '../infrastructure/dispatching-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
@@ -276,6 +281,15 @@ async function buildServer(cfg: GatewayAuthConfig) {
     credentials: true,
   });
 
+  // Real-time webhook intake (POST /webhooks/:vendor) — verify-first, forwards to
+  // the ingestion-service over gRPC. HELD by default (NO-LIVE-1): only registered
+  // when BRAIN_WEBHOOKS_ENABLED=true, so the public-ingress hold holds for prod
+  // until the Stage-8 ceremony, while local-dev opts in to exercise the live path.
+  if ((process.env['BRAIN_WEBHOOKS_ENABLED'] ?? '').toLowerCase() === 'true') {
+    await fastify.register(webhookPlugin);
+    fastify.log.info('webhook intake ENABLED (POST /webhooks/:vendor → ingestion gRPC)');
+  }
+
   // Liveness: the process is up. Cheap + dependency-free (never probes the DBs)
   // so a transient DB blip doesn't kill the container via the healthcheck.
   fastify.get('/health', async () => ({
@@ -453,6 +467,8 @@ async function main() {
       if (shuttingDown) return;
       shuttingDown = true;
       server.log.info({ signal }, 'shutting down — draining connections');
+      // Disconnect the Kafka consumer before closing HTTP (best-effort; never throws).
+      void stopRealtimeFactsConsumer().catch(() => undefined);
       server.close().then(
         () => process.exit(0),
         (err) => { server.log.error({ err }, 'error during shutdown'); process.exit(1); },
@@ -470,6 +486,19 @@ async function main() {
   } catch (err) {
     server.log.error(err, 'Failed to start api-gateway');
     process.exit(1);
+  }
+
+  // Start the real-time Shopify facts consumer AFTER the HTTP server is up.
+  // Only when the env flag is set — keeps local dev / CI without Kafka unaffected.
+  // Does NOT block: kafkajs connects asynchronously with built-in retry so a
+  // missing broker at boot time does NOT crash the gateway.
+  if ((process.env['REALTIME_FACTS_CONSUMER'] ?? '').toLowerCase() === 'true') {
+    void startRealtimeFactsConsumer(server.log).catch((err) => {
+      server.log.error({ err }, 'realtime-facts-consumer: startup error (gateway continues)');
+    });
+    server.log.info('realtime-facts-consumer: ENABLED — connecting to Kafka');
+  } else {
+    server.log.info('realtime-facts-consumer: DISABLED (REALTIME_FACTS_CONSUMER != true)');
   }
 }
 

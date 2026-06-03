@@ -21,6 +21,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@brain/lib-metrics': '../../packages/lib-metrics/src/index.ts',
+      '@brain/lib-clickhouse-ts': '../../packages/lib-clickhouse-ts/src/index.ts',
       '@brain/core-auth': '../../apps/core-service/src/domain/auth/brain-claim.ts',
       '@brain/core-onboarding': '../../apps/core-service/src/application/contexts/onboarding/index.ts',
       '@brain/core-connectors': '../../apps/core-service/src/application/contexts/connectors/index.ts',

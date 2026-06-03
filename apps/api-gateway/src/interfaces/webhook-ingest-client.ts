@@ -29,15 +29,15 @@ import * as protoLoader from '@grpc/proto-loader';
 import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
 
-// Resolve the proto file path relative to this file's location:
+// Proto include dir. WEBHOOK_INGEST_PROTO_DIR overrides (set in containers where
+// the relative layout differs — the gateway image ships protos/ at a fixed path);
+// otherwise fall back to the repo-relative location for local `tsx` runs.
 //   apps/api-gateway/src/interfaces/ → repo_root/protos/brain/ingestion/v1/ingestion.proto
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROTO_PATH = path.resolve(
-  __dirname,
-  '../../../../../protos/brain/ingestion/v1/ingestion.proto',
-);
-
-const PROTO_INCLUDE_DIR = path.resolve(__dirname, '../../../../../protos');
+const PROTO_INCLUDE_DIR =
+  process.env['WEBHOOK_INGEST_PROTO_DIR'] ??
+  path.resolve(__dirname, '../../../../protos');
+const PROTO_PATH = path.join(PROTO_INCLUDE_DIR, 'brain/ingestion/v1/ingestion.proto');
 
 // The Outcome enum values from the proto — kept as constants here so the
 // route can map them to HTTP status codes WITHOUT importing the proto-loader
