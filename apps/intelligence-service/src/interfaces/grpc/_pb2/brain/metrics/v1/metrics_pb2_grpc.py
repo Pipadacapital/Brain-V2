@@ -28,7 +28,7 @@ if _version_not_supported:
 class MetricsServiceStub(object):
     """---------------------------------------------------------------------------
     MetricsService — the gRPC contract for the api-gateway DataPlanePort
-    (analytics read path). Bound in-process / localhost-loopback in Phase 0-1.
+    (analytics read path). Bound in-process / localhost-loopback in Phase 0–1.
     ---------------------------------------------------------------------------
     """
 
@@ -58,7 +58,7 @@ class MetricsServiceStub(object):
 class MetricsServiceServicer(object):
     """---------------------------------------------------------------------------
     MetricsService — the gRPC contract for the api-gateway DataPlanePort
-    (analytics read path). Bound in-process / localhost-loopback in Phase 0-1.
+    (analytics read path). Bound in-process / localhost-loopback in Phase 0–1.
     ---------------------------------------------------------------------------
     """
 
@@ -72,7 +72,7 @@ class MetricsServiceServicer(object):
 
     def GetKpiSummary(self, request, context):
         """Get typed KPI summary strip for a date range.
-        Every field is a named registry metric -- no derived/ad-hoc values.
+        Every field is a named registry metric — no derived/ad-hoc values.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -114,7 +114,7 @@ def add_MetricsServiceServicer_to_server(servicer, server):
 class MetricsService(object):
     """---------------------------------------------------------------------------
     MetricsService — the gRPC contract for the api-gateway DataPlanePort
-    (analytics read path). Bound in-process / localhost-loopback in Phase 0-1.
+    (analytics read path). Bound in-process / localhost-loopback in Phase 0–1.
     ---------------------------------------------------------------------------
     """
 

@@ -46,6 +46,7 @@ message MetricRow {
   int64 net_net_tax_mu = 15;
   int64 shipping_revenue_mu = 16;
   int64 net_revenue_mu = 17;
+  int64 total_orders = 18;  // count metric (G2) — real per-day order count
 
   // Cost ladder
   int64 cogs_mu = 20;

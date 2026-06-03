@@ -106,6 +106,7 @@ def _row_to_proto(row: MetricRow) -> metrics_pb2.MetricRow:
         cm1_mu=row.cm1_mu,
         cm2_mu=row.cm2_mu,
         cm3_mu=row.cm3_mu,
+        total_orders=row.total_orders,  # per-row order count (G2) — must cross the wire
         currency_code=_CURRENCY_INR,
     )
     # Nullable fields: set only when not None
