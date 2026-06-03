@@ -91,6 +91,11 @@ interface ShopifyWebhookPayload {
 
 interface ShopifyLineItem {
   id?: string | number
+  // REST order webhooks carry numeric product_id/variant_id per line item. The
+  // facts store the GraphQL GID form (gid://shopify/Product/<n>), so we reconstruct
+  // it — closing the join gap to product facts without a later batch backfill.
+  product_id?: string | number | null
+  variant_id?: string | number | null
   sku?: string | null
   title?: string | null
   quantity?: number | null
@@ -110,10 +115,22 @@ interface ShopifyRawOrder {
 // Envelope→fact mapping (public for unit tests)
 // ---------------------------------------------------------------------------
 
+// LineItemFact (shared, GraphQL pull path) has no product/variant id; the webhook
+// path reconstructs the GID from the REST numeric ids, so we carry them here.
+export interface WebhookLineItem extends LineItemFact {
+  vendorProductId: string
+  vendorVariantId: string
+}
+
 export interface MappedFacts {
   order: OrderFact
-  lineItems: LineItemFact[]
+  lineItems: WebhookLineItem[]
 }
+
+// REST numeric id → GraphQL GID, matching the format stored in the fact tables
+// (gid://shopify/Product/<n>). Empty string when the id is absent.
+const toGid = (kind: 'Product' | 'ProductVariant', id: unknown): string =>
+  id != null && id !== '' ? `gid://shopify/${kind}/${id}` : ''
 
 /**
  * Map a verified Shopify webhook envelope to the canonical Brain fact shapes.
@@ -188,10 +205,12 @@ export function mapEnvelopeToFacts(envelope: ShopifyKafkaEnvelope): MappedFacts 
   }
 
   // Line items from raw_payload.line_items[].
-  const lineItems: LineItemFact[] = (rawOrder.line_items ?? []).map((li, idx) => ({
+  const lineItems: WebhookLineItem[] = (rawOrder.line_items ?? []).map((li, idx) => ({
     vendor: 'SHOPIFY' as const,
     vendorOrderId,
     vendorLineId: li.id != null ? String(li.id) : `${vendorOrderId}:${idx}`,
+    vendorProductId: toGid('Product', li.product_id),
+    vendorVariantId: toGid('ProductVariant', li.variant_id),
     sku: li.sku ?? null,
     title: li.title ?? null,
     quantity: BigInt(li.quantity ?? 0),
@@ -235,16 +254,17 @@ async function pgUpsertOrder(tx: PoolClient, workspaceId: string, o: OrderFact):
   )
 }
 
-async function pgUpsertLineItem(tx: PoolClient, workspaceId: string, li: LineItemFact): Promise<void> {
+async function pgUpsertLineItem(tx: PoolClient, workspaceId: string, li: WebhookLineItem): Promise<void> {
   await tx.query(
     `INSERT INTO connector_line_item_facts
-       (workspace_id, vendor, vendor_order_id, vendor_line_id, sku, title, quantity, unit_price_mu, gst_slab_bp, synced_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+       (workspace_id, vendor, vendor_order_id, vendor_line_id, vendor_product_id, sku, title, quantity, unit_price_mu, gst_slab_bp, synced_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
      ON CONFLICT (workspace_id, vendor, vendor_order_id, vendor_line_id) DO UPDATE SET
-       sku=EXCLUDED.sku, title=EXCLUDED.title, quantity=EXCLUDED.quantity,
-       unit_price_mu=EXCLUDED.unit_price_mu, gst_slab_bp=EXCLUDED.gst_slab_bp, synced_at=now()`,
+       vendor_product_id=EXCLUDED.vendor_product_id, sku=EXCLUDED.sku, title=EXCLUDED.title,
+       quantity=EXCLUDED.quantity, unit_price_mu=EXCLUDED.unit_price_mu,
+       gst_slab_bp=EXCLUDED.gst_slab_bp, synced_at=now()`,
     [
-      workspaceId, li.vendor, li.vendorOrderId, li.vendorLineId,
+      workspaceId, li.vendor, li.vendorOrderId, li.vendorLineId, li.vendorProductId,
       li.sku, li.title,
       String(li.quantity), String(li.unitPriceMu), li.gstSlabBp,
     ],
@@ -316,7 +336,7 @@ function chOrderRow(
 
 function chLineItemRow(
   workspaceId: string,
-  li: LineItemFact,
+  li: WebhookLineItem,
   version: bigint,
   orderDate: string,          // 'YYYY-MM-DD' denormalized from the order's created_at
 ): Record<string, unknown> {
@@ -327,8 +347,8 @@ function chLineItemRow(
     vendor: li.vendor,
     vendor_order_id: li.vendorOrderId,
     vendor_line_id: li.vendorLineId,
-    vendor_product_id: '',    // not available at webhook level without GraphQL lookup
-    vendor_variant_id: '',
+    vendor_product_id: li.vendorProductId,   // GID reconstructed from REST product_id
+    vendor_variant_id: li.vendorVariantId,
     sku: li.sku ?? '',
     title: li.title ?? '',
     quantity: Number(li.quantity),
