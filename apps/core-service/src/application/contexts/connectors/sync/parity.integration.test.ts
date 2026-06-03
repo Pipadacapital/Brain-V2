@@ -84,17 +84,20 @@ describe.skipIf(!RUN)('PG↔CH parity (integration)', () => {
   // NOTE: shipment/pincode are CH-ONLY facts (no PG table) — no PG plane to compare.
 
   // --- KNOWN PG↔CH DRIFT found by this gate (tracked follow-ups; un-skip on fix) ---
-  // readCogs is now RECONCILED (PG aligned to legacy `cost>0 → cost, else fallback`;
-  // active above). Remaining:
-  //  - readProductPerformance: NOT a data drift — both planes have the SAME 246
-  //    distinct products. The row-count gap (PG 245 vs CH 199) is CH's LIMIT 200 +
-  //    a CH grade-SQL error (Float64×String) that makes the CH path throw, so prod
-  //    correctly serves the full set via PG. Activating CH would SHOW FEWER products
-  //    (regression) until the grade SQL + LIMIT/ordering are reconciled. Tracked.
+  // readCogs + readProductPerformance are now RECONCILED (active). Remaining:
   //  - readLifecycle:    CH SQL throws (DateTime−DateTime); prod uses PG. Recency
   //    "now" basis also differs. Tracked.
   //  - readOrderTimings: aggregate fields differ beyond firstOrders. Tracked.
-  it.skip('readProductPerformance [CH path errors → PG serves; tracked]', async () => eq(await PG.readProductPerformance(WS), await CH.readProductPerformanceCH(WS)))
+
+  // RECONCILED: CH grade now uses exact integer math (cum_cm1*100 ≤ 80*total_cm1)
+  // == PG's `≤ 0.80*total_cm1` (was toInt64-truncated → boundary drift); CH LIMIT
+  // 500 == PG; label max() == PG. PG returns an extra totalUnfilteredRows pagination
+  // helper (CH-path-irrelevant) — compare the common {rows, totalCm1Mu}.
+  it('readProductPerformance', async () => {
+    const pg = await PG.readProductPerformance(WS)
+    const ch = await CH.readProductPerformanceCH(WS)
+    eq({ rows: pg.rows, totalCm1Mu: pg.totalCm1Mu }, ch)
+  })
   it.skip('readLifecycleStates [KNOWN DRIFT — tracked]', async () => eq(await PG.readLifecycleStates(WS), await CH.readLifecycleStatesCH(WS)))
   it.skip('readOrderTimings [KNOWN DRIFT — tracked]', async () => eq(await PG.readOrderTimings(WS), await CH.readOrderTimingsCH(WS)))
 })
