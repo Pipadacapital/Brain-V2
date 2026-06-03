@@ -92,8 +92,11 @@ export async function listCampaigns(
     const args: unknown[] = [vendor, dateStart, dateEnd]
     // adAccountId filter is a no-op locally (column not in PG mirror); accepted
     // for forward-compat with the wider CH facts.
+    // intent is aggregated per-campaign (max(c.intent)); the HAVING filter must
+    // reference the SAME aggregate expression — a bare c.intent here errors with
+    // "must appear in the GROUP BY clause" since GROUP BY is f.campaign_id only.
     const intentWhere = opts.intent
-      ? `AND coalesce(c.intent, 'unclassified') = $${args.length + 1}`
+      ? `AND coalesce(max(c.intent), 'unclassified') = $${args.length + 1}`
       : ``
     if (opts.intent) args.push(opts.intent)
 
