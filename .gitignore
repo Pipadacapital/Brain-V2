@@ -4,8 +4,9 @@
 .engineering-os/dashboard.html
 # Per-session agent spawn telemetry — regenerated every run, placeholder values
 .engineering-os/spawn-heartbeat.jsonl
-# State backups are local safety copies; git history is the real audit trail
-.engineering-os/state/*.bak.*
+# State backups are local safety copies; git history is the real audit trail.
+# Broad glob: catches active.json.bak, active.json.bak2.<ts>, active.json.bak.<ts>.
+.engineering-os/state/*.bak*
 
 # Secrets / env — NEVER commit. Local-dev credentials live only in untracked .env files.
 .env
