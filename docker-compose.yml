@@ -142,11 +142,9 @@ services:
       REALTIME_FACTS_CONSUMER: "true"
       # Webhook intake: register POST /webhooks/:vendor locally + forward to the
       # ingestion-service gRPC over brain-net. The gRPC transport + HMAC verify are
-      # now PROVEN working (a signed webhook reaches the intake). HELD OFF again
-      # pending S2.3 — the shared ingestion DB-write layer (_upsert_event) uses a
-      # non-psycopg conn API and has never run against a real connection. Flip to
-      # "true" once that's hardened. Prod ingress stays held regardless.
-      BRAIN_WEBHOOKS_ENABLED: "false"
+      # now PROVEN working end-to-end on local-dev (S2.4): signed webhook → verify →
+      # raw_shopify_orders + Kafka. Local opt-in; prod ingress stays held regardless.
+      BRAIN_WEBHOOKS_ENABLED: "true"
       WEBHOOK_INGEST_TARGET: ingestion-service:50051
       # The gateway image ships protos/ at /workspace/protos (see Dockerfile).
       WEBHOOK_INGEST_PROTO_DIR: /workspace/protos

@@ -82,7 +82,13 @@ been exercised by mocked unit tests — each "Stage-8 ready" but never run end-t
   servicer; shipped `protos/` into the gateway image + a `WEBHOOK_INGEST_PROTO_DIR` override.
   PROVEN: a signed webhook now reaches the verifier (HMAC passes with
   `CONNECTOR_CUSTODY_BACKING=local` → `SHOPIFY_CLIENT_SECRET`) and invokes the intake.
-- **S2.3** ⬜ **NEXT BLOCKER — DB-write layer.** `_upsert_event` (shared by pull + push) calls
+- **S2.3** ✅ **DB-write layer fixed.** `DbConn` wrapper in session_context gives the shared write
+  path the psycopg API it assumed; integration tests un-skipped + green against real local PG.
+- **S2.4** ✅ **END-TO-END PROVEN on local-dev.** Reconciled `raw_shopify_orders` DDL to the
+  normalizer (added order_number/money/timestamps + first_name/last_name PII — Founder-approved,
+  FLAGGED for Shreya security review before live apply). A signed webhook now: HTTP 200/ACCEPTED →
+  row in `raw_shopify_orders` (real psycopg) → message on `integrations.shopify.v1`. `BRAIN_WEBHOOKS_ENABLED=true` locally.
+- ~~**S2.3 (old) DB-write layer.**~~ `_upsert_event` (shared by pull + push) calls
   `conn.fetchone(sql, params)`, which is not psycopg's API; psycopg needs
   `cur = await conn.execute(sql, params); await cur.fetchone()` with a dict row_factory.
   The integration tests that would catch this are skipped (no DB in CI). Fix the shared
