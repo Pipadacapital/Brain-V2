@@ -238,13 +238,18 @@ export async function runSchedulerTick(
 // Scheduler lifecycle
 // ---------------------------------------------------------------------------
 
-let _intervalHandle: ReturnType<typeof setInterval> | null = null
+let _timeoutHandle: ReturnType<typeof setTimeout> | null = null
+let _tickInFlight = false  // in-flight guard — prevents overlapping ticks
 
 /**
  * Start the ad-spend poll scheduler. Called from main() ONLY when
  * SYNC_SCHEDULER_ENABLED === 'true'. Fires the first tick after one full
  * interval (not immediately on boot) so the server settles before touching the
  * DB. Does NOT block server boot.
+ *
+ * Uses self-rescheduling setTimeout (not setInterval) so the next tick never
+ * starts before the previous one completes (IN-FLIGHT-GUARD-1). If a tick takes
+ * longer than intervalMs the next tick is simply delayed, not overlapped.
  *
  * Vendors: SYNC_POLL_VENDORS (default: META,GOOGLE)
  *   Shopify is webhook-driven; adding SHOPIFY here enables optional reconciliation
@@ -260,7 +265,7 @@ export function startSyncScheduler(
   log: SchedulerLogger,
   deps?: SchedulerDeps,
 ): void {
-  if (_intervalHandle) {
+  if (_timeoutHandle !== null) {
     log.warn({}, 'sync-scheduler: startSyncScheduler called but scheduler already running — ignoring')
     return
   }
@@ -273,16 +278,31 @@ export function startSyncScheduler(
     `sync-scheduler: ENABLED — interval=${intervalMs}ms vendors=[${vendors.join(',')}] workspaces=${workspaces.length} (Shopify is webhook-driven; polling Shopify is optional reconciliation only)`,
   )
 
-  _intervalHandle = setInterval(() => {
-    // Fire-and-forget per tick; errors are fully isolated inside runSchedulerTick.
-    void runSchedulerTick(log, workspaces, vendors, deps).catch((err) => {
-      // Belt-and-suspenders: runSchedulerTick does not throw, but guard anyway.
-      log.error({ err }, 'sync-scheduler: unexpected tick error (scheduler continues)')
-    })
-  }, intervalMs)
+  // Self-rescheduling tick — schedules the next setTimeout AFTER the current tick
+  // completes, so ticks can never overlap (IN-FLIGHT-GUARD-1).
+  function scheduleTick(): void {
+    _timeoutHandle = setTimeout(() => {
+      if (_tickInFlight) {
+        // Previous tick still running — reschedule without launching a second tick.
+        log.warn({}, 'sync-scheduler: previous tick still in flight — skipping this tick (IN-FLIGHT-GUARD-1)')
+        scheduleTick()
+        return
+      }
+      _tickInFlight = true
+      void runSchedulerTick(log, workspaces, vendors, deps)
+        .catch((err) => {
+          // Belt-and-suspenders: runSchedulerTick does not throw, but guard anyway.
+          log.error({ err }, 'sync-scheduler: unexpected tick error (scheduler continues)')
+        })
+        .finally(() => {
+          _tickInFlight = false
+          // Only reschedule if we haven't been stopped.
+          if (_timeoutHandle !== null) scheduleTick()
+        })
+    }, intervalMs)
+  }
 
-  // setInterval ref does not prevent process exit — no unref needed since
-  // we drive shutdown explicitly via stopSyncScheduler().
+  scheduleTick()
 }
 
 /**
@@ -291,8 +311,8 @@ export function startSyncScheduler(
  * Does NOT await in-flight ticks — they are allowed to complete naturally.
  */
 export function stopSyncScheduler(): void {
-  if (_intervalHandle) {
-    clearInterval(_intervalHandle)
-    _intervalHandle = null
+  if (_timeoutHandle !== null) {
+    clearTimeout(_timeoutHandle)
+    _timeoutHandle = null
   }
 }

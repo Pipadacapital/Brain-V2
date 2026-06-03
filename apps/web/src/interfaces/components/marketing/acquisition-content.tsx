@@ -8,10 +8,11 @@
 //      from dailyAcquisition.rows[].new_customers (no backend change).
 //   3. New-Customer Order Composition — honest empty-state (no composition endpoint
 //      in this round; noted as backend follow-up).
-// Number-format fixes:
-//   - ACOS: formatBpPercent already gives 1-decimal parity; verified.
-//   - MER/aMER: formatBpMultiple uses Math.floor; fixed to Math.round for correct
-//     rounding (local helpers only, shared formatter untouched).
+// G3 formatter consolidation (Wave C):
+//   - All bp/multiplier/percent display delegates to @brain/lib-formatters (canonical).
+//   - formatBpMultiple: ROUND (abs-first, (abs%10000/100).toFixed(0)); negative-sign correct.
+//   - formatX100Multiple: ROUND; negative-sign correct.
+//   - formatBpPercent: ROUND; negative-sign correct.
 // CF-C6-RENDER-ONLY-1: zero arithmetic; all money from tRPC → formatMoney.
 // CF-C6-FORMATMONEY-CANONICAL-1: formatMoney is the only money formatter.
 
@@ -19,12 +20,10 @@ import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.j
 import { useMemo } from 'react';
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
+import { formatBpPercent, formatBpMultiple, formatX100Multiple } from '@brain/lib-formatters';
 import { useAppSelector } from '@/domain/store/hooks.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
-import {
-  formatBpPercent,
-} from '@/interfaces/components/marketing/format-ratio.js';
 import { ChartContainer, type ChartConfig } from '@/interfaces/components/ui/chart.js';
 import {
   ComposedChart,
@@ -37,28 +36,6 @@ import {
   Cell,
   Tooltip,
 } from 'recharts';
-
-// ---------------------------------------------------------------------------
-// Local number-format helpers (P2 fixes — do NOT touch shared formatters)
-// ---------------------------------------------------------------------------
-
-/** bp = ROUND(ratio × 10000) → "1.50×" (rounds rather than floors). Null → "—". */
-function fmtBpMultipleRounded(bp: number | null | undefined): string {
-  if (bp === null || bp === undefined) return '—';
-  // Round to 2 decimal places: bp/100 rounded to integer centibasis → display.
-  const cents = Math.round(bp / 100);
-  const whole = Math.floor(cents / 100);
-  const frac = Math.abs(cents % 100).toString().padStart(2, '0');
-  return `${whole}.${frac}×`;
-}
-
-/** x100 (e.g. 293) → "2.93×" (ROAS stored ×100, Math.round for correct rounding). Null → "—". */
-function fmtX100MultipleRounded(x100: number | null | undefined): string {
-  if (x100 === null || x100 === undefined) return '—';
-  const whole = Math.floor(x100 / 100);
-  const frac = Math.abs(Math.round(x100 % 100)).toString().padStart(2, '0');
-  return `${whole}.${frac}×`;
-}
 
 // ---------------------------------------------------------------------------
 // Chart configs + colors
@@ -526,12 +503,12 @@ export function AcquisitionContent() {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <Stat
                 label="MER"
-                value={fmtBpMultipleRounded(e.mer_bp)}
+                value={formatBpMultiple(e.mer_bp)}
                 sub="Net revenue ÷ all ad spend"
               />
               <Stat
                 label="aMER"
-                value={fmtBpMultipleRounded(e.amer_bp)}
+                value={formatBpMultiple(e.amer_bp)}
                 sub="NC revenue ÷ acquisition spend"
                 accent="green"
               />
@@ -567,7 +544,7 @@ export function AcquisitionContent() {
               />
               <Stat
                 label="Blended ROAS"
-                value={fmtX100MultipleRounded(e.blended_roas_x100)}
+                value={formatX100Multiple(e.blended_roas_x100)}
                 sub="display-only"
                 muted
               />
@@ -663,7 +640,7 @@ export function AcquisitionContent() {
                       {d.cac_mu === null ? '—' : formatMoney(d.cac_mu, cc)}
                     </td>
                     <td className="py-2 text-sm tabular-nums text-right">
-                      {fmtBpMultipleRounded(d.amer_bp)}
+                      {formatBpMultiple(d.amer_bp)}
                     </td>
                   </tr>
                 ))}

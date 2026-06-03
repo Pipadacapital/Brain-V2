@@ -52,7 +52,7 @@ def _row(workspace_id: str, date_val: date) -> MetricRow:
         cm1_mu=0,
         cm2_mu=0,
         misc_expenses_prorated_mu=None,
-        cm3_mu=0,
+        cm3_mu=0, total_orders=0,
         rto_rate_bp=1800,
         prepaid_rate_bp=4100,
         conversion_rate_bp=230,

@@ -285,3 +285,65 @@ class TestDispatchPositive:
         )
 
         assert outcome.status == DispatchStatus.DROPPED_OUT_OF_SCOPE
+
+
+# ---------------------------------------------------------------------------
+# Audit-write failure propagation (python-services-7 fix)
+# ---------------------------------------------------------------------------
+
+class TestAuditWriteFailurePropagation:
+    """Audit-write failure must NOT be swallowed — it must propagate to the caller.
+
+    BEFORE (bug): _write_decision_log caught all exceptions and returned None,
+    hiding failures silently. A broken audit writer would silently drop all logs.
+    AFTER: the writer call is not wrapped in try/except; the exception propagates.
+    This matches the gateway client's Decision-Log write behavior (client.py).
+    """
+
+    def test_failing_decision_log_writer_propagates_exception(self) -> None:
+        """A Decision-Log writer that raises must propagate, not be swallowed.
+
+        pin (negative): not-graduated + failing writer -> RuntimeError raised.
+        """
+        def failing_writer(ws: str, row: dict) -> str:
+            raise RuntimeError("audit DB connection refused")
+
+        call = WriteToolCall(
+            tool=WriteToolNameEnum.PAUSE_AD_SET,
+            entity_id="ad_123",
+            intent=IntentEnum.PAUSE,
+        )
+
+        with pytest.raises(RuntimeError, match="audit DB connection refused"):
+            dispatch_tool_call(
+                agent_id="pnl_insight_agent",
+                workspace_id="ws_audit_fail",
+                call=call,
+                _graduation_reader=_not_graduated_reader,  # triggers a DL write on drop
+                _decision_log_writer=failing_writer,
+            )
+
+    def test_successful_decision_log_writer_returns_row_id(self) -> None:
+        """A working writer returns its row ID (positive path still works).
+
+        Use write_capable_agent (scope includes pause_ad_set) so the call reaches
+        the graduation check and triggers the DL write on DROPPED_NOT_GRADUATED.
+        """
+        def ok_writer(ws: str, row: dict) -> str:
+            return "dl_row_999"
+
+        call = WriteToolCall(
+            tool=WriteToolNameEnum.PAUSE_AD_SET,
+            entity_id="ad_456",
+            intent=IntentEnum.PAUSE,
+        )
+
+        outcome = dispatch_tool_call(
+            agent_id="write_capable_agent",   # has pause_ad_set in scope
+            workspace_id="ws_audit_ok",
+            call=call,
+            _graduation_reader=_not_graduated_reader,
+            _decision_log_writer=ok_writer,
+        )
+        assert outcome.status == DispatchStatus.DROPPED_NOT_GRADUATED
+        assert outcome.decision_log_row_id == "dl_row_999"

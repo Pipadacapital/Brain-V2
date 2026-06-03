@@ -22,6 +22,7 @@ import {
   AccessibilityInfo,
   Platform,
   RefreshControl,
+  type DimensionValue,
 } from 'react-native';
 import { useAppDispatch, useAppSelector } from '../../application/store/store.js';
 import {
@@ -134,9 +135,16 @@ function formatAsOf(fetchedAt: string | null): string {
 // CF-C6-RENDER-ONLY-1: formatMoney() is the ONLY transformation; zero arithmetic.
 // ---------------------------------------------------------------------------
 
+// mobile-7: edit UI is not implemented yet (Phase 2). When ready, set this to true.
+// This constant gates the Edit CTA — it is disabled while false so we never log
+// an EDIT action with an empty payload into the Decision Log.
+const EDIT_UI_READY = false;
+
 interface ActionCardProps {
   item: InsightItem;
+  // mobile-6: cardIndex used for a11y position label (e.g. "Action 1 of 3").
   cardIndex: number;   // 0-based, max 2 (THREE-SIGNAL RULE)
+  totalCards: number;  // total count for a11y position label
   isOffline: boolean;
   responseState: InsightResponseState | null;
   onApprove: (insightId: string) => void;
@@ -147,6 +155,7 @@ interface ActionCardProps {
 function ActionCard({
   item,
   cardIndex,
+  totalCards,
   isOffline,
   responseState,
   onApprove,
@@ -178,11 +187,17 @@ function ActionCard({
   const confidencePct = item.confidence_display_pct;
 
   const ctasDisabled = isOffline || isSettled;
+  // mobile-7: Edit is additionally disabled until the edit UI (Phase 2) is built.
+  const editDisabled = ctasDisabled || !EDIT_UI_READY;
+
+  // mobile-6: use cardIndex for a11y position label.
+  const cardPositionLabel = `Action ${cardIndex + 1} of ${totalCards}`;
 
   return (
     <View
       style={[styles.card, { marginBottom: 16 }]}
       accessible={false}  // card is a layout container; children are individually accessible
+      accessibilityLabel={cardPositionLabel}
     >
       {/* ---- Header: severity badge + title ---- */}
       <View style={styles.cardHeader} accessible={true} accessibilityRole="header">
@@ -215,7 +230,14 @@ function ActionCard({
       >
         <Text style={styles.confidenceLabel}>Confidence</Text>
         <View style={styles.confidenceBarBg}>
-          <View style={[styles.confidenceBarFill, { width: `${confidencePct}%` as any }]} />
+          {/* mobile-13: clamp to [0,100] so a rogue server value never overflows the bar.
+              Cast to DimensionValue (the correct type for RN style.width) instead of `as any`. */}
+          <View
+            style={[
+              styles.confidenceBarFill,
+              { width: `${Math.min(100, Math.max(0, confidencePct))}%` as DimensionValue },
+            ]}
+          />
         </View>
         {/* CF-C6-NO-UI-FLOAT-1: no arithmetic — render as-is */}
         <Text style={styles.confidenceValue}>{confidencePct}%</Text>
@@ -370,26 +392,28 @@ function ActionCard({
             </Text>
           </TouchableOpacity>
 
-          {/* EDIT */}
+          {/* EDIT — mobile-7: disabled until edit UI (Phase 2) is built. */}
           <TouchableOpacity
             style={[
               styles.ctaButton,
               styles.ctaEdit,
-              ctasDisabled && styles.ctaDisabled,
+              editDisabled && styles.ctaDisabled,
             ]}
-            onPress={() => !ctasDisabled && onEdit(item.insight_id)}
-            disabled={ctasDisabled}
+            onPress={() => !editDisabled && onEdit(item.insight_id)}
+            disabled={editDisabled}
             accessibilityRole="button"
             accessibilityLabel={`Edit: modify this recommendation for ${item.recommendation.action.replace(/_/g, ' ')}`}
-            accessibilityState={{ disabled: ctasDisabled }}
+            accessibilityState={{ disabled: editDisabled }}
             accessibilityHint={
-              isOffline
-                ? 'Unavailable while offline.'
-                : 'Suggest an edit to this recommendation. Logs in the Decision Log.'
+              !EDIT_UI_READY
+                ? 'Edit is not available in this version. Coming in a future update.'
+                : isOffline
+                  ? 'Unavailable while offline.'
+                  : 'Suggest an edit to this recommendation. Logs in the Decision Log.'
             }
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
           >
-            <Text style={[styles.ctaText, ctasDisabled && styles.ctaTextDisabled]}>
+            <Text style={[styles.ctaText, editDisabled && styles.ctaTextDisabled]}>
               {getPreActionCta('EDIT')}
             </Text>
           </TouchableOpacity>
@@ -462,13 +486,25 @@ export function MorningBriefScreen({ workspaceId, date }: MorningBriefScreenProp
       });
 
       // THREE-SIGNAL RULE: ≤3 items. Server enforces; we assert as final defense.
-      const items = result.items.slice(0, 3);
+      // mobile-5: data_epoch comes from the server as a Date (superjson round-trip),
+      // but our local InsightItem type uses string to survive redux-persist's
+      // JSON serialization faithfully. Convert at the API boundary here.
+      const items: InsightItem[] = result.items.slice(0, 3).map((item) => ({
+        ...item,
+        data_epoch:
+          item.data_epoch instanceof Date
+            ? item.data_epoch.toISOString()
+            : String(item.data_epoch),
+      }));
 
       dispatch(
         setBrief({
           brief: {
             items,
-            data_epoch: result.data_epoch,
+            data_epoch:
+              result.data_epoch instanceof Date
+                ? result.data_epoch.toISOString()
+                : String(result.data_epoch),
             freshness_label: result.freshness_label,
           },
           fetchedAt: new Date().toISOString(),
@@ -541,19 +577,17 @@ export function MorningBriefScreen({ workspaceId, date }: MorningBriefScreenProp
   );
 
   const handleEdit = useCallback(
-    async (insightId: string) => {
-      // For MVP: edit logs with empty payload (edit UI = future sprint).
-      const action = clientIdempotencyStore.initiate(insightId, 'EDIT');
-      dispatch(
-        initiateResponse({
-          insight_id: insightId,
-          idempotency_key: action.idempotency_key,
-          response_kind: 'EDIT',
-        }),
-      );
-      await submitResponse(insightId, action.idempotency_key, 'EDIT');
+    // mobile-7 fix: edit UI does not exist yet (future sprint).
+    // Pressing Edit before the UI is built would log an EDIT action with an empty
+    // payload — a meaningless Decision Log row. The button is disabled at the
+    // render level (editUiReady=false) so this handler should never fire in practice,
+    // but we guard here as a belt-and-suspenders defence.
+    async (_insightId: string) => {
+      // No-op until the edit UI (Phase 2) is implemented.
+      // When ready: remove the guard, generate an idempotency key, and call submitResponse.
+      return;
     },
-    [dispatch],
+    [],
   );
 
   const submitResponse = useCallback(
@@ -620,7 +654,9 @@ export function MorningBriefScreen({ workspaceId, date }: MorningBriefScreenProp
           accessibilityLabel="Pull to refresh Morning Brief"
         />
       }
-      accessibilityRole="scrollbar"
+      // mobile-8: removed accessibilityRole="scrollbar" — "scrollbar" is not a valid
+      // RN a11y role for a scroll container; it refers to the scroll indicator widget.
+      // ScrollView is implicitly a scroll region to screen readers; no role needed.
     >
       {/* ---- Header ---- */}
       <View style={styles.headerRow} accessible={true} accessibilityRole="header">
@@ -659,7 +695,13 @@ export function MorningBriefScreen({ workspaceId, date }: MorningBriefScreenProp
 
       {/* ---- Loading ---- */}
       {isFetching && !brief && (
-        <View style={styles.centerState} accessible={true} accessibilityRole="progressbar">
+        <View
+          style={styles.centerState}
+          accessible={true}
+          // mobile-8: removed accessibilityRole="progressbar" — RN's "progressbar"
+          // role requires aria-valuenow/min/max props or it misleads screen readers.
+          // The text label already announces the loading state; no extra role needed.
+        >
           <Text style={styles.loadingText} accessibilityLabel="Loading Morning Brief">
             Loading Morning Brief...
           </Text>
@@ -701,7 +743,9 @@ export function MorningBriefScreen({ workspaceId, date }: MorningBriefScreenProp
           <ActionCard
             key={item.insight_id}
             item={item}
+            // mobile-6: cardIndex used for a11y position label "Action N of M"
             cardIndex={idx}
+            totalCards={Math.min(brief.items.length, 3)}
             isOffline={isOffline}
             responseState={responses[item.insight_id] ?? null}
             onApprove={handleApprove}

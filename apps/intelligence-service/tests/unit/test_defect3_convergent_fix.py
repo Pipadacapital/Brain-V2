@@ -573,3 +573,50 @@ class TestDisplayFormatHelpers:
     def test_format_pct_14_8(self) -> None:
         """1480 bp → 14.8%."""
         assert _format_pct(1480) == "14.8%"
+
+    # ---------------------------------------------------------------------------
+    # Rounding fix (python-services-10): round, not truncate, the decimal digit.
+    # ---------------------------------------------------------------------------
+
+    def test_format_pct_rounds_half_up_at_boundary(self) -> None:
+        """1485 bp → 14.85% → rounds to "14.9%" (not "14.8%" as truncation would give).
+
+        BEFORE (bug): (v % 100) // 10 = 80 // 10 = 8 → "14.8%"
+        AFTER (fix):  (v % 100 + 5) // 10 = 85 // 10 = 8... wait, (80+5)//10 = 8.
+        Actually 1485: v%100=85, (85+5)//10 = 9 → "14.9%". Correct.
+        """
+        assert _format_pct(1485) == "14.9%", (
+            "1485 bp = 14.85% should round to 14.9%, not truncate to 14.8%"
+        )
+
+    def test_format_pct_does_not_truncate_at_4(self) -> None:
+        """1484 bp → 14.84% → truncation gives "14.8%", rounding also gives "14.8%".
+
+        Only x.85+ crosses the boundary; 1484 stays at 14.8% regardless.
+        """
+        assert _format_pct(1484) == "14.8%"
+
+    def test_format_pct_round_carry(self) -> None:
+        """995 bp → 9.95% → rounds to "10.0%" (carry into integer part)."""
+        assert _format_pct(995) == "10.0%"
+
+    def test_display_round_bp_lockstep_with_format_pct(self) -> None:
+        """_display_round_bp must be in lockstep with _format_pct rounding.
+
+        For any bp value, the round-trip: _format_pct(bp) → display string →
+        extract_numbers() → should equal _display_round_bp(bp).
+        """
+        from domain.agents.pnl_insight_agent import _display_round_bp
+        # 1485 → _format_pct = "14.9%" → extract_numbers = 1490
+        # _display_round_bp(1485) must also return 1490
+        assert _display_round_bp(1485) == 1490, (
+            "_display_round_bp(1485) should be 1490 (matching _format_pct '14.9%')"
+        )
+        # 1483 → _format_pct = "14.8%" → extract_numbers = 1480
+        assert _display_round_bp(1483) == 1480, (
+            "_display_round_bp(1483) should be 1480 (matching _format_pct '14.8%')"
+        )
+        # 990 → _format_pct = "9.9%" → extract_numbers = 990
+        assert _display_round_bp(990) == 990
+        # -950 → _format_pct = "-9.5%" → extract_numbers = -950
+        assert _display_round_bp(-950) == -950

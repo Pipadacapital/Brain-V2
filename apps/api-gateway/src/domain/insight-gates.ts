@@ -40,9 +40,8 @@ const RE_PLAIN = /(?<![₹\w])[-−]?\d[\d,]*(?:\.\d+)?(?!\s*[%LlCc])/g;
 /** Round-half-up of a decimal*scale to a bigint (matches Python round() for these inputs). */
 function scaledToBigint(numStr: string, scale: bigint): bigint {
   if (numStr.includes('.')) {
-    const [intPart, fracPart] = numStr.split('.');
-    // value = (intPart.fracPart) * scale, rounded to nearest integer.
-    // Compute with enough precision using string math via Number for the modest
+    // value = numStr * scale, rounded to nearest integer.
+    // Compute with enough precision using Number for the modest
     // magnitudes in narration (lakh/crore of a 1-2 decimal value) — safe range.
     const asNum = Number(numStr) * Number(scale);
     return BigInt(Math.round(asNum));
@@ -81,7 +80,7 @@ export function extractNumbers(text: string): bigint[] {
       const raw = m[0];
       const negative = raw.trimStart().startsWith('-') || raw.trimStart().startsWith('−');
       const v = toValue(raw, m[1] ?? m[0]);
-      if (v !== null) register(negative ? -v : v < 0n ? v : v, [m.index, m.index + raw.length]);
+      if (v !== null) register(negative ? -v : v, [m.index, m.index + raw.length]);
     }
   };
 

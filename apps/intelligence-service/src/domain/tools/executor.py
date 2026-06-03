@@ -151,7 +151,11 @@ def execute_write_tool(
         )
 
     # --- Per-day aggregate cap check ---
-    today = date.today()
+    # datetime.now(timezone.utc).date() uses UTC — avoids a ±1-day boundary
+    # error when the server runs in a non-UTC timezone (python-services-8 fix).
+    # date.today() returns LOCAL time, which can be a different day than UTC
+    # at IST +5:30 midnight. All cap records are keyed on UTC date.
+    today = datetime.now(timezone.utc).date()
     if _daily_aggregate_reader is None:
         today_sum_mu = _read_daily_aggregate(workspace_id, tool_name, today)
     else:

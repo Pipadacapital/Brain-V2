@@ -7,7 +7,13 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test": "vitest run --reporter=verbose"
+  },
   "dependencies": {
     "@brain/lib-metrics": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.7"
   }
 }

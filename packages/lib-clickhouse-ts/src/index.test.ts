@@ -2,8 +2,9 @@
 // production twice: (1) FINAL placed BEFORE the alias → CH SYNTAX_ERROR on every
 // aliased fact read; (2) JOINed fact tables never decorated → un-merged RMT
 // duplicates double-counted. Both are pinned below so a re-break fails CI.
+// Also covers chInsert allowlist + workspace_id guard (shared-libs-6).
 import { describe, it, expect } from 'vitest';
-import { decorateWithFinal } from './index.js';
+import { decorateWithFinal, chInsert, ChInsertError } from './index.js';
 
 const T = 'connector_order_facts';
 
@@ -76,5 +77,78 @@ describe('decorateWithFinal — idempotency + scope', () => {
       `SELECT customer_ref FROM brain.${T} AS o WHERE o.workspace_id = {w:String} GROUP BY customer_ref`,
     );
     expect(out).toContain(`${T} AS o FINAL WHERE`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// chInsert — allowlist + workspace_id guard (shared-libs-6)
+// These tests verify the rejection path WITHOUT making a real ClickHouse call.
+// The function throws BEFORE touching the client when the guard conditions fail.
+// ---------------------------------------------------------------------------
+
+describe('chInsert — shared-libs-6: allowlist + workspace_id guard', () => {
+  it('rejects an unknown table name with ChInsertError', async () => {
+    await expect(
+      chInsert('some_arbitrary_table', [{ workspace_id: 'ws-1', data: 1 }]),
+    ).rejects.toThrow(ChInsertError);
+  });
+
+  it('rejects with a message naming the offending table', async () => {
+    await expect(
+      chInsert('malicious_table', [{ workspace_id: 'ws-1' }]),
+    ).rejects.toThrow('malicious_table');
+  });
+
+  it('rejects a brain.-prefixed unknown table', async () => {
+    await expect(
+      chInsert('brain.not_a_fact_table', [{ workspace_id: 'ws-1' }]),
+    ).rejects.toThrow(ChInsertError);
+  });
+
+  it('rejects rows missing workspace_id with ChInsertError', async () => {
+    // connector_order_facts is in the allowlist — should fail on workspace_id check
+    await expect(
+      chInsert('connector_order_facts', [{ order_id: '123', total_price_mu: 1000 }]),
+    ).rejects.toThrow(ChInsertError);
+  });
+
+  it('workspace_id rejection message names the row index', async () => {
+    // Second row (index=1) is missing workspace_id
+    await expect(
+      chInsert('connector_order_facts', [
+        { workspace_id: 'ws-1', order_id: 'a' },
+        { order_id: 'b' },
+      ]),
+    ).rejects.toThrow('row[1]');
+  });
+
+  it('empty rows array returns without error (no-op path, no client call)', async () => {
+    // Should not throw even though chInsert is called with an unknown table — rows is empty,
+    // so the early-return fires before the allowlist check.
+    await expect(chInsert('arbitrary_table', [])).resolves.toBeUndefined();
+  });
+
+  it('allowlist includes the core fact tables — known-good tables fail on workspace_id, not allowlist', async () => {
+    // Verify known-good tables are in the allowlist by asserting they DO NOT throw
+    // the allowlist error; they throw the workspace_id error instead.
+    const knownTables = [
+      'connector_order_facts',
+      'connector_line_item_facts',
+      'connector_shipment_facts',
+      'connector_refund_facts',
+      'connector_ad_spend_facts',
+    ];
+    for (const t of knownTables) {
+      // A row missing workspace_id triggers the workspace_id error, NOT the allowlist error.
+      let caught: Error | null = null;
+      try {
+        await chInsert(t, [{ data: 1 }]);
+      } catch (e) {
+        caught = e as Error;
+      }
+      expect(caught, `${t} should throw`).not.toBeNull();
+      expect(caught?.message, `${t} should fail on workspace_id, not allowlist`).toContain('workspace_id');
+      expect(caught?.message, `${t} should NOT be an allowlist rejection`).not.toContain('allowlist');
+    }
   });
 });

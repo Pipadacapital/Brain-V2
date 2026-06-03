@@ -255,3 +255,34 @@ describe('insights router is READ-only (no write/MCP-tool reach)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// extractNumbers — negative-sign fix (api-gateway-5)
+// Before fix: `negative ? -v : v < 0n ? v : v` was a no-op for positive v.
+// After fix:  `negative ? -v : v` correctly handles the negative flag.
+// ---------------------------------------------------------------------------
+
+describe('extractNumbers — negative sign handling (api-gateway-5 fix)', () => {
+  it('positive lakh number extracts positive value', () => {
+    const nums = extractNumbers('revenue of ₹3.2L this month');
+    // 3.2 lakh = 3.2 * 100000 = 320000
+    expect(nums).toContain(320000n);
+  });
+
+  it('negative lakh number extracts negative value (was no-op before fix)', () => {
+    const nums = extractNumbers('CM3 dropped by −₹1L');
+    // −1 lakh = −100000
+    expect(nums.some((v) => v === -100000n)).toBe(true);
+  });
+
+  it('negative percentage extracts negative bp (was no-op before fix)', () => {
+    const nums = extractNumbers('margin fell −5%');
+    // −5% = −500 bp
+    expect(nums.some((v) => v === -500n)).toBe(true);
+  });
+
+  it('positive number is unchanged', () => {
+    const nums = extractNumbers('grew 10%');
+    expect(nums.some((v) => v === 1000n)).toBe(true);
+  });
+});

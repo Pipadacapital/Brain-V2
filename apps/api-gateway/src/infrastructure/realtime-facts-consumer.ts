@@ -155,13 +155,17 @@ export function mapEnvelopeToFacts(envelope: ShopifyKafkaEnvelope): MappedFacts 
   if (!vendorOrderId) throw new Error('mapEnvelopeToFacts: shopify_order_id is empty')
 
   // Money: decimal strings → bigint minor units (NO float path).
+  // CANON: net = gross − discount (tax separate). grossSalesMu must be pre-tax.
+  // subtotal_price = line-item prices post-discount (no tax, no shipping) → preferred.
+  // total_price = subtotal + shipping + tax → must strip tax before using as gross.
+  // (Shipping is 0n at Shopify REST webhook order-level; tax is always present as total_tax.)
+  const totalDiscountMu = decimalStringToMinorUnits(payload.total_discounts ?? '0', currency)
+  const totalTaxMu      = decimalStringToMinorUnits(payload.total_tax ?? '0', currency)
   const grossSalesMu =
     payload.subtotal_price && payload.subtotal_price !== '0' && payload.subtotal_price !== '0.00'
       ? decimalStringToMinorUnits(payload.subtotal_price, currency)
-      : decimalStringToMinorUnits(payload.total_price ?? '0', currency)
-
-  const totalDiscountMu = decimalStringToMinorUnits(payload.total_discounts ?? '0', currency)
-  const totalTaxMu      = decimalStringToMinorUnits(payload.total_tax ?? '0', currency)
+      // Fallback: strip tax from total_price so grossSalesMu stays pre-tax (matches batch path).
+      : decimalStringToMinorUnits(payload.total_price ?? '0', currency) - totalTaxMu
 
   // raw_payload contains the full Shopify order including customer.id + line_items[].
   let rawOrder: ShopifyRawOrder = {}

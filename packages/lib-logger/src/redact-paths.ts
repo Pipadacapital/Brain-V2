@@ -44,7 +44,16 @@ export const PII_REDACT_PATHS: readonly string[] = [
   // --- Customer PII (DPDP-scoped fields) ---
   // Email is identity-tier in the auth claim; log only when explicitly
   // identifying a user, NEVER as a bulk field on a request.
+  // shared-libs-7: bare top-level keys added so direct log({ email, phone, ... })
+  // calls are redacted even without object nesting.
+  'email',
+  'phone',
+  'firstName',
+  'lastName',
   '*.email',
+  '*.phone',
+  '*.firstName',
+  '*.lastName',
   'customer.email',
   'customer.firstName',
   'customer.lastName',

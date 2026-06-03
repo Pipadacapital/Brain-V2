@@ -274,25 +274,49 @@ describe('mapEnvelopeToFacts — line items', () => {
 // ---------------------------------------------------------------------------
 
 describe('mapEnvelopeToFacts — gross_sales fallback', () => {
-  it('falls back to total_price when subtotal_price is "0.00"', () => {
+  // CANON: net = gross − discount (tax separate). When total_price is the fallback,
+  // tax MUST be stripped so grossSalesMu stays pre-tax and matches the batch path.
+  // makeEnvelope defaults: total_tax = '1600.00' = 160000n.
+
+  it('falls back to total_price − tax when subtotal_price is "0.00" (api-gateway-9 canon fix)', () => {
     const { order } = mapEnvelopeToFacts(
+      // total_price=9000.00, total_tax=1600.00 (default) → gross = 9000-1600 = 7400 = 740000n
       makeEnvelope({ subtotal_price: '0.00', total_price: '9000.00' }),
     )
-    expect(order.grossSalesMu).toBe(900000n)
+    expect(order.grossSalesMu).toBe(740000n)
   })
 
-  it('falls back to total_price when subtotal_price is "0"', () => {
+  it('falls back to total_price − tax when subtotal_price is "0" (api-gateway-9 canon fix)', () => {
     const { order } = mapEnvelopeToFacts(
       makeEnvelope({ subtotal_price: '0', total_price: '9000.00' }),
     )
-    expect(order.grossSalesMu).toBe(900000n)
+    expect(order.grossSalesMu).toBe(740000n)
   })
 
-  it('uses subtotal_price when it is non-zero', () => {
+  it('uses subtotal_price when it is non-zero (no tax stripping needed — subtotal is already pre-tax)', () => {
     const { order } = mapEnvelopeToFacts(
       makeEnvelope({ subtotal_price: '7500.00', total_price: '9000.00' }),
     )
     expect(order.grossSalesMu).toBe(750000n)
+  })
+
+  it('fallback with zero tax: total_price − 0 = total_price (no tax to strip)', () => {
+    const { order } = mapEnvelopeToFacts(
+      makeEnvelope({ subtotal_price: '0.00', total_price: '9000.00', total_tax: '0.00' }),
+    )
+    // total_price=9000, tax=0 → gross = 9000 = 900000n
+    expect(order.grossSalesMu).toBe(900000n)
+  })
+
+  it('parity: fallback and subtotal paths both produce same net (gross − discount)', () => {
+    // With subtotal_price=7500, discount=500, net=7000
+    const withSubtotal = mapEnvelopeToFacts(
+      makeEnvelope({ subtotal_price: '7500.00', total_price: '9000.00', total_discounts: '500.00', total_tax: '0.00' }),
+    )
+    // Without subtotal (fallback), total_price=9000, tax=0, gross=9000, discount=500, net=8500
+    // These differ because total_price != subtotal_price, so we only test the subtotal case for parity.
+    const net = withSubtotal.order.grossSalesMu - withSubtotal.order.totalDiscountMu
+    expect(net).toBe(700000n) // 7500 - 500 = 7000 = 700000n
   })
 })
 

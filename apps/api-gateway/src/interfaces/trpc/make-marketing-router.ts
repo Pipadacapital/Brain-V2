@@ -9,45 +9,7 @@ import { requireRole } from '@brain/core-auth';
 import {
   router,
   workspaceProc,
-  authedProc,
-  identityProc,
-  publicProc,
 } from '../../application/trpc.js';
-import {
-  ensureUser,
-  completeOnboarding,
-  acceptInvitation,
-  listWorkspaces,
-} from '@brain/core-onboarding';
-import {
-  initiateConnect,
-  completeCallback,
-  listConnectors,
-  disconnect,
-  syncConnector,
-} from '@brain/core-connectors';
-import {
-  listNotifications,
-  getUnreadCount,
-  markNotificationRead,
-  markAllNotificationsRead,
-} from '@brain/core-notifications';
-import {
-  getProfile,
-  updateProfile,
-  deleteAccount,
-  UserProfileError,
-} from '@brain/core-user-profile';
-import {
-  listProductsForCogs,
-  updateProductCogs,
-  bulkUpdateProductCogs,
-} from '@brain/core-product-cogs';
-import {
-  listOrders,
-  listStoreProducts,
-  listStoreCustomers,
-} from '@brain/core-store-browser';
 import {
   listCampaigns,
   listAdAccounts,
@@ -55,50 +17,14 @@ import {
   type AdVendor,
 } from '@brain/core-platform-ads';
 import {
-  createCost,
-  updateCost,
-  deleteCost,
-  createMiscExpense,
-  updateMiscExpense,
-  deleteMiscExpense,
-  getFounderSalary,
-  setFounderSalary,
-  updateWorkspaceSettings,
-  deleteWorkspace,
-  createGoal,
-  updateGoal,
-  deleteGoal,
-  upsertAdCampaignClassification,
-  createFestival,
-  updateFestival,
-  deleteFestival,
-  resetFestivalDefaults,
   MARKETING_ACTION_TYPES,
 } from '@brain/core-settings';
+import { assertMarketingDefinitionId } from '../../domain/registry-mapper.js';
 import {
-  assertKpiRegistryTraceability,
-  assertWaterfallDefinitionId,
-  assertLadderDefinitionId,
-  assertPnlStatementTraceability,
-  assertLogisticsDefinitionId,
-  assertMarketingDefinitionId,
-  assertCohortLtvDefinitionId,
-  assertCatalogDefinitionId,
-  assertSettingsDefinitionId,
-  assertLifecycleDefinitionId,
-  getMetricScale,
-} from '../../domain/registry-mapper.js';
-import {
-  checkIdempotency,
-  storeIdempotencyResult,
   type IdempotencyStore,
 } from '../../domain/idempotency.js';
-import { assertPageInsightGates } from '../../domain/insight-gates.js';
 import type { DataPlanePort } from '../../domain/proto-types.js';
-import { mapOnboardingError, mapSettingsError, mapConnectorError } from './error-mappers.js';
-import { dateInput, connectorVendor } from './shared-inputs.js';
-
-/* eslint-disable @typescript-eslint/no-unused-vars */
+import { dateInput } from './shared-inputs.js';
 
 export function makeMarketingRouter(
   dataPlane: DataPlanePort,

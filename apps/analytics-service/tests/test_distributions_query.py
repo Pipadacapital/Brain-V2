@@ -37,7 +37,7 @@ def _row(ws: str) -> MetricRow:
         net_sales_mu=0, total_tax_mu=0, net_net_tax_mu=0,
         shipping_revenue_mu=0, net_revenue_mu=0, cogs_mu=0,
         total_ad_spend_mu=0, cm1_mu=0, cm2_mu=0, misc_expenses_prorated_mu=0,
-        cm3_mu=0, rto_rate_bp=0, prepaid_rate_bp=0, conversion_rate_bp=0,
+        cm3_mu=0, total_orders=0, rto_rate_bp=0, prepaid_rate_bp=0, conversion_rate_bp=0,
         aov_mu=None, acos_bp=None, blended_roas_x100=None,
     )
 

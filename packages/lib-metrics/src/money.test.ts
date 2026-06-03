@@ -46,6 +46,69 @@ describe('subunitMultiplier', () => {
 });
 
 // ---------------------------------------------------------------------------
+// shared-libs-4: TS↔Python subunits parity gate (CF-C2-SUBUNIT-PARITY-1)
+//
+// The canonical override set is defined in subunits.ts and mirrored in
+// pylibs/brain_metrics/brain_metrics/subunits.py. Both sides must contain the
+// same set of overrides with the same values. This test pins the complete TS
+// override table so any drift from Python is caught at CI time.
+//
+// Expected table (sourced from subunits.ts, verified against Python):
+//   3-decimal: KWD=1000, BHD=1000, OMR=1000, TND=1000
+//   0-decimal: JPY=1, KRW=1, VND=1, IDR=1, HUF=1, ISK=1, TWD=1
+//   Default (100): everything else including INR, AED, SAR, USD, EUR, GBP
+// ---------------------------------------------------------------------------
+describe('subunitMultiplier — shared-libs-4 parity gate: TS == Python override table', () => {
+  // 3-decimal currencies (×1000) — shared-libs-4 previously missing OMR + TND from TS
+  it('OMR = 1000 (3-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('OMR')).toBe(1000);
+  });
+  it('TND = 1000 (3-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('TND')).toBe(1000);
+  });
+
+  // 0-decimal currencies (×1) — shared-libs-4 previously missing these from TS
+  it('KRW = 1 (0-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('KRW')).toBe(1);
+  });
+  it('VND = 1 (0-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('VND')).toBe(1);
+  });
+  it('IDR = 1 (0-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('IDR')).toBe(1);
+  });
+  it('HUF = 1 (0-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('HUF')).toBe(1);
+  });
+  it('ISK = 1 (0-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('ISK')).toBe(1);
+  });
+  it('TWD = 1 (0-decimal; was missing from TS before shared-libs-4 fix)', () => {
+    expect(subunitMultiplier('TWD')).toBe(1);
+  });
+
+  // Full parity check: exact expected value for every override code from both tables
+  it('complete override table matches Python subunits.py exactly (byte-identity pair)', () => {
+    // This is the canonical set. Python _SUBUNIT_OVERRIDE must contain the same codes.
+    const expectedOverrides: Record<string, number> = {
+      // 3-decimal
+      KWD: 1000, BHD: 1000, OMR: 1000, TND: 1000,
+      // 0-decimal
+      JPY: 1, KRW: 1, VND: 1, IDR: 1, HUF: 1, ISK: 1, TWD: 1,
+    };
+    for (const [code, expected] of Object.entries(expectedOverrides)) {
+      expect(subunitMultiplier(code), `${code} multiplier`).toBe(expected);
+    }
+    // Spot-check default-100 codes remain correct
+    for (const code of ['INR', 'AED', 'SAR', 'USD', 'EUR', 'GBP']) {
+      expect(subunitMultiplier(code), `${code} multiplier`).toBe(100);
+    }
+    // Unknown code → default 100
+    expect(subunitMultiplier('XYZ')).toBe(100);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // makeMoney — Money value object (CF-C2-SUBUNIT-1)
 // ---------------------------------------------------------------------------
 describe('makeMoney', () => {

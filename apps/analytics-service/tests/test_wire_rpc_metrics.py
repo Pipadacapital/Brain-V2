@@ -80,7 +80,7 @@ def _make_fake_query_metrics():
                 cm1_mu=460_000,
                 cm2_mu=360_000,
                 misc_expenses_prorated_mu=None,
-                cm3_mu=360_000,
+                cm3_mu=360_000, total_orders=11,
                 rto_rate_bp=500,
                 prepaid_rate_bp=6000,
                 conversion_rate_bp=200,
@@ -221,7 +221,7 @@ async def test_get_kpi_summary_wire_round_trip():
             assert summary.cm2_mu == 360_000
             assert summary.cm3_mu == 360_000
             assert summary.currency_code == "INR"
-            assert summary.total_orders == 1  # 1 row with net_sales > 0
+            assert summary.total_orders == 11  # real order count from MetricRow.total_orders
 
     await _run_with_server(inner)
 

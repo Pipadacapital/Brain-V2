@@ -439,6 +439,10 @@ def _format_pct(bp: int) -> str:
 
     Defect 3 (a): pre-formatted so the model quotes verbatim.
     bp = percent * 100 (e.g. 990 bp → 9.9%; 1870 bp → 18.7%).
+
+    Rounding rule (python-services-10 fix): the decimal digit is ROUNDED, not
+    truncated. 1485 bp → 14.85% → rounds to "14.9%", not "14.8%".
+    This keeps _format_pct in lockstep with _display_round_bp (both round).
     """
     sign = ""
     v = bp
@@ -446,7 +450,13 @@ def _format_pct(bp: int) -> str:
         sign = "−"
         v = -v
     pct_int = v // 100
-    pct_dec = (v % 100) // 10  # one decimal place
+    # Round the sub-percent portion to one decimal place.
+    # (v % 100 + 5) // 10 rounds half-up: 85 → (85+5)//10 = 9, 84 → (84+5)//10 = 8.
+    pct_dec = (v % 100 + 5) // 10
+    if pct_dec == 10:
+        # Carry: e.g. 995 bp → pct_int=9, pct_dec rounds to 10 → "10.0%"
+        pct_int += 1
+        pct_dec = 0
     return f"{sign}{pct_int}.{pct_dec}%"
 
 
@@ -454,17 +464,21 @@ def _display_round_bp(bp: int) -> int:
     """Return the display-rounded bp value that extract_numbers produces when
     parsing the formatted display string back.
 
-    Defect 3 (b) safety net for bp values: _format_pct(1483) = "14.8%" →
-    extract_numbers("14.8%") = round(14.8 * 100) = 1480 ≠ 1483.
-    So the display-rounded form of 1483 bp is 1480 bp.
+    _format_pct rounds the decimal digit, so extract_numbers("14.9%") = 1490 bp.
+    _display_round_bp must use the same rounding formula to stay in lockstep.
 
-    Formula: floor(bp / 100) * 100 + floor((bp % 100) / 10) * 10
-    = truncating to the nearest 10 bp (= 0.1% precision).
+    Formula (python-services-10 fix — round, not truncate):
+      display_bp = round(v / 10) * 10  using integer half-up arithmetic
+                 = ((v + 5) // 10) * 10
+    = nearest 10 bp (= 0.1% precision), rounded half-up.
+
+    Example: 1483 bp → (1483+5)//10*10 = 148*10 = 1480
+             1485 bp → (1485+5)//10*10 = 149*10 = 1490
     """
     sign = 1 if bp >= 0 else -1
     v = abs(bp)
-    # One-decimal-place percentage: truncate to nearest 10 bp
-    display_bp = (v // 10) * 10
+    # One-decimal-place percentage: round to nearest 10 bp (half-up)
+    display_bp = ((v + 5) // 10) * 10
     return sign * display_bp
 
 

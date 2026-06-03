@@ -346,3 +346,91 @@ class TestWriteToolCallSchema:
                 "entity_id": "x",
                 "intent": "SET_AMOUNT_TO_9999",  # Not in the closed enum
             })
+
+
+# ---------------------------------------------------------------------------
+# TZ-correct cap day boundary (python-services-8 fix)
+# ---------------------------------------------------------------------------
+
+class TestCapDayBoundaryTz:
+    """Per-day cap boundary must use UTC date, not local date.
+
+    BEFORE (bug): date.today() uses the server's local timezone. On IST (+5:30),
+    this means midnight UTC → 05:30 IST, creating a ±1-day error window where
+    the cap counter resets at the wrong moment.
+    AFTER: datetime.now(timezone.utc).date() always uses UTC.
+    """
+
+    def test_cap_day_uses_utc_date(self) -> None:
+        """Per-day aggregate reader is called with a date derived from UTC.
+
+        We inject a _daily_aggregate_reader that records which date it was
+        called with. The test verifies the date is UTC-derived.
+        """
+        from datetime import datetime, timezone
+
+        captured_dates: list = []
+        cap = WorkspaceActionCap(
+            workspace_id="ws_tz",
+            tool="pause_ad_set",
+            per_call_max_mu=50_000,
+            per_day_max_mu=100_000,
+        )
+        call = WriteToolCall(
+            tool=WriteToolNameEnum.PAUSE_AD_SET,
+            entity_id="ad_tz",
+            intent=IntentEnum.INCREASE,
+        )
+
+        def capturing_reader(ws: str, tool: str, day) -> int:
+            captured_dates.append(day)
+            return 0
+
+        execute_write_tool(
+            call, "ws_tz",
+            _cap_reader=lambda ws, t: cap,
+            _daily_aggregate_reader=capturing_reader,
+            _daily_aggregate_writer=lambda ws, t, d, mu: None,
+        )
+
+        assert len(captured_dates) == 1
+        received_date = captured_dates[0]
+        # Must equal today in UTC
+        expected_utc_date = datetime.now(timezone.utc).date()
+        assert received_date == expected_utc_date, (
+            f"Cap day mismatch: executor used {received_date}, "
+            f"expected UTC date {expected_utc_date}. "
+            "TZ bug: date.today() was replaced by datetime.now(timezone.utc).date()."
+        )
+
+    def test_cap_day_is_a_date_not_datetime(self) -> None:
+        """The cap day value must be a date object, not a datetime."""
+        from datetime import date as date_type
+
+        captured_dates: list = []
+        cap = WorkspaceActionCap(
+            workspace_id="ws_tz2",
+            tool="pause_ad_set",
+            per_call_max_mu=50_000,
+            per_day_max_mu=100_000,
+        )
+        call = WriteToolCall(
+            tool=WriteToolNameEnum.PAUSE_AD_SET,
+            entity_id="ad_tz2",
+            intent=IntentEnum.PAUSE,
+        )
+
+        def capturing_reader(ws: str, tool: str, day) -> int:
+            captured_dates.append(day)
+            return 0
+
+        execute_write_tool(
+            call, "ws_tz2",
+            _cap_reader=lambda ws, t: cap,
+            _daily_aggregate_reader=capturing_reader,
+            _daily_aggregate_writer=lambda ws, t, d, mu: None,
+        )
+        assert len(captured_dates) == 1
+        assert type(captured_dates[0]) is date_type, (
+            f"Cap day must be date, got {type(captured_dates[0])}"
+        )

@@ -252,8 +252,9 @@ class MetricsServiceAdapter(metrics_pb2_grpc.MetricsServiceServicer):
         total_net_revenue = sum(r.net_revenue_mu for r in rows)
         total_cm2 = sum(r.cm2_mu for r in rows)
         total_cm3 = sum(r.cm3_mu for r in rows)
-        # total_orders approximation: count rows with non-zero net_sales (daily granularity)
-        total_orders = sum(1 for r in rows if r.net_sales_mu > 0)
+        # total_orders: real per-day order counts from MV (python-services-11 fix;
+        # previous approximation counted *days* with non-zero net_sales, not orders).
+        total_orders = sum(r.total_orders for r in rows)
         # Nullable ratios: use last row with a value present
         rto_rate_bp = next((r.rto_rate_bp for r in reversed(rows) if r.rto_rate_bp is not None), None)
         blended_roas = next((r.blended_roas_x100 for r in reversed(rows) if r.blended_roas_x100 is not None), None)

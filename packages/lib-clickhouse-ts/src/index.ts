@@ -169,6 +169,35 @@ export async function pingCh(): Promise<boolean> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Allowlist for chInsert — only the fact tables that the realtime-facts-consumer
+// is authorised to write. This is a defence-in-depth guard against arbitrary
+// table injection (e.g. a malformed Kafka envelope with a user-controlled table
+// name).  shared-libs-6 fix.
+// ---------------------------------------------------------------------------
+
+/** Bare (unqualified) table names that chInsert is allowed to write to. */
+const INSERT_ALLOWED_FACT_TABLES = new Set([
+  'connector_order_facts',
+  'connector_line_item_facts',
+  'connector_ad_spend_facts',
+  'connector_shipment_facts',
+  'connector_refund_facts',
+  'connector_logistics_order_facts',
+  'connector_product_facts',
+  'connector_variant_facts',
+  'connector_ad_creative_facts',
+  'connector_ad_funnel_facts',
+  'connector_email_send_facts',
+])
+
+class ChInsertError extends Error {
+  constructor(reason: string) {
+    super(`ChInsertError: ${reason}`)
+    this.name = 'ChInsertError'
+  }
+}
+
 /**
  * Insert a batch of rows into a ClickHouse table. Uses JSONEachRow format so each
  * element of `rows` is a plain object matching the target table schema.
@@ -178,17 +207,45 @@ export async function pingCh(): Promise<boolean> {
  * ReplacingMergeTree(version) handles idempotency — a re-delivered message with a
  * higher `version` wins at the next OPTIMIZE / FINAL read.
  *
+ * shared-libs-6 hardening:
+ *   1. `table` must be in INSERT_ALLOWED_FACT_TABLES (bare or brain.-prefixed).
+ *      Rejects arbitrary table names — defence against Kafka-envelope injection.
+ *   2. Every row must contain a `workspace_id` key.
+ *      Ensures tenant-scoped writes; rejects un-scoped inserts.
+ *
  * @param table  Fully qualified table name, e.g. "brain.connector_order_facts"
  * @param rows   Array of plain objects (keys = column names, values = JS primitives)
  */
 export async function chInsert(table: string, rows: Record<string, unknown>[]): Promise<void> {
   if (!rows.length) return
+
+  // 1. Allowlist check — strip the optional `brain.` prefix before checking.
+  const bareTable = table.startsWith('brain.') ? table.slice('brain.'.length) : table
+  if (!INSERT_ALLOWED_FACT_TABLES.has(bareTable)) {
+    throw new ChInsertError(
+      `table "${table}" is not in the INSERT_ALLOWED_FACT_TABLES allowlist. ` +
+      'Add it explicitly if this is a new fact table (shared-libs-6).',
+    )
+  }
+
+  // 2. workspace_id column required on every row — no un-scoped writes.
+  for (let i = 0; i < rows.length; i++) {
+    if (!Object.prototype.hasOwnProperty.call(rows[i], 'workspace_id')) {
+      throw new ChInsertError(
+        `row[${i}] is missing workspace_id (table="${table}"). ` +
+        'Every fact-table insert must carry workspace_id for tenant isolation (shared-libs-6).',
+      )
+    }
+  }
+
   await client().insert({
     table,
     values: rows,
     format: 'JSONEachRow',
   })
 }
+
+export { ChInsertError }
 
 /** Test-only: dispose the singleton client (for graceful shutdown / hot-reload). */
 export async function _closeChClient(): Promise<void> {
