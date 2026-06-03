@@ -712,11 +712,15 @@ export async function readLifecycleStatesCH(workspaceId: string): Promise<FactLi
      ),
      nowref AS (SELECT max(last_at) AS n FROM cust),
      b AS (
+       -- Recency vs the data-relative "now" (max last order). CH cannot subtract
+       -- two DateTimes and compare to an INTERVAL (throws), so compare the elapsed
+       -- DURATION in seconds -- exactly PG (nowref.n - last_at) <= interval N days
+       -- (interval N days = N*86400s; second precision matches the timestamps).
        SELECT multiIf(
-                 (nowref.n - last_at) <= INTERVAL 30  DAY, 'new',
-                 (nowref.n - last_at) <= INTERVAL 90  DAY, 'active',
-                 (nowref.n - last_at) <= INTERVAL 180 DAY, 'at_risk',
-                                                          'churned') AS bucket,
+                 dateDiff('second', last_at, nowref.n) <= 30  * 86400, 'new',
+                 dateDiff('second', last_at, nowref.n) <= 90  * 86400, 'active',
+                 dateDiff('second', last_at, nowref.n) <= 180 * 86400, 'at_risk',
+                                                                       'churned') AS bucket,
               orders, net
          FROM cust, nowref
      )
