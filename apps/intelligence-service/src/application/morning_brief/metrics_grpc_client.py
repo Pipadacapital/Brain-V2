@@ -95,8 +95,8 @@ class MetricRowView:
     All _mu fields are python int (converted from proto int64 / Int32Value).
     .date is a str "YYYY-MM-DD" (the proto ships it as a string already).
     .aov_mu is int | None (maps from the nullable Int32Value).
-    .total_orders is always 0 — build_pnl_context computes orders from aov_mu
-    and net_sales_mu directly; it does not read total_orders off the row.
+    .total_orders is the real per-day order count (proto field 18, G2); the
+    context builder sums it across the window.
 
     @paradigm: sql — pure field projection, no computation.
     """
@@ -107,7 +107,7 @@ class MetricRowView:
     cm3_mu: int
     cogs_mu: int
     total_ad_spend_mu: int
-    total_orders: int      # always 0 — computed by the context builder
+    total_orders: int      # real per-day order count (proto field 18)
     aov_mu: Optional[int]  # None when the proto Int32Value is not set
 
 
@@ -286,7 +286,7 @@ def _proto_row_to_view(proto_row: Any) -> MetricRowView:
         cm3_mu=int(proto_row.cm3_mu),
         cogs_mu=int(proto_row.cogs_mu),
         total_ad_spend_mu=int(proto_row.total_ad_spend_mu),
-        total_orders=0,                               # computed by context builder
+        total_orders=int(proto_row.total_orders),     # real per-day order count (G2)
         aov_mu=_unwrap_int32value(proto_row.aov_mu),
     )
 
