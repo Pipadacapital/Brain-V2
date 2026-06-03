@@ -84,9 +84,8 @@ describe.skipIf(!RUN)('PG↔CH parity (integration)', () => {
   // NOTE: shipment/pincode are CH-ONLY facts (no PG table) — no PG plane to compare.
 
   // --- KNOWN PG↔CH DRIFT found by this gate (tracked follow-ups; un-skip on fix) ---
-  // readCogs + readProductPerformance are now RECONCILED (active). Remaining:
-  //  - readLifecycle:    CH SQL throws (DateTime−DateTime); prod uses PG. Recency
-  //    "now" basis also differs. Tracked.
+  // readCogs + readProductPerformance + readLifecycleStates are RECONCILED (active).
+  // Remaining:
   //  - readOrderTimings: aggregate fields differ beyond firstOrders. Tracked.
 
   // RECONCILED: CH grade now uses exact integer math (cum_cm1*100 ≤ 80*total_cm1)
@@ -98,6 +97,9 @@ describe.skipIf(!RUN)('PG↔CH parity (integration)', () => {
     const ch = await CH.readProductPerformanceCH(WS)
     eq({ rows: pg.rows, totalCm1Mu: pg.totalCm1Mu }, ch)
   })
-  it.skip('readLifecycleStates [KNOWN DRIFT — tracked]', async () => eq(await PG.readLifecycleStates(WS), await CH.readLifecycleStatesCH(WS)))
+  // RECONCILED: CH now compares the elapsed DURATION in seconds
+  // (dateDiff('second', last_at, nowref.n) <= N*86400) instead of subtracting two
+  // DateTimes vs an INTERVAL (which threw) — exactly PG's recency-interval buckets.
+  it('readLifecycleStates', async () => eq(await PG.readLifecycleStates(WS), await CH.readLifecycleStatesCH(WS)))
   it.skip('readOrderTimings [KNOWN DRIFT — tracked]', async () => eq(await PG.readOrderTimings(WS), await CH.readOrderTimingsCH(WS)))
 })
