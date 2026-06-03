@@ -55,7 +55,7 @@ import { Outcome } from './webhook-ingest-client.js';
  */
 async function buildTestServer(opts: {
   grpcClient: WebhookIngestClient;
-  rateLimiter?: { consume(): boolean };
+  rateLimiter?: { consume(vendor: string): boolean };
   maxBodyBytes?: number;
 }): Promise<{ server: FastifyInstance; logLines: string[] }> {
   const logLines: string[] = [];
@@ -609,7 +609,7 @@ describe('POST /webhooks/:vendor — rate-limit (ABUSE-BOUND-1)', () => {
   it('exhausted rate-limiter → 429 BEFORE gRPC call', async () => {
     const { client, lastRequest } = makeMockClient(Outcome.ACCEPTED);
     // Limiter that always denies.
-    const exhaustedLimiter = { consume: () => false };
+    const exhaustedLimiter = { consume: (_vendor: string) => false };
 
     ({ server } = await buildTestServer({ grpcClient: client, rateLimiter: exhaustedLimiter }));
 
@@ -631,7 +631,7 @@ describe('POST /webhooks/:vendor — rate-limit (ABUSE-BOUND-1)', () => {
 
   it('rate-limit rejected before body-size check (ordering test)', async () => {
     const { client } = makeMockClient(Outcome.ACCEPTED);
-    const exhaustedLimiter = { consume: () => false };
+    const exhaustedLimiter = { consume: (_vendor: string) => false };
     const maxBodyBytes = 4; // Very small — would 413 if rate-limit didn't fire first.
 
     ({ server } = await buildTestServer({
@@ -654,7 +654,7 @@ describe('POST /webhooks/:vendor — rate-limit (ABUSE-BOUND-1)', () => {
 
   it('passing rate-limiter allows request through', async () => {
     const { client } = makeMockClient(Outcome.ACCEPTED);
-    const alwaysAllows = { consume: () => true };
+    const alwaysAllows = { consume: (_vendor: string) => true };
 
     ({ server } = await buildTestServer({ grpcClient: client, rateLimiter: alwaysAllows }));
 
@@ -668,9 +668,9 @@ describe('POST /webhooks/:vendor — rate-limit (ABUSE-BOUND-1)', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('rate-limit fires for /webhooks/meta (vendor-agnostic limiter)', async () => {
+  it('rate-limit fires for /webhooks/meta (per-vendor limiter)', async () => {
     const { client, lastRequest } = makeMockClient(Outcome.ACCEPTED);
-    const exhaustedLimiter = { consume: () => false };
+    const exhaustedLimiter = { consume: (_vendor: string) => false };
 
     ({ server } = await buildTestServer({ grpcClient: client, rateLimiter: exhaustedLimiter }));
 

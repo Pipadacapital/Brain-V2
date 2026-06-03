@@ -109,8 +109,12 @@ const DEFAULT_RATE_LIMIT_REFILL_PER_SEC = 50;
 export interface WebhookPluginOptions {
   /** Override the gRPC client (for testing). Defaults to createWebhookIngestClient(). */
   grpcClient?: WebhookIngestClient;
-  /** Override the rate limiter (for testing). Defaults to a real TokenBucket. */
-  rateLimiter?: { consume(): boolean };
+  /**
+   * Override the rate limiter factory (for testing). Receives the vendor string and
+   * returns a per-vendor limiter. Defaults to a per-vendor TokenBucket map so no
+   * single slow vendor can exhaust the global burst budget (ABUSE-BOUND-1).
+   */
+  rateLimiter?: { consume(vendor: string): boolean };
   /** Override max body bytes (for testing). Defaults to MAX_BODY_BYTES. */
   maxBodyBytes?: number;
 }
@@ -162,10 +166,23 @@ export const webhookPlugin: FastifyPluginAsync<WebhookPluginOptions> =
     // Build or reuse the gRPC client. The client is shared for the plugin
     // lifetime (Fastify plugin lifecycle). Close on server shutdown.
     const client = opts.grpcClient ?? createWebhookIngestClient();
-    const limiter =
-      opts.rateLimiter ??
-      new TokenBucket(DEFAULT_RATE_LIMIT_BURST, DEFAULT_RATE_LIMIT_REFILL_PER_SEC);
     const maxBody = opts.maxBodyBytes ?? MAX_BODY_BYTES;
+
+    // Per-vendor token buckets (ABUSE-BOUND-1): each vendor gets its own bucket so
+    // a burst from one vendor cannot exhaust the global rate budget for others.
+    // The _vendorBuckets map is lazily populated as new vendors are seen.
+    const _vendorBuckets = new Map<string, TokenBucket>();
+    const _getVendorBucket = (vendor: string): TokenBucket => {
+      if (!_vendorBuckets.has(vendor)) {
+        _vendorBuckets.set(vendor, new TokenBucket(DEFAULT_RATE_LIMIT_BURST, DEFAULT_RATE_LIMIT_REFILL_PER_SEC));
+      }
+      return _vendorBuckets.get(vendor)!;
+    };
+    // Unified consume interface — delegates to per-vendor bucket or the injected test limiter.
+    const consumeToken = (vendor: string): boolean =>
+      opts.rateLimiter
+        ? opts.rateLimiter.consume(vendor)
+        : _getVendorBucket(vendor).consume();
 
     fastify.addHook('onClose', async () => {
       if (!opts.grpcClient) {
@@ -174,14 +191,52 @@ export const webhookPlugin: FastifyPluginAsync<WebhookPluginOptions> =
       }
     });
 
+    // Map Fastify's framework-level 413 (FST_ERR_CTP_BODY_TOO_LARGE from bodyLimit
+    // enforcement in addContentTypeParser) to our canonical JSON shape so the
+    // response format is consistent with the manual body-size check in the handler.
+    fastify.setErrorHandler((err: Error & { statusCode?: number }, req, reply) => {
+      if (err.statusCode === 413 || err.message === 'Payload Too Large') {
+        req.log.warn(
+          { requestId: req.id, bodyLength: req.headers['content-length'] },
+          'webhook body too large (ABUSE-BOUND-1, framework-level)',
+        );
+        return reply.status(413).send({ error: 'payload_too_large', request_id: req.id });
+      }
+      // Re-throw everything else so Fastify's default handler processes it.
+      void reply.send(err);
+    });
+
+    // ABUSE-BOUND-1 ordering (defense-in-depth):
+    //   Step 1 — per-vendor rate-limit check fires in onRequest hook (BEFORE body parsing).
+    //   Step 2 — bodyLimit enforcement fires during body parsing (Fastify framework).
+    //   Step 3 — manual body-size check in the handler (belt-and-suspenders).
+    // The onRequest hook runs before ANY body is accumulated so rate-limiting is cheap.
+
+    fastify.addHook('onRequest', (req, reply, done) => {
+      // Only gate the webhook route; other routes (health etc.) are unaffected.
+      if (!req.url?.startsWith('/webhooks/')) return done();
+      const vendor = req.url.split('/')[2] ?? 'unknown';
+      if (!consumeToken(vendor)) {
+        req.log.warn(
+          { requestId: req.id, route: `POST /webhooks/:vendor`, vendor },
+          'webhook rate-limit exceeded (ABUSE-BOUND-1)',
+        );
+        void reply.status(429).send({ error: 'rate_limit_exceeded', request_id: req.id });
+        return;
+      }
+      done();
+    });
+
     // Register a content-type parser for 'application/json' scoped to this
     // plugin that yields the RAW Buffer without JSON-parsing it.
     // FORWARD-FIDELITY-1: bytes received == bytes handed to the vendor verifier.
+    // ABUSE-BOUND-1: bodyLimit set to MAX_BODY_BYTES so Fastify rejects oversized
+    // bodies at framework level BEFORE any handler code runs (defense in depth).
     // The `parseAs:'buffer'` option tells Fastify to accumulate the body into a
     // Buffer and pass it to the handler directly — no JSON.parse anywhere.
     fastify.addContentTypeParser(
       'application/json',
-      { parseAs: 'buffer' },
+      { parseAs: 'buffer', bodyLimit: maxBody },
       (_req, body, done) => {
         done(null, body);
       },
@@ -191,7 +246,7 @@ export const webhookPlugin: FastifyPluginAsync<WebhookPluginOptions> =
     // as buffer regardless of content-type (FORWARD-FIDELITY-1).
     fastify.addContentTypeParser(
       '*',
-      { parseAs: 'buffer' },
+      { parseAs: 'buffer', bodyLimit: maxBody },
       (_req, body, done) => {
         done(null, body);
       },
@@ -219,16 +274,9 @@ export const webhookPlugin: FastifyPluginAsync<WebhookPluginOptions> =
         // The Python registry decides whether this vendor is valid (default-deny).
         const vendor = req.params.vendor;
 
-        // ABUSE-BOUND-1, step 1: rate-limit BEFORE any forwarding.
-        if (!limiter.consume()) {
-          req.log.warn(
-            { requestId: req.id, route: `POST /webhooks/:vendor`, vendor },
-            'webhook rate-limit exceeded (ABUSE-BOUND-1)',
-          );
-          return reply.status(429).send({ error: 'rate_limit_exceeded', request_id: req.id });
-        }
-
-        // ABUSE-BOUND-1, step 2: body-size cap BEFORE forwarding.
+        // ABUSE-BOUND-1, step 1: rate-limit fired in onRequest hook (before body parsing).
+        // Step 2: bodyLimit enforcement fired during body parsing (Fastify framework, 413).
+        // Step 3: manual body-size check below (belt-and-suspenders for inject() tests).
         const rawBody = req.body;
         const bodyLength =
           rawBody instanceof Buffer

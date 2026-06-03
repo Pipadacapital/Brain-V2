@@ -6,8 +6,8 @@
  * Strategy:
  *   - runSchedulerTick() is exported and called directly — no fake timers needed.
  *   - syncConnector and readConnectedVendors are injected via SchedulerDeps — no real DB.
- *   - startSyncScheduler / stopSyncScheduler lifecycle is tested with a spy on setInterval
- *     (enabled flag gate only — we do not wait for interval ticks to fire).
+ *   - startSyncScheduler / stopSyncScheduler lifecycle is tested with a spy on setTimeout
+ *     (enabled flag gate only — we do not wait for ticks to fire; IN-FLIGHT-GUARD-1 tested).
  *
  * Coverage:
  *   POSITIVE — tick enumerates workspaces+vendors and calls doSync per connected connector
@@ -16,8 +16,8 @@
  *   POSITIVE — no connected vendors = no doSync calls
  *   POSITIVE — multiple workspaces are all iterated
  *   POSITIVE — readConnectedVendors failure is isolated (other workspaces continue)
- *   NEGATIVE — startSyncScheduler double-start guard prevents second setInterval
- *   POSITIVE — stopSyncScheduler clears the interval handle
+ *   NEGATIVE — startSyncScheduler double-start guard prevents second setTimeout (IN-FLIGHT-GUARD-1)
+ *   POSITIVE — stopSyncScheduler clears the timeout handle
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -273,60 +273,60 @@ describe('startSyncScheduler / stopSyncScheduler — lifecycle', () => {
     process.env['SYNC_POLL_INTERVAL_MS'] = '999999'
   }
 
-  it('calls setInterval when startSyncScheduler is invoked', () => {
+  it('calls setTimeout when startSyncScheduler is invoked (IN-FLIGHT-GUARD-1: self-rescheduling)', () => {
     setSchedulerEnv()
-    const setIntervalSpy = vi.spyOn(global, 'setInterval')
+    const setTimeoutSpy = vi.spyOn(global, 'setTimeout')
 
     const log = makeLogger()
     startSyncScheduler(log)
 
-    expect(setIntervalSpy).toHaveBeenCalledOnce()
-    setIntervalSpy.mockRestore()
+    expect(setTimeoutSpy).toHaveBeenCalledOnce()
+    setTimeoutSpy.mockRestore()
   })
 
-  it('does NOT register a second interval if called twice (double-start guard)', () => {
+  it('does NOT register a second timeout if called twice (double-start guard)', () => {
     setSchedulerEnv()
-    const setIntervalSpy = vi.spyOn(global, 'setInterval')
+    const setTimeoutSpy = vi.spyOn(global, 'setTimeout')
 
     const log = makeLogger()
     startSyncScheduler(log)
     startSyncScheduler(log) // second call — should be a no-op
 
-    expect(setIntervalSpy).toHaveBeenCalledOnce()
+    expect(setTimeoutSpy).toHaveBeenCalledOnce()
     expect(log.warn).toHaveBeenCalledWith({}, expect.stringContaining('already running'))
-    setIntervalSpy.mockRestore()
+    setTimeoutSpy.mockRestore()
   })
 
-  it('stopSyncScheduler calls clearInterval after start', () => {
+  it('stopSyncScheduler calls clearTimeout after start', () => {
     setSchedulerEnv()
-    const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout')
 
     const log = makeLogger()
     startSyncScheduler(log)
     stopSyncScheduler()
 
-    expect(clearIntervalSpy).toHaveBeenCalledOnce()
-    clearIntervalSpy.mockRestore()
+    expect(clearTimeoutSpy).toHaveBeenCalledOnce()
+    clearTimeoutSpy.mockRestore()
   })
 
   it('stopSyncScheduler is a no-op when scheduler was never started', () => {
-    const clearIntervalSpy = vi.spyOn(global, 'clearInterval')
+    const clearTimeoutSpy = vi.spyOn(global, 'clearTimeout')
     stopSyncScheduler()
-    expect(clearIntervalSpy).not.toHaveBeenCalled()
-    clearIntervalSpy.mockRestore()
+    expect(clearTimeoutSpy).not.toHaveBeenCalled()
+    clearTimeoutSpy.mockRestore()
   })
 
-  it('setInterval is called with the correct interval ms from env', () => {
+  it('setTimeout is called with the correct interval ms from env (IN-FLIGHT-GUARD-1)', () => {
     setSchedulerEnv()
     process.env['SYNC_POLL_INTERVAL_MS'] = '12345'
 
-    const setIntervalSpy = vi.spyOn(global, 'setInterval')
+    const setTimeoutSpy = vi.spyOn(global, 'setTimeout')
     const log = makeLogger()
     startSyncScheduler(log)
 
-    const callArgs = setIntervalSpy.mock.calls[0]!
-    // setInterval(fn, delay) — second arg is delay
+    const callArgs = setTimeoutSpy.mock.calls[0]!
+    // setTimeout(fn, delay) — second arg is delay
     expect(callArgs[1]).toBe(12345)
-    setIntervalSpy.mockRestore()
+    setTimeoutSpy.mockRestore()
   })
 })

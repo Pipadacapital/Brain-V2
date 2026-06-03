@@ -66,8 +66,6 @@ import type {
   LogisticsResult,
   PincodeIntelligenceResult,
   CohortMatrixResult,
-  CohortMetric,
-  CohortMode,
   LtvSummaryResult,
   DistributionsResult,
   OrderTimingsResult,
@@ -78,7 +76,6 @@ import type {
   DailyAcquisitionRow,
   PnlPeriodRow,
   ShipmentRow,
-  ShipmentRowFilters,
   MarketingActionRow,
   ListMarketingActionsResult,
   CreateMarketingActionInput,
@@ -99,22 +96,7 @@ import type {
 } from '../domain/proto-types.js';
 import { StubDataPlane, InMemoryDecisionLog, DATA_EPOCH } from './loopback-data-plane.js';
 import {
-  emptyRtoAnalytics,
-  emptyCodPrepaid,
-  emptyLogistics,
-  emptyPincode,
-  emptyDistributions,
-  emptyCohortMatrix,
-  emptyLtvSummary,
-  emptyProductPerformance,
   emptyInventoryLevels,
-  emptyFirstProductCascade,
-  emptyGoalAttainment,
-  emptyCostStack,
-  emptyFestivalCalendar,
-  emptyCalendarReport,
-  emptyLifecycleStates,
-  emptyOrderTimings,
   emptyEmailSmsPerformance,
 } from './empty-results.js';
 
@@ -152,8 +134,9 @@ function _classifyTier(city: string): 1 | 2 | 3 | null {
  * Derive Indian state name from the first 2–3 digits of a 6-digit pincode.
  * Based on India Post pin code zones (standard reference).
  * Returns '' for unknown/unparseable pins — honest empty, not a stub.
+ * Exported for unit testing (api-gateway-14 Jharkhand fix).
  */
-function _stateFromPincode(pincode: string): string {
+export function _stateFromPincode(pincode: string): string {
   const p = pincode.trim();
   if (p.length < 6) return '';
   const prefix2 = parseInt(p.substring(0, 2), 10);
@@ -193,9 +176,11 @@ function _stateFromPincode(pincode: string): string {
   if (prefix2 >= 70 && prefix2 <= 74) return 'West Bengal';
   if (prefix2 >= 75 && prefix2 <= 77) return 'Odisha';
   if (prefix2 >= 78 && prefix2 <= 78) return 'Assam';
-  // Zone 8: 80x–85x Bihar/Jharkhand
-  if (prefix2 >= 80 && prefix2 <= 83) return 'Bihar';
+  // Zone 8: 80x–85x Bihar/Jharkhand/Odisha.
+  // India Post: 80x–81x Bihar, 82x–83x Jharkhand, 84x–85x Odisha.
+  // Jharkhand check MUST precede the broader Bihar range to be reachable.
   if (prefix2 === 82 || prefix2 === 83) return 'Jharkhand';
+  if (prefix2 >= 80 && prefix2 <= 81) return 'Bihar';
   if (prefix2 === 84 || prefix2 === 85) return 'Odisha';
   return '';
 }
@@ -205,9 +190,6 @@ function _stateFromPincode(pincode: string): string {
 // the in-process store is consistent with loopback semantics.
 const _localLeadTimeOverrides = new Map<string, Map<string, number>>(); // wsId → sku → days
 
-function _getLocalLeadTime(wsId: string, sku: string): number | null {
-  return _localLeadTimeOverrides.get(wsId)?.get(sku) ?? null;
-}
 function _setLocalLeadTime(wsId: string, sku: string, days: number): void {
   if (!_localLeadTimeOverrides.has(wsId)) _localLeadTimeOverrides.set(wsId, new Map());
   _localLeadTimeOverrides.get(wsId)!.set(sku, days);
@@ -316,23 +298,28 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
   }> {
     this.assertWs(params.workspace_id);
     const range = this.rangeOf(params);
+    // Derive CM2/CM3 from the SAME P&L primitive (readPnl + resolveCosts) so the
+    // KPI strip and the P&L statement are always identical for the same period.
+    // CANON: net = gross − discount (tax separate); cm1 = net − cogs − variable;
+    //        cm2 = cm1 − ad spend; cm3 = cm2 − misc.
+    const f = await readPnl(this.ws, range);
     const store = await readStoreSummary(this.ws, range);
-    const mk = await readMarketing(this.ws, range);
-    // CM2 = realized revenue − COGS − ad spend (COGS from migrated product cost).
-    const totalSpend = mk.metaSpendMu + mk.googleSpendMu;
     const cogs = (await readCogs(this.ws, range)).cogsMu;
-    const cm2 = store.realizedRevenueMu - cogs - totalSpend;
+    const { variableMu: variable, miscMu: misc } = await this.resolveCosts(f.netRevenueMu, f.orderCount);
+    const cm1 = f.netRevenueMu - cogs - variable;
+    const cm2 = cm1 - f.totalAdSpendMu;
+    const cm3 = cm2 - misc;
     const summary: KpiSummaryRow = {
       workspace_id: this.ws,
       period: 'synced',
       data_epoch: DATA_EPOCH,
-      currency_code: store.currencyCode,
-      net_revenue_mu: store.realizedRevenueMu,
+      currency_code: f.currencyCode,
+      net_revenue_mu: f.netRevenueMu,
       cm2_mu: cm2,
-      cm3_mu: cm2,
+      cm3_mu: cm3,
       rto_rate_bp: null,
-      blended_roas_x100: totalSpend > 0n ? Number((store.realizedRevenueMu * 100n) / totalSpend) : null,
-      total_orders: store.orderCount,
+      blended_roas_x100: f.totalAdSpendMu > 0n ? Number((f.netRevenueMu * 100n) / f.totalAdSpendMu) : null,
+      total_orders: f.orderCount,
       aov_mu: store.aovMu === null ? null : Number(store.aovMu),
       conversion_rate_bp: null,
     };
@@ -1531,15 +1518,17 @@ export class LocalDbDataPlane extends StubDataPlane implements DataPlanePort {
     return coreDeleteMarketingAction(p.workspace_id, p.action_id);
   }
 
-  // Wave-4A: per-SKU lead-time mutation (MANAGER-gated). In-process store for local-dev.
-  // In production this would write to workspace_product_settings (or similar catalog table).
-  // A local migration is not required because this plane already accumulates all local
-  // state in process — no migration needed until the production write path is cut over.
+  // Wave-4A: per-SKU lead-time mutation (MANAGER-gated).
+  // NOT-PERSISTED: LocalDbDataPlane stores lead-time overrides in an in-process Map only.
+  // Data is reset on every process restart. The production write path must persist to
+  // workspace_product_settings (or equivalent catalog table) — tracked as a Stage-8 item.
+  // Callers that require durability should use the production data plane (not this class).
   override async setLeadTime(p: InventorySetLeadTimeInput): Promise<InventorySetLeadTimeResult> {
     this.assertWs(p.workspace_id);
     if (p.lead_time_days < 0 || p.lead_time_days > 365) {
       throw new Error(`ValidationError: lead_time_days must be 0..365`);
     }
+    // In-process only — volatile (resets on restart). Sufficient for local-dev sessions.
     _setLocalLeadTime(this.ws, p.sku, p.lead_time_days);
     return { sku: p.sku, lead_time_days: p.lead_time_days };
   }

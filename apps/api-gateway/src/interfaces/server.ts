@@ -139,7 +139,9 @@ const idempotencyStore = new InMemoryIdempotencyStore();
 // ---------------------------------------------------------------------------
 
 const brainRouter = createBrainRouter(dataPlane, idempotencyStore);
-export type BrainRouter = typeof brainRouter;
+// BrainRouter type is the canonical export from application/router.ts.
+// That module derives it from ReturnType<typeof createBrainRouter> (the factory).
+// This local binding is kept for Fastify tRPC wiring but the TYPE is NOT re-exported.
 
 // ---------------------------------------------------------------------------
 // Real-auth context builder — EXPORTED + dependency-injected so it is

@@ -23,6 +23,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { StubDataPlane, InMemoryDecisionLog, SUGANDH_LOK_WORKSPACE_ID } from './loopback-data-plane.js';
+import { _stateFromPincode } from './local-db-data-plane.js';
 
 const WS = SUGANDH_LOK_WORKSPACE_ID;
 const DATE_RANGE = { start: '2026-04-01', end: '2026-04-30' };
@@ -231,5 +232,49 @@ describe('StubDataPlane.getInventoryLevels — all 18 fields present', () => {
     const labels = result.rows.map((r) => r.label);
     const reversed = [...labels].sort((a, b) => b.localeCompare(a));
     expect(labels).toEqual(reversed);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _stateFromPincode — Jharkhand 82/83 reachability (api-gateway-14 fix)
+// Before fix: prefix2 >= 80 && <= 83 matched Bihar FIRST, making 82/83
+// unreachable as Jharkhand. After fix: Jharkhand branch runs before Bihar.
+// ---------------------------------------------------------------------------
+
+describe('_stateFromPincode — India Post zone correctness (api-gateway-14)', () => {
+  it('820000 → Jharkhand (82x is Jharkhand per India Post)', () => {
+    expect(_stateFromPincode('820000')).toBe('Jharkhand');
+  });
+
+  it('830000 → Jharkhand (83x is Jharkhand per India Post)', () => {
+    expect(_stateFromPincode('830000')).toBe('Jharkhand');
+  });
+
+  it('800000 → Bihar (80x is Bihar per India Post)', () => {
+    expect(_stateFromPincode('800000')).toBe('Bihar');
+  });
+
+  it('810000 → Bihar (81x is Bihar per India Post)', () => {
+    expect(_stateFromPincode('810000')).toBe('Bihar');
+  });
+
+  it('840000 → Odisha (84x per India Post)', () => {
+    expect(_stateFromPincode('840000')).toBe('Odisha');
+  });
+
+  it('850000 → Odisha (85x per India Post)', () => {
+    expect(_stateFromPincode('850000')).toBe('Odisha');
+  });
+
+  it('400001 → Maharashtra (Mumbai reference check)', () => {
+    expect(_stateFromPincode('400001')).toBe('Maharashtra');
+  });
+
+  it('110001 → Delhi', () => {
+    expect(_stateFromPincode('110001')).toBe('Delhi');
+  });
+
+  it('NEGATIVE: short pincode returns empty string', () => {
+    expect(_stateFromPincode('123')).toBe('');
   });
 });
