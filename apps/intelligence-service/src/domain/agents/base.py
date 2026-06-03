@@ -102,3 +102,22 @@ class PageInsightAgent:
                 "CF-C5-INJECTION-SCOPE-4: apply @agent_tools(scope=[...]) to the class.",
                 self.__class__.__name__,
             )
+
+    def _assert_token_ceiling(self, estimated_tokens: int) -> None:
+        """Assert the context token count does not exceed the agent's MAX_CONTEXT_TOKENS.
+
+        CF-C5-PINCODE-TOKEN-CAP-1: every agent MUST declare MAX_CONTEXT_TOKENS and
+        assert it before the Tier-B LLM call.  This is the enforcement point — the
+        context builder may trim, but if the final estimate still exceeds the ceiling,
+        this raises ValueError and the pipeline fails closed (no oversized LLM call).
+
+        Subclasses set MAX_CONTEXT_TOKENS as a class-level int attribute.
+        Default ceiling = 1,800 tokens (pnl page; conservative for Haiku context).
+        """
+        max_tokens: int = getattr(self, "MAX_CONTEXT_TOKENS", 1_800)
+        if estimated_tokens > max_tokens:
+            raise ValueError(
+                f"{self.__class__.__name__}: estimated_tokens={estimated_tokens} "
+                f"exceeds MAX_CONTEXT_TOKENS={max_tokens}. "
+                "CF-C5-PINCODE-TOKEN-CAP-1: reduce context or raise ceiling explicitly."
+            )
