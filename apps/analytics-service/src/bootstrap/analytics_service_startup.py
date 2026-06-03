@@ -62,6 +62,19 @@ def assert_clickhouse_residency(host: str | None = None) -> None:
         ClickHouseRegionMismatchError: if the host is not in ap-south-1.
         EnvironmentError: if CLICKHOUSE_HOST is not set.
     """
+    # Local-dev escape (BRAIN_ENV=local ONLY): the local Docker ClickHouse is not an
+    # ap-south-1 endpoint. FAIL-CLOSED for staging/production — activates EXCLUSIVELY
+    # when BRAIN_ENV=local, so a real deploy can never skip CF-C4-RESIDENCY-1. Mirrors
+    # the ingestion-service residency escape.
+    if os.environ.get("BRAIN_ENV", "").lower() == "local":
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[analytics_startup] CF-C4-RESIDENCY-1: BRAIN_ENV=local — ClickHouse "
+            "residency assertion SKIPPED for local-dev ONLY (NEVER staging/production)."
+        )
+        return
+
     ch_host = host if host is not None else os.environ.get("CLICKHOUSE_HOST", "")
 
     if not ch_host:
