@@ -56,6 +56,12 @@ PSQL="$PG" CHCL="$CH" bash scripts/migrate.sh up
 echo "  NOTE: schema only — no rows. Real-data load is the Founder-gated tools/migrate-legacy step;"
 echo "        for a demo UI set BRAIN_GATEWAY_LOCAL_HARNESS=true on the gateway."
 
+# 3.5 LOCAL-ONLY real-time webhook fixtures (raw_* tables + grants + identity-map
+#     seed). Idempotent. Lets the local Shopify webhook path resolve out of the
+#     box; prod applies these via the gated Stage-8 runbook, never here.
+say "Applying local real-time webhook fixtures"
+PSQL="$PG" bash scripts/seed-local-realtime.sh
+
 # 4. Build + start the app.
 say "Building + starting api-gateway + web"
 $COMPOSE up -d --build api-gateway web
