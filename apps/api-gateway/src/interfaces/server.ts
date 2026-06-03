@@ -30,6 +30,10 @@ import {
   extractCorrelation,
   PII_REDACT_PATHS,
 } from '@brain/lib-logger';
+import {
+  startRealtimeFactsConsumer,
+  stopRealtimeFactsConsumer,
+} from '../infrastructure/realtime-facts-consumer.js';
 
 import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
@@ -463,6 +467,8 @@ async function main() {
       if (shuttingDown) return;
       shuttingDown = true;
       server.log.info({ signal }, 'shutting down — draining connections');
+      // Disconnect the Kafka consumer before closing HTTP (best-effort; never throws).
+      void stopRealtimeFactsConsumer().catch(() => undefined);
       server.close().then(
         () => process.exit(0),
         (err) => { server.log.error({ err }, 'error during shutdown'); process.exit(1); },
@@ -480,6 +486,19 @@ async function main() {
   } catch (err) {
     server.log.error(err, 'Failed to start api-gateway');
     process.exit(1);
+  }
+
+  // Start the real-time Shopify facts consumer AFTER the HTTP server is up.
+  // Only when the env flag is set — keeps local dev / CI without Kafka unaffected.
+  // Does NOT block: kafkajs connects asynchronously with built-in retry so a
+  // missing broker at boot time does NOT crash the gateway.
+  if ((process.env['REALTIME_FACTS_CONSUMER'] ?? '').toLowerCase() === 'true') {
+    void startRealtimeFactsConsumer(server.log).catch((err) => {
+      server.log.error({ err }, 'realtime-facts-consumer: startup error (gateway continues)');
+    });
+    server.log.info('realtime-facts-consumer: ENABLED — connecting to Kafka');
+  } else {
+    server.log.info('realtime-facts-consumer: DISABLED (REALTIME_FACTS_CONSUMER != true)');
   }
 }
 

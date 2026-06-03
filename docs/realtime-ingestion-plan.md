@@ -94,7 +94,25 @@ been exercised by mocked unit tests — each "Stage-8 ready" but never run end-t
   The integration tests that would catch this are skipped (no DB in CI). Fix the shared
   session/write layer (and un-skip the integration tests against a real PG so it can't
   regress), then the webhook lands a `raw_shopify_orders` row + a Kafka message.
-- **S3** ⬜ TS Kafka→facts consumer (PG+CH) → dashboard. **S4** ⬜ demo + tests.
+- **S3 + S4** ✅ **COMPLETE — full pipeline proven end-to-end on local-dev.** TS Kafka→facts
+  consumer (`apps/api-gateway/src/infrastructure/realtime-facts-consumer.ts`, kafkajs, gated by
+  `REALTIME_FACTS_CONSUMER`) reads `integrations.shopify.v1`, maps the envelope → OrderFact/
+  LineItemFact (reusing the pull-path normalizers + money conversion), and idempotently upserts
+  BOTH PG (`upsertOrder`/`upsertLineItem`, ON CONFLICT) and CH (`chInsert`,
+  ReplacingMergeTree(version)). Verified: a signed webhook lands in `connector_order_facts` in CH
+  AND PG (e.g. order 99300606 → gross 1234500 = net 1234500), so the order shows in the
+  CH-first dashboard. 36 consumer tests + 407 gateway tests green. Known gap: webhook line items
+  carry `vendor_product_id=''` (REST lacks the GraphQL GID) — product-dimension queries need a
+  later batch sync to backfill it.
+
+## Remaining for production (out of scope for the local demo)
+- Un-skip the integration tests in CI (needs DB-in-CI — same as advisor P1-12); the migrator
+  (P1-18) must merge so migration 30 + the raw DDL flow through it.
+- Shreya security review of the raw_shopify_orders PII columns (first_name/last_name) before the
+  live Stage-8 apply.
+- Ads near-real-time polling (S5 — separate slice; Meta/Google can't push).
+- The gRPC betterproto-vs-grpcio mismatch is patched for ingestion only; the broader codegen
+  reconciliation is an architect-level follow-up.
 
 Honest note: "real-time ingestion" here is really "make the ingestion write path work
 end-to-end against real infrastructure for the first time" — larger than a flag flip.

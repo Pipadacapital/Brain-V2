@@ -18,10 +18,11 @@ export {
   type ConnectorStatusRow,
 } from './connector-use-cases.js'
 
-// Liveness probes for the data planes (gateway /ready check). pingCh is
-// re-exported here so the gateway doesn't take a direct @brain/lib-clickhouse-ts
-// dependency (core-connectors already depends on it).
-export { pingDb } from '../../../infrastructure/db/workspace-context.js'
+// Liveness probes + workspace DB primitive (gateway /ready check + consumer UPSERT).
+// pingCh re-exported so gateway avoids a direct @brain/lib-clickhouse-ts dependency.
+// withWorkspace re-exported for the realtime-facts-consumer (in-process in api-gateway)
+// which must set the app.workspace_id GUC when upserting into RLS-protected tables.
+export { pingDb, withWorkspace } from '../../../infrastructure/db/workspace-context.js'
 export { pingCh } from '@brain/lib-clickhouse-ts'
 
 export {
