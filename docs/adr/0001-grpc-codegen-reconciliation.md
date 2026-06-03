@@ -1,6 +1,7 @@
 # ADR-0001 — gRPC Codegen Reconciliation (Python stacks: betterproto/grpclib vs grpcio)
 
-**Author:** Aryan (Architect) · **Date:** 2026-06-03 · **Status:** **PROPOSED** (Founder / Rohan ratifies — NOT yet Accepted)
+**Author:** Aryan (Architect) · **Date:** 2026-06-03 · **Status:** **ACCEPTED** (ratified by Founder 2026-06-03 → Option A, grpcio end-to-end)
+**Ratification:** Founder approved Option A and authorized the analytics + intelligence grpcio migration (Steps 0/2/3 + the wire-RPC CI gate). Step 4 (betterproto decommission) stays deferred one release cycle per the plan.
 **Surfaced by:** real-time ingestion epic (`docs/realtime-ingestion-plan.md`). **@paradigm:** sql + io/event-handling (no ML, no LLM — pure toolchain/contract decision).
 **Blast radius:** all internal gRPC contracts in `protos/`, the 3 Python services, the api-gateway BFF client layer, `protos/buf.gen.yaml`, CI.
 **Do NOT undo:** the interim webhook patch (`apps/ingestion-service/src/interfaces/grpc/_pb2/`) — it is the live ingestion server contract and this ADR formalizes its generalization, not its removal.
@@ -129,4 +130,4 @@ This converts "never served" from a silent runtime degradation into a red build.
 
 ## Ratification
 
-**Status: PROPOSED.** Requires Founder / Rohan (CTOA) sign-off before any `buf.gen.yaml` change, because it alters a public-ish toolchain contract surface (`api-discipline`) and pins new tech-stack plugin layers (`tech-stack-evaluation`). Do not mark Accepted until ratified. The interim ingestion patch remains in force and untouched until Step 1 ships.
+**Status: ACCEPTED — ratified by Founder, 2026-06-03.** Option A (grpcio end-to-end) approved; the analytics + intelligence migration (Steps 0/2/3) + the wire-RPC CI gate are authorized and in progress. Step 1 (ingestion re-point to the shared stubs) and Step 4 (betterproto decommission) remain deferred per the sequencing — the interim ingestion `_pb2/` patch stays in force until then. The toolchain-contract concerns (`api-discipline`, `tech-stack-evaluation`) are accepted with grpcio/grpcio-tools pinned ≥ the resolved stable used by the interim patch.

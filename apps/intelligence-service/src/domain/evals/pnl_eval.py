@@ -34,7 +34,7 @@ from typing import Sequence
 
 from brain_cost_router import paradigm
 
-from src.domain.faithfulness.validator import FaithfulnessResult, Signal, validate_faithfulness
+from domain.faithfulness.validator import FaithfulnessResult, Signal, validate_faithfulness
 
 
 # ---------------------------------------------------------------------------

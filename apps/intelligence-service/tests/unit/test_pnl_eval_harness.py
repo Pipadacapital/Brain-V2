@@ -22,13 +22,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..
 
 import pytest
 
-from src.domain.evals.pnl_eval import (
+from domain.evals.pnl_eval import (
     GOLDEN_SET,
     GoldenCase,
     assert_golden_set_passes,
     run_golden_set_eval,
 )
-from src.domain.faithfulness.validator import FaithfulnessResult, Signal
+from domain.faithfulness.validator import FaithfulnessResult, Signal
 
 
 class TestGoldenSetPasses:
@@ -125,7 +125,7 @@ class TestCustomGoldenSet:
         The eval harness detects this because the killed-mutant case
         (expected_ok=False) would now incorrectly pass (got_ok=True).
         """
-        from src.domain.faithfulness.validator import validate_faithfulness as real_validate
+        from domain.faithfulness.validator import validate_faithfulness as real_validate
 
         # Simulate the vacuous mutant: a validator that always says ok=True
         def vacuous_validate(narration, signals):

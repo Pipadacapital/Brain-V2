@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..
 import pytest
 from unittest.mock import MagicMock
 
-from src.domain.memory.query import (
+from domain.memory.query import (
     MIN_K_CROSS_BRAND,
     CrossBrandAggregate,
     build_brand_fingerprint,
