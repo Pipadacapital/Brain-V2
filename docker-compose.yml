@@ -306,8 +306,22 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       GRPC_INTERNAL_HOST: 0.0.0.0
       GRPC_INTERNAL_PORT: 50052
+      # Local-dev boot: BRAIN_ENV=local opens the CH residency escape (fail-closed in
+      # staging/prod); skip the read-only-role check (no such role locally); point at
+      # the LOCAL ClickHouse (never prod). These let MetricsService serve the local
+      # metric-engine so the Morning Brief gRPC read works end-to-end.
+      BRAIN_ENV: local
+      ANALYTICS_POSTGRES_ROLE_CHECK: skip
+      CLICKHOUSE_HOST: clickhouse-dev
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_USER: brain_app
+      CLICKHOUSE_PASSWORD: brain_app_pw
+      CLICKHOUSE_DATABASE: brain
     env_file:
       - .env.docker
+    depends_on:
+      clickhouse-dev:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; health_pb2_grpc.HealthStub(grpc.insecure_channel('127.0.0.1:50052')).Check(health_pb2.HealthCheckRequest(), timeout=2)\" || exit 1"]
       interval: 10s
@@ -339,6 +353,9 @@ services:
       GRPC_INTERNAL_HOST: 0.0.0.0
       GRPC_INTERNAL_PORT: 50053
       POSTGRES_REGION: ap-south-1
+      # Morning Brief metric source: the B2 gRPC client reads analytics MetricsService.
+      # (MORNING_BRIEF_LIVE + ANTHROPIC_API_KEY come from .env.docker — local only.)
+      ANALYTICS_GRPC_TARGET: analytics-service:50052
     env_file:
       - .env.docker
     healthcheck:
