@@ -768,13 +768,20 @@ export async function readOrderTimingsCH(workspaceId: string): Promise<FactOrder
           AND customer_ref != ''
           AND ${CANCELLED_OK}
      )
+     -- PG counts DISTINCT customers with rn>=N (= customers with >=N orders). In CH,
+     -- countIf(rn>=N) counts ROWS (a 5-order customer adds 4 rows at rn>=2) — wrong.
+     -- rn=N occurs EXACTLY ONCE per customer with >=N orders, so countIf(rn=N) ==
+     -- PG's distinct-customer count. (first_orders: rn=1 once per customer = total.)
      SELECT toString(countIf(rn = 1))                          AS first_orders,
-            toString(countIf(rn >= 2))                         AS c2,
-            toString(countIf(rn >= 3))                         AS c3,
-            toString(countIf(rn >= 4))                         AS c4,
-            toString(quantileExactIf(0.5)(gap_days, rn = 2))   AS d12,
-            toString(quantileExactIf(0.5)(gap_days, rn = 3))   AS d23,
-            toString(quantileExactIf(0.5)(gap_days, rn = 4))   AS d34
+            toString(countIf(rn = 2))                          AS c2,
+            toString(countIf(rn = 3))                          AS c3,
+            toString(countIf(rn = 4))                          AS c4,
+            -- PG percentile_cont(0.5) = continuous (linear-interpolated) median ==
+            -- Excel PERCENTILE.INC == CH quantileExactInclusive (idx = p*(n-1)).
+            -- quantileExact PICKS an element (no interpolation) → drifted on even sets.
+            toString(quantileExactInclusiveIf(0.5)(gap_days, rn = 2))   AS d12,
+            toString(quantileExactInclusiveIf(0.5)(gap_days, rn = 3))   AS d23,
+            toString(quantileExactInclusiveIf(0.5)(gap_days, rn = 4))   AS d34
        FROM ranked`,
     { workspaceId },
   )

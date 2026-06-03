@@ -12,7 +12,7 @@
 # phase8 mapping. Avoids cross-dialect rounding fights.
 #
 # Usage: bash tests/integration/parity/run.sh
-# Exit: 0 = 9 active cases passed + 4 skips; non-zero = failure.
+# Exit: 0 = all 12 parity cases passed (0 skips); non-zero = failure.
 #
 # Prerequisites: Docker, pnpm (pnpm install already run).
 # =============================================================================
@@ -196,7 +196,7 @@ INTEGRATION_TEST=true \
 rc=$?
 echo ""
 if [ "$rc" -eq 0 ]; then
-  echo "parity gate: PASS (9 active / 4 skipped)"
+  echo "parity gate: PASS (12 active / 0 skipped)"
 else
   echo "parity gate: FAIL (rc=$rc)"
 fi
