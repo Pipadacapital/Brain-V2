@@ -280,7 +280,7 @@ export async function readProductPerformanceCH(
   const rows = await chQuery<ChProductRow>(
     `WITH per AS (
        SELECT li.vendor_product_id AS pid,
-              any(coalesce(pf.title, li.title))                       AS label,
+              max(coalesce(pf.title, li.title))                       AS label,
               sum(li.quantity * li.price_mu)                          AS revenue_mu,
               sum(li.quantity * coalesce(pf.cost_mu, 0))              AS cogs_mu,
               sum(li.quantity)                                        AS sold,
@@ -307,6 +307,20 @@ export async function readProductPerformanceCH(
               sum(revenue_mu - cogs_mu) OVER (ORDER BY (revenue_mu - cogs_mu) DESC, pid
                                               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)        AS cum_cm1
          FROM per
+     ),
+     -- Grade + order on NUMERIC columns here. The outer SELECT toString()s revenue_mu/
+     -- cm1_mu/total_cm1 -- doing the grade there shadows those names with String aliases
+     -- (UInt8 x String error) and would lexically mis-order cm1_mu. Integer math
+     -- cum_cm1*100 <= 80*total_cm1 equals PG cum_cm1 <= 0.80*total_cm1 exactly.
+     graded AS (
+       SELECT label, revenue_mu, cm1_mu, sold, orders, total_cm1,
+              multiIf(cm1_mu <= 0, 'F',
+                      total_cm1 > 0 AND cum_cm1 * 100 <= 80 * total_cm1, 'A',
+                      total_cm1 > 0 AND cum_cm1 * 100 <= 95 * total_cm1, 'B',
+                      'C') AS grade
+         FROM ranked
+        ORDER BY cm1_mu DESC
+        LIMIT 500
      )
      SELECT label,
             toString(revenue_mu) AS revenue_mu,
@@ -314,13 +328,8 @@ export async function readProductPerformanceCH(
             toString(sold)       AS sold,
             toString(orders)     AS orders,
             toString(total_cm1)  AS total_cm1,
-            multiIf(cm1_mu <= 0, 'F',
-                    total_cm1 > 0 AND cum_cm1 <= toInt64(0.80 * total_cm1), 'A',
-                    total_cm1 > 0 AND cum_cm1 <= toInt64(0.95 * total_cm1), 'B',
-                    'C') AS grade
-       FROM ranked
-      ORDER BY cm1_mu DESC
-      LIMIT 200`,
+            grade
+       FROM graded`,
     // FINAL is required: connector_line_item_facts is a ReplacingMergeTree and a
     // backfill re-insert leaves duplicate versions until merged. skipFinal here
     // double-counted revenue/units (pf is already deduped via its argMax subquery,
