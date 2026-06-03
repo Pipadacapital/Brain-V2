@@ -2,8 +2,17 @@
   "name": "@brain/eslint-config",
   "private": true,
   "version": "0.0.0",
-  "description": "Shared ESLint configuration for all TypeScript packages and apps.",
+  "type": "module",
+  "description": "Shared ESLint flat-config base for all TypeScript backend packages and apps.",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "scripts": {
     "build": "echo 'no build needed for eslint config'"
+  },
+  "peerDependencies": {
+    "eslint": "^9",
+    "typescript-eslint": "^8"
   }
 }

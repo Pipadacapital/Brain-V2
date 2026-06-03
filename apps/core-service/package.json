@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "lint": "echo 'lint stub'",
+    "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run --reporter=verbose",
     "test:coverage": "vitest run --coverage"
   },
