@@ -34,6 +34,10 @@ import {
   startRealtimeFactsConsumer,
   stopRealtimeFactsConsumer,
 } from '../infrastructure/realtime-facts-consumer.js';
+import {
+  startSyncScheduler,
+  stopSyncScheduler,
+} from '../infrastructure/sync-scheduler.js';
 
 import { assembleClaim } from '@brain/core-auth';
 import { resolveMembership, listWorkspaces } from '@brain/core-onboarding';
@@ -469,6 +473,7 @@ async function main() {
       server.log.info({ signal }, 'shutting down — draining connections');
       // Disconnect the Kafka consumer before closing HTTP (best-effort; never throws).
       void stopRealtimeFactsConsumer().catch(() => undefined);
+      stopSyncScheduler();
       server.close().then(
         () => process.exit(0),
         (err) => { server.log.error({ err }, 'error during shutdown'); process.exit(1); },
@@ -499,6 +504,18 @@ async function main() {
     server.log.info('realtime-facts-consumer: ENABLED — connecting to Kafka');
   } else {
     server.log.info('realtime-facts-consumer: DISABLED (REALTIME_FACTS_CONSUMER != true)');
+  }
+
+  // Near-real-time ad-spend poll scheduler (S5).
+  // Meta/Google APIs are pull-only — webhooks cannot deliver ad spend. This
+  // scheduler fires syncConnector on a configurable interval.
+  // Disabled by default (SYNC_SCHEDULER_ENABLED != 'true') so production deploys
+  // opt in explicitly — no accidental polling against prod Founder-gated tokens.
+  if ((process.env['SYNC_SCHEDULER_ENABLED'] ?? '').toLowerCase() === 'true') {
+    startSyncScheduler(server.log);
+    server.log.info('sync-scheduler: STARTED (see SYNC_POLL_INTERVAL_MS / SYNC_POLL_VENDORS / SYNC_POLL_WORKSPACES)');
+  } else {
+    server.log.info('sync-scheduler: DISABLED (SYNC_SCHEDULER_ENABLED != true) — set to true to enable near-real-time ad-spend polling');
   }
 }
 

@@ -140,6 +140,21 @@ services:
       # Enables the in-process Kafka→facts consumer (real-time ingestion). Off by
       # default so a deploy opts in explicitly.
       REALTIME_FACTS_CONSUMER: "true"
+      # Near-real-time ad-spend poll scheduler (S5).
+      # Meta and Google Ads APIs are pull-only (push not supported) — this scheduler
+      # fills the gap with a periodic sync. Shopify is webhook-driven; add 'SHOPIFY'
+      # to SYNC_POLL_VENDORS only if you want reconciliation polling as a backstop.
+      # Disabled by default so production deploys opt in explicitly (live Meta/Google
+      # tokens are Founder-gated; locally syncs will attempt + fail at fetch — expected).
+      SYNC_SCHEDULER_ENABLED: "false"
+      # Poll interval in milliseconds. Default: 1800000 (30 minutes).
+      SYNC_POLL_INTERVAL_MS: "1800000"
+      # Comma-separated vendor list to poll. Default: META,GOOGLE.
+      # Shopify is webhook-driven; SHOPIFY here = optional reconciliation backstop only.
+      SYNC_POLL_VENDORS: "META,GOOGLE"
+      # Comma-separated workspace UUIDs to poll. Default: Sugandhlok dev workspace.
+      # TODO(multi-tenant): replace with a withSuperadmin enumeration when >1 workspace.
+      SYNC_POLL_WORKSPACES: "f165da80-e6d5-4c58-9aff-ec654b873bd7"
       # Webhook intake: register POST /webhooks/:vendor locally + forward to the
       # ingestion-service gRPC over brain-net. The gRPC transport + HMAC verify are
       # now PROVEN working end-to-end on local-dev (S2.4): signed webhook → verify →
