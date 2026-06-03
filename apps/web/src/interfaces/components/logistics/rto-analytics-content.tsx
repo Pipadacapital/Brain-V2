@@ -15,6 +15,7 @@ import { DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
+import { useScopedPath } from '@/infrastructure/workspace-slug-context.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/interfaces/components/ui/card.js';
@@ -36,6 +37,7 @@ function fmtRate(bp: number | null): string {
 export function RtoAnalyticsContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+  const toPath = useScopedPath();
   const [dateStart, setDateStart] = useQueryState('from', parseAsString.withDefault(makeDefault90dStart()));
   const [dateEnd, setDateEnd] = useQueryState('to', parseAsString.withDefault(DEFAULT_DATE_END));
 
@@ -97,7 +99,7 @@ export function RtoAnalyticsContent() {
           return (
             <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100 dark:border-amber-700">
               No Shiprocket connection. Connect Shiprocket in{' '}
-              <a href="/settings/integrations" className="font-medium underline">Settings → Integrations</a>{' '}
+              <a href={toPath("/settings/integrations")} className="font-medium underline">Settings → Integrations</a>{' '}
               to view RTO analytics.
             </div>
           );

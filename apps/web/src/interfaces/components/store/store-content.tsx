@@ -20,6 +20,7 @@ import { useQueryState, parseAsStringEnum, parseAsString } from 'nuqs';
 import Link from 'next/link';
 import { ArrowRight, RefreshCw, Download } from 'lucide-react';
 import { useAppSelector } from '@/domain/store/hooks.js';
+import { useScopedPath } from '@/infrastructure/workspace-slug-context.js';
 import { RevenueLadderStrip } from '@/interfaces/components/store/revenue-ladder-strip.js';
 import { StalenessLabel } from '@/interfaces/components/shared/staleness-label.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
@@ -43,6 +44,7 @@ const TABS: { value: TabValue; label: string }[] = [
 export function StoreContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+  const toPath = useScopedPath();
 
   const [tab, setTab] = useQueryState(
     'tab',
@@ -186,7 +188,7 @@ export function StoreContent() {
         <div className="rounded-xl border-2 border-dashed border-border p-8 text-center space-y-3">
           <p className="text-sm text-muted-foreground">
             Connect a Shopify or WooCommerce store from{' '}
-            <Link href="/settings/integrations" className="font-medium underline underline-offset-2">
+            <Link href={toPath("/settings/integrations")} className="font-medium underline underline-offset-2">
               Integrations
             </Link>{' '}
             to view orders, products, and customers here.
@@ -221,7 +223,7 @@ export function StoreContent() {
               </p>
               <div>
                 <Button asChild>
-                  <Link href="/product-cogs">
+                  <Link href={toPath("/product-cogs")}>
                     Open the COGS editor
                     <ArrowRight className="ml-1.5 h-4 w-4" />
                   </Link>

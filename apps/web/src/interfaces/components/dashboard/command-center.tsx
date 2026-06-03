@@ -11,6 +11,7 @@
 import { DEFAULT_DATE_START, DEFAULT_DATE_END } from "@/lib/default-date-range.js";
 import { useQueryState, parseAsString } from 'nuqs';
 import { useAppSelector } from '@/domain/store/hooks.js';
+import { useScopedPath } from '@/infrastructure/workspace-slug-context.js';
 import { KpiStrip } from '@/interfaces/components/kpi/kpi-strip.js';
 import { PnlWaterfallPanel } from '@/interfaces/components/waterfall/pnl-waterfall-panel.js';
 import { DrillDrawer } from '@/interfaces/components/drill/drill-drawer.js';
@@ -31,6 +32,7 @@ function currentMonthRange(): { start: string; end: string } {
 export function CommandCenter() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+  const toPath = useScopedPath();
 
   // CF-C6-AS-OF-STAMP-1: date range in URL state (nuqs).
   const [dateStart, setDateStart] = useQueryState(
@@ -68,7 +70,7 @@ export function CommandCenter() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <a href="/dashboard" className="text-lg font-bold text-gray-900">
+            <a href={toPath("/dashboard")} className="text-lg font-bold text-gray-900">
               Brain
             </a>
             <span aria-hidden="true" className="text-gray-300">|</span>

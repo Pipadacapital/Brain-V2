@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Laptop, Loader2, ShieldCheck, Trash2, User as UserIcon } from 'lucide-react';
 import { useAppSelector } from '@/domain/store/hooks.js';
+import { useScopedPath } from '@/infrastructure/workspace-slug-context.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 import { Avatar, AvatarFallback, AvatarImage } from '@/interfaces/components/ui/avatar.js';
@@ -51,6 +52,7 @@ export function AccountContent() {
   const router = useRouter();
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
+  const toPath = useScopedPath();
   const utils = trpc.useUtils();
 
   const { data, isLoading, error } = trpc.user.account.useQuery(undefined, {
@@ -188,7 +190,7 @@ export function AccountContent() {
         const sb = createSupabaseBrowserClient();
         await sb.auth.signOut();
       } catch { /* swallow */ }
-      router.push('/login');
+      window.location.assign('/auth/login');
     },
   });
 
@@ -203,7 +205,7 @@ export function AccountContent() {
   };
 
   // Back link — workspace-scoped like legacy
-  const backHref = workspaceId ? `/dashboard` : '/';
+  const backHref = toPath('/dashboard');
 
   if (!isAuthenticated) {
     return (

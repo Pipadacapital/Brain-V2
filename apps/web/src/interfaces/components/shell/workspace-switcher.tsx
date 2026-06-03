@@ -66,10 +66,15 @@ export function WorkspaceSwitcher() {
         }),
       );
 
-      // 3. Hard reload so every query refetches under the new workspace context.
-      //    The new x-brain-workspace header is picked up from localStorage by the
-      //    tRPC client on the fresh load.
-      window.location.assign("/dashboard");
+      // 3. Hard reload to the workspace-scoped dashboard URL so the new slug
+      //    is in the URL (single source of truth). Look up the slug for the
+      //    switched workspace from the already-fetched list; fall back to the
+      //    generic /dashboard redirect page if the list isn't loaded yet.
+      const targetWs = workspaceList?.workspaces?.find(
+        (w) => w.workspaceId === data.workspaceId,
+      );
+      const slug = targetWs?.slug;
+      window.location.assign(slug ? `/w/${slug}/dashboard` : '/dashboard');
     },
   });
 

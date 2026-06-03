@@ -18,6 +18,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
+import { useScopedPath } from '@/infrastructure/workspace-slug-context.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 import { DEFAULT_DATE_START, DEFAULT_DATE_END } from '@/lib/default-date-range.js';
@@ -79,6 +80,7 @@ export function AdCampaignsContent() {
   const workspaceId     = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
   const workspaceRole   = useAppSelector((s) => s.session.workspaceRole);
+  const toPath = useScopedPath();
 
   const canChange = isManager(workspaceRole);
 
@@ -256,15 +258,15 @@ export function AdCampaignsContent() {
         <h2 className="text-lg font-semibold text-foreground">Ad campaign classification</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Tag campaigns as <strong>Acquisition</strong> for aMER on{' '}
-          <Link href="acquisition" className="underline">
+          <Link href={toPath("/acquisition")} className="underline">
             Acquisition
           </Link>
           . Splits appear on{' '}
-          <Link href="meta-ads" className="underline">
+          <Link href={toPath("/meta-ads")} className="underline">
             Meta
           </Link>{' '}
           &{' '}
-          <Link href="google-ads" className="underline">
+          <Link href={toPath("/google-ads")} className="underline">
             Google
           </Link>{' '}
           Ads. Window: last 90 days spend.

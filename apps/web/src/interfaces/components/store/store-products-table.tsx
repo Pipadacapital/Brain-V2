@@ -11,6 +11,7 @@ import { useQueryState, parseAsString, parseAsInteger, parseAsStringEnum } from 
 import { Loader2, ChevronLeft, ChevronRight, Search, ExternalLink } from 'lucide-react';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
+import { useScopedPath } from '@/infrastructure/workspace-slug-context.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { Button } from '@/interfaces/components/ui/button.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
@@ -24,6 +25,7 @@ const STATUS = ['all', 'ACTIVE', 'DRAFT', 'ARCHIVED'] as const;
 export function StoreProductsTable() {
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
   const workspaceId     = useAppSelector((s) => s.session.workspaceId);
+  const toPath = useScopedPath();
 
   const [search, setSearch] = useQueryState('q',      parseAsString.withDefault(''));
   const [status, setStatus] = useQueryState('status', parseAsStringEnum<typeof STATUS[number]>([...STATUS]).withDefault('all'));
@@ -70,7 +72,7 @@ export function StoreProductsTable() {
             {isLoading ? 'Loading…' : `${total.toLocaleString()} product${total !== 1 ? 's' : ''}`}
           </span>
           <Button asChild size="sm" variant="outline">
-            <Link href="/product-cogs">
+            <Link href={toPath("/product-cogs")}>
               Edit COGS<ExternalLink className="ml-1 h-3.5 w-3.5" />
             </Link>
           </Button>

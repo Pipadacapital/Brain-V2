@@ -14,8 +14,10 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// src/test → src/app/(shell)
-const SHELL_DIR = join(__dirname, '..', 'app', '(shell)');
+// src/test → src/app/w/[workspaceSlug]/(shell)
+// All shell routes live under the workspace-scoped URL tree since the routing
+// fix that introduced /w/[workspaceSlug]/(shell)/* (PR: fix-workspace-routing).
+const SHELL_DIR = join(__dirname, '..', 'app', 'w', '[workspaceSlug]', '(shell)');
 
 function walk(dir: string): string[] {
   const out: string[] = [];
