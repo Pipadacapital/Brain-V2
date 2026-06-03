@@ -34,7 +34,7 @@ from typing import Any, Sequence
 
 from brain_cost_router import paradigm
 
-from src.domain.faithfulness.validator import Signal
+from domain.faithfulness.validator import Signal
 
 logger = logging.getLogger(__name__)
 

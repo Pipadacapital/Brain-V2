@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..
 
 import pytest
 
-from src.domain.signals.pnl_signals import (
+from domain.signals.pnl_signals import (
     DailyRow,
     PnlSummary,
     SignalAnomaly,

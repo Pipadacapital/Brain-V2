@@ -107,6 +107,11 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "grpcio-tools" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "clickhouse-connect", specifier = ">=0.8.0" },
@@ -114,6 +119,9 @@ requires-dist = [
     { name = "grpcio-health-checking", specifier = ">=1.68.0,<2.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "grpcio-tools", specifier = ">=1.80.0,<2.0.0" }]
 
 [[package]]
 name = "annotated-doc"
@@ -730,6 +738,11 @@ dependencies = [
     { name = "pydantic" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "grpcio-tools" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "brain-cost-router", editable = "pylibs/brain_cost_router" },
@@ -740,6 +753,9 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.42.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "grpcio-tools", specifier = ">=1.80.0,<2.0.0" }]
 
 [[package]]
 name = "jinja2"

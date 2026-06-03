@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..
 
 import pytest
 
-from src.domain.injection.preprocessor import (
+from domain.injection.preprocessor import (
     InjectionFlaggedError,
     SpotlightedBlock,
     _escape_fence_sentinels,
@@ -181,7 +181,7 @@ class TestRenderUntrustedSection:
         CF-C5-INJECTION-SPOTLIGHT-7: operator text ONLY appears in the
         untrusted section, never in the static instruction template.
         """
-        from src.domain.agents.prompts.pnl_system_prompt import PNL_SYSTEM_PROMPT
+        from domain.agents.prompts.pnl_system_prompt import PNL_SYSTEM_PROMPT
         # The static system prompt must NOT contain any operator-entered text
         assert "Sugandh Lok" not in PNL_SYSTEM_PROMPT
         assert "Q2 Revenue Target" not in PNL_SYSTEM_PROMPT

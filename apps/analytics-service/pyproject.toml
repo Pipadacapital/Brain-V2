@@ -20,6 +20,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+# grpcio-tools: generates _pb2.py + _pb2_grpc.py stubs from .proto files.
+# Run: uv run --with grpcio-tools python -m grpc_tools.protoc ... (see ADR-0001 Step 0).
+# Stubs are committed at src/interfaces/grpc/_pb2/ — not generated at build time.
+[dependency-groups]
+dev = ["grpcio-tools>=1.80.0,<2.0.0"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
