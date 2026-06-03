@@ -38,10 +38,12 @@ const SEED_BRIEF: MorningBrief = {
         impact_label: '+₹10K',
       },
       risk: 'LOW',
-      data_epoch: new Date('2026-05-25T00:00:00Z'),
+      // mobile-5: ISO string, not Date (redux-persist rehydrates JSON as string)
+      data_epoch: '2026-05-25T00:00:00.000Z',
     },
   ],
-  data_epoch: new Date('2026-05-25T00:00:00Z'),
+  // mobile-5: ISO string, not Date
+  data_epoch: '2026-05-25T00:00:00.000Z',
   freshness_label: 'Live',
 };
 
@@ -117,7 +119,7 @@ describe('OTel SLO metric: emitted for both online and offline render', () => {
     expect(metric).not.toBeNull();
     expect(metric!.online).toBe(true);
     expect(metric!.workspace_id).toBe('workspace-1');
-    expect(metric!.render_success_latency_ms).toBeGreaterThanOrEqual(0);
+    expect(metric!.fetch_latency_ms).toBeGreaterThanOrEqual(0);
   });
 
   it('emits metric with online=false for stale (offline) render', () => {
@@ -144,6 +146,6 @@ describe('OTel SLO metric: emitted for both online and offline render', () => {
   it('latency_ms is non-negative', () => {
     markMorningBriefRenderStart();
     const metric = emitMorningBriefRenderSuccess('workspace-1', true);
-    expect(metric!.render_success_latency_ms).toBeGreaterThanOrEqual(0);
+    expect(metric!.fetch_latency_ms).toBeGreaterThanOrEqual(0);
   });
 });

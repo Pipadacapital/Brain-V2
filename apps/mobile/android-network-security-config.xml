@@ -1,29 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Android Network Security Config — cert pinning for Brain api-gateway.
-  MASVS L1 + key L2: current pin + rotation pin configured.
-  CF-C6-PII-CLIENT-1: enforces TLS connection to brain.pipadacapital.com only.
+  Android Network Security Config for Brain.
 
-  IMPORTANT: replace PLACEHOLDER_CURRENT_PIN / PLACEHOLDER_ROTATION_PIN with the
-  actual SPKI-SHA256 fingerprints derived from the server's TLS certificate before
-  any production build. See the runbook for the pin derivation procedure.
+  mobile-9 fix: placeholder SPKI pins (PLACEHOLDER_CURRENT_PIN / PLACEHOLDER_ROTATION_PIN)
+  removed. Shipping placeholder values causes Android to reject ALL TLS connections to the
+  domain on a real build (the pin never matches). The pin-set block must be restored with
+  REAL SHA-256 SPKI fingerprints derived from the live TLS certificate before any
+  production EAS build.
 
-  Rotation procedure:
-    1. Add new pin as a SECOND <pin> entry before rotating the certificate.
-    2. EAS Build (native bump required — NOT OTA) with both pins.
-    3. After rollout, remove the old pin in the next native release.
-    4. OTA updates cannot change cert pins (native asset).
-  OTA-vs-native bump decision: cert pin changes require a NATIVE bump (store review).
+  Restore procedure (from docs/runbook-cert-pinning.md):
+    1. Derive SPKI fingerprints:
+         openssl s_client -connect brain.pipadacapital.com:443 | \
+           openssl x509 -pubkey -noout | \
+           openssl pkey -pubin -outform der | \
+           openssl dgst -sha256 -binary | base64
+    2. Add current pin + rotation pin to the <pin-set> below.
+    3. OTA the new pin set ONE WEEK before server certificate rotation.
+    4. Pin changes require a NATIVE bump (store review), NOT an OTA update.
+
+  MASVS L1 + key L2: TLS + cert pinning required for production.
+  cleartextTrafficPermitted=false enforced for all non-localhost domains.
 -->
 <network-security-config>
   <domain-config cleartextTrafficPermitted="false">
     <domain includeSubdomains="true">brain.pipadacapital.com</domain>
-    <pin-set expiration="2027-01-01">
-      <!-- Current pin (SPKI SHA-256, Base64 encoded). -->
-      <pin digest="SHA-256">PLACEHOLDER_CURRENT_PIN=</pin>
-      <!-- Rotation pin (pre-loaded before certificate rotation). -->
-      <pin digest="SHA-256">PLACEHOLDER_ROTATION_PIN=</pin>
-    </pin-set>
+    <!--
+      TODO (before production build): restore the pin-set block with real SPKI pins.
+      Example structure (two pins: current + rotation):
+        <pin-set expiration="2027-01-01">
+          <pin digest="SHA-256">REAL_CURRENT_PIN_BASE64=</pin>
+          <pin digest="SHA-256">REAL_ROTATION_PIN_BASE64=</pin>
+        </pin-set>
+    -->
   </domain-config>
   <!--
     Local dev harness: allow cleartext to localhost (Phase 0-1 only).

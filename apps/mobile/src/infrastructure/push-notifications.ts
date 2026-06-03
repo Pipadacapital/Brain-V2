@@ -16,6 +16,8 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as Application from 'expo-application';
+import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { trpcClient } from './trpc-client.js';
 
@@ -77,10 +79,16 @@ export async function registerPushToken(
   }
 
   // Get the Expo push token.
+  // mobile-1 fix: use Constants.expoConfig.extra.eas.projectId (the EAS project UUID),
+  // NOT the bundle identifier. The bundle id as projectId causes registration to throw
+  // on real EAS builds because Expo expects a UUID, not a bundle id string.
+  const easProjectId =
+    (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ??
+    undefined;
   let token: string;
   try {
     const result = await Notifications.getExpoPushTokenAsync({
-      projectId: Application.applicationId ?? undefined,
+      projectId: easProjectId,
     });
     token = result.data;
   } catch (err) {
@@ -88,12 +96,38 @@ export async function registerPushToken(
     return null;
   }
 
-  // Device ID: use Application.androidId (Android) or Device.deviceName (iOS fallback).
-  // Application.getAndroidId() is async (expo-application v6+); fall back to Device.deviceName.
-  const deviceId =
-    (Platform.OS === 'android'
-      ? (await Application.getAndroidId?.() ?? null)
-      : Device.deviceName) ?? `device_${Platform.OS}`;
+  // mobile-11 fix: stable install ID (survives app-kills, never changes per install).
+  // Priority: IDFV (iOS) or AndroidId (Android), both from expo-application.
+  // Fallback: a UUID we generate once and store in SecureStore so it persists.
+  // A per-call random is wrong — it breaks server-side idempotent upsert on
+  // (workspace_id, user_id, device_id) because the key changes every launch.
+  const DEVICE_ID_KEY = 'brain.device_id';
+  let deviceId: string;
+  if (Platform.OS === 'ios') {
+    // IDFV is stable per vendor (bundle prefix) and survives app updates.
+    deviceId = Application.getIosIdForVendorAsync
+      ? (await Application.getIosIdForVendorAsync()) ?? ''
+      : '';
+  } else {
+    // AndroidId is stable per device + app signing key.
+    deviceId = (await Application.getAndroidId?.()) ?? '';
+  }
+  if (!deviceId) {
+    // Final fallback: a UUID we minted on first install, stored in SecureStore.
+    const stored = await SecureStore.getItemAsync(DEVICE_ID_KEY);
+    if (stored) {
+      deviceId = stored;
+    } else {
+      // Generate a random UUID v4 and persist it. This runs exactly once per install.
+      const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+      await SecureStore.setItemAsync(DEVICE_ID_KEY, uuid);
+      deviceId = uuid;
+    }
+  }
 
   // Register with the api-gateway (idempotent upsert).
   // CF-C6-MB-PUSH-TOKEN-1: token stored in core.device_tokens (server-side RLS-scoped).

@@ -1,13 +1,15 @@
 // @paradigm: sql
-// CF-C6-MB-OFFLINE-SLO-1: device-side OTel SLO metric hook.
+// CF-C6-MB-OFFLINE-SLO-1: device-side fetch-latency metric hook.
 //
-// Emits `morning_brief.render_success_latency_ms{workspace_id}` so the
-// 07:20 IST SLO is measured from the device's perspective, not just push-delivery.
+// Emits `morning_brief.fetch_latency_ms{workspace_id}` — the time from
+// fetchBrief() start to data-received (or stale-brief-shown on offline path).
+// This is FETCH LATENCY, not a post-render SLO measurement. The delivery SLO
+// (>99.5% by 07:20 IST) is measured server-side from push dispatch timestamp.
 //
-// The 07:20 IST SLO window: delivery by 07:20 IST on >99.5% of days.
-// This module measures render latency from app open to brief rendered on screen.
+// mobile-3 fix: renamed from render_success_latency_ms → fetch_latency_ms to
+// match what is actually measured (request start → dispatch, not post-commit render).
+//
 // In Phase 0-1: metrics are emitted to the console (OTel OTLP exporter = Phase 2).
-//
 // CF-C6-MB-OFFLINE-SLO-1: record metrics even when offline (stale brief render).
 
 import type { MorningBriefSloMetric } from './types.js';
@@ -24,8 +26,13 @@ export function markMorningBriefRenderStart(): void {
 }
 
 /**
- * Emit the render-success SLO metric.
+ * Emit the fetch-latency metric.
  * CF-C6-MB-OFFLINE-SLO-1: emitted on both online (fresh) and offline (stale) render.
+ *
+ * mobile-3 fix: renamed from emitMorningBriefRenderSuccess.
+ * The metric key is now `morning_brief.fetch_latency_ms` to accurately describe
+ * what is measured: time from fetchBrief() start to data-dispatched (or stale-brief
+ * shown on the offline path). Post-render SLO measurement is Phase 2.
  *
  * In Phase 0-1: logs to console + stored in module-level array for testing.
  * In Phase 2: OTLP exporter sends to the OTel collector.
@@ -48,7 +55,7 @@ export function emitMorningBriefRenderSuccess(
   const today = new Date().toISOString().split('T')[0] ?? '';
   const metric: MorningBriefSloMetric = {
     workspace_id: workspaceId,
-    render_success_latency_ms: latency,
+    fetch_latency_ms: latency,
     date: today,
     online,
   };
@@ -59,10 +66,10 @@ export function emitMorningBriefRenderSuccess(
   // In production: send via OTLP here.
   // For now: structured log (no PII — CF-C6-PII-CLIENT-1).
   console.info(
-    '[morning_brief.render_success_latency_ms]',
+    '[morning_brief.fetch_latency_ms]',
     JSON.stringify({
       workspace_id: metric.workspace_id,
-      latency_ms: metric.render_success_latency_ms,
+      fetch_latency_ms: metric.fetch_latency_ms,
       date: metric.date,
       online: metric.online,
     }),

@@ -75,13 +75,24 @@ export interface InsightItem {
   expected_impact: ExpectedImpact;
   /** Registry-DERIVED risk level. Server-provided. NEVER computed on device. */
   risk: RiskLevel;
-  data_epoch: Date;
+  /**
+   * mobile-5 fix: ISO-8601 string, NOT a Date object.
+   * redux-persist (AsyncStorage) JSON-serialises values; a Date rehydrates as a
+   * string, not a Date instance. Typing it as Date was a type lie that would cause
+   * `.toISOString()` calls to throw after rehydration. Use an ISO string throughout;
+   * callers that need a Date object must do `new Date(data_epoch)` explicitly.
+   */
+  data_epoch: string;
 }
 
 /** The Morning Brief response from the server. */
 export interface MorningBrief {
   items: InsightItem[];   // THREE-SIGNAL RULE: ≤3 items. Never more.
-  data_epoch: Date;
+  /**
+   * mobile-5 fix: ISO-8601 string, NOT a Date object.
+   * See InsightItem.data_epoch for rationale.
+   */
+  data_epoch: string;
   freshness_label: string;
 }
 
@@ -128,12 +139,17 @@ export interface OfflineState {
 }
 
 /**
- * OTel device-side SLO metric for Morning Brief render.
- * CF-C6-MB-OFFLINE-SLO-1: device-side measurement of the 07:20 IST SLO.
+ * OTel device-side fetch-latency metric for Morning Brief.
+ * CF-C6-MB-OFFLINE-SLO-1: device-side measurement from fetchBrief() start to
+ * data-received. Renamed from render_success_latency_ms — that name implied
+ * post-render SLO measurement, but the timer runs from network request start to
+ * dispatch, making it fetch latency. The 07:20 IST delivery SLO is measured
+ * server-side (push dispatch timestamp); this is the per-device fetch half.
  */
 export interface MorningBriefSloMetric {
   workspace_id: string;
-  render_success_latency_ms: number;
+  /** mobile-3: renamed from render_success_latency_ms — this is fetch latency, not post-render SLO. */
+  fetch_latency_ms: number;
   date: string;           // ISO date e.g. "2026-05-25"
   online: boolean;
 }

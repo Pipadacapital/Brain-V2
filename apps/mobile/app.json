@@ -16,22 +16,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.pipadacapital.brain",
-      "infoPlist": {
-        "NSPinnedDomains": {
-          "brain.pipadacapital.com": {
-            "NSIncludesSubdomains": true,
-            "NSPinnedLeafIdentities": [
-              {
-                "SPKI-SHA256-BASE64": "PLACEHOLDER_CURRENT_PIN"
-              },
-              {
-                "SPKI-SHA256-BASE64": "PLACEHOLDER_ROTATION_PIN"
-              }
-            ]
-          }
-        }
-      }
+      "bundleIdentifier": "com.pipadacapital.brain"
     },
     "android": {
       "adaptiveIcon": {

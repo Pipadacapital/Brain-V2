@@ -45,10 +45,12 @@ const SEED_BRIEF: MorningBrief = {
         impact_label: '+₹37K net revenue',
       },
       risk: 'LOW',
-      data_epoch: new Date('2026-05-25T00:00:00Z'),
+      // mobile-5: data_epoch is an ISO string, not a Date (redux-persist rehydrates JSON as string)
+      data_epoch: '2026-05-25T00:00:00.000Z',
     },
   ],
-  data_epoch: new Date('2026-05-25T00:00:00Z'),
+  // mobile-5: data_epoch is an ISO string, not a Date
+  data_epoch: '2026-05-25T00:00:00.000Z',
   freshness_label: 'Live',
 };
 
@@ -235,7 +237,8 @@ describe('THREE-SIGNAL RULE: brief items', () => {
         { ...SEED_BRIEF.items[0]!, insight_id: 'b' },
         { ...SEED_BRIEF.items[0]!, insight_id: 'c' },
       ],
-      data_epoch: new Date(),
+      // mobile-5: ISO string, not Date
+      data_epoch: new Date().toISOString(),
       freshness_label: 'Live',
     };
     const state = morningBriefReducer(
