@@ -83,10 +83,8 @@ describe.skipIf(!RUN)('PG↔CH parity (integration)', () => {
 
   // NOTE: shipment/pincode are CH-ONLY facts (no PG table) — no PG plane to compare.
 
-  // --- KNOWN PG↔CH DRIFT found by this gate (tracked follow-ups; un-skip on fix) ---
-  // readCogs + readProductPerformance + readLifecycleStates are RECONCILED (active).
-  // Remaining:
-  //  - readOrderTimings: aggregate fields differ beyond firstOrders. Tracked.
+  // All previously-drifting readers are now RECONCILED + active (readCogs,
+  // readProductPerformance, readLifecycleStates, readOrderTimings).
 
   // RECONCILED: CH grade now uses exact integer math (cum_cm1*100 ≤ 80*total_cm1)
   // == PG's `≤ 0.80*total_cm1` (was toInt64-truncated → boundary drift); CH LIMIT
@@ -101,5 +99,8 @@ describe.skipIf(!RUN)('PG↔CH parity (integration)', () => {
   // (dateDiff('second', last_at, nowref.n) <= N*86400) instead of subtracting two
   // DateTimes vs an INTERVAL (which threw) — exactly PG's recency-interval buckets.
   it('readLifecycleStates', async () => eq(await PG.readLifecycleStates(WS), await CH.readLifecycleStatesCH(WS)))
-  it.skip('readOrderTimings [KNOWN DRIFT — tracked]', async () => eq(await PG.readOrderTimings(WS), await CH.readOrderTimingsCH(WS)))
+  // RECONCILED: CH c2/c3/c4 now use countIf(rn=N) (one row per customer with >=N
+  // orders) == PG count(DISTINCT customer_ref FILTER rn>=N) — was countIf(rn>=N)
+  // which counted rows. Medians (days12/23/34) are Math.round()ed day counts.
+  it('readOrderTimings', async () => eq(await PG.readOrderTimings(WS), await CH.readOrderTimingsCH(WS)))
 })
