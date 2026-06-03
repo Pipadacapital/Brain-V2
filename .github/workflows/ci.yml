@@ -216,3 +216,27 @@ jobs:
           version: "0.8.22"
       - name: ingestion integration suite vs disposable PG+CH
         run: bash tests/integration/db-integration/run.sh
+
+  # PG↔CH parity gate (advisor review P1-15 / P1-5). The dual read path
+  # (fact-analytics.ts PG vs fact-analytics-ch.ts CH) hand-mirrors every metric;
+  # nothing enforced they agree. parity.integration.test.ts asserts the two planes
+  # return identical results — but it was DARK (needs real PG+CH data). The harness
+  # seeds PG facts, derives CH via the canonical phase8 backfill (parity by
+  # construction — the same projection that built brain_dev), then runs the 9 active
+  # parity cases (3 known-drift cases stay skipped: productPerf/lifecycle/orderTimings).
+  # Needs Docker + pnpm. Now blocking — editing one plane's SQL and not the other fails CI.
+  parity-gate:
+    name: PG↔CH read-path parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable && corepack prepare pnpm@11.0.9 --activate
+      - name: Install JS deps (frozen)
+        run: pnpm install --frozen-lockfile
+        env:
+          PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true"
+      - name: PG↔CH parity (seed PG → phase8-derive CH → vitest)
+        run: bash tests/integration/parity/run.sh
