@@ -173,3 +173,25 @@ jobs:
       - uses: actions/checkout@v4
       - name: migrate.sh replay/idempotency/adopt/incremental/drift
         run: bash tests/integration/migrator/run.sh
+
+  # Backend lint (advisor review P1-16). ESLint was not installed at all
+  # (eslint-config was an empty stub; core-service lint = `echo lint stub`).
+  # Now a real flat config (@brain/eslint-config) lints the backend TS surface
+  # (api-gateway + core-service). Pragmatic baseline: real-bug rules are ERROR
+  # (blocking), stylistic/explicit-any are WARN (surfaced, non-blocking) — so the
+  # gate is green on the existing code today and ratchets over time.
+  backend-lint:
+    name: Backend lint (eslint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable && corepack prepare pnpm@11.0.9 --activate
+      - name: Install JS deps (frozen)
+        run: pnpm install --frozen-lockfile
+        env:
+          PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true"
+      - name: eslint — backend (api-gateway + core-service)
+        run: pnpm lint:backend
