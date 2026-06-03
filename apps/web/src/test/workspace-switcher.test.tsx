@@ -164,8 +164,9 @@ describe('WorkspaceSwitcher', () => {
       payload: { userId: 'user-1', workspaceId: 'ws-2', workspaceRole: 'ADMIN' },
     });
 
-    // Hard reload to /dashboard so all queries refetch under the new workspace.
-    expect(h.locationAssign).toHaveBeenCalledWith('/dashboard');
+    // Hard reload to the workspace-scoped dashboard URL (single source of truth).
+    // The slug for ws-2 is 'second-brand' from the workspace list.
+    expect(h.locationAssign).toHaveBeenCalledWith('/w/second-brand/dashboard');
   });
 
   it('clicking the current workspace does nothing (no mutation)', () => {

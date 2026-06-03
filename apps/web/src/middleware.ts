@@ -37,8 +37,20 @@ const IS_LOCAL_HARNESS = process.env.NEXT_PUBLIC_BRAIN_LOCAL_HARNESS === 'true';
 /** Paths that are always reachable without a session. */
 const PUBLIC_PREFIXES = ['/auth/', '/login'];
 
+/**
+ * Workspace-scoped shell paths begin with /w/{slug}/... and require a session.
+ * They are NOT in PUBLIC_PREFIXES but need the same protection logic as the
+ * former flat (shell) routes.
+ */
 function isPublic(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(p));
+}
+
+/** Pull the workspace slug from a /w/{slug}/... URL, or null if not a /w/ path. */
+function workspaceSlugFromPath(pathname: string): string | null {
+  // Matches /w/<slug>[/...] where slug is at least one char
+  const m = pathname.match(/^\/w\/([^/]+)/);
+  return m ? (m[1] ?? null) : null;
 }
 
 /**

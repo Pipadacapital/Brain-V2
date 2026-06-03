@@ -32,6 +32,7 @@ import { useAppDispatch, useAppSelector } from "@/domain/store/hooks.js";
 import { clearSession } from "@/domain/store/session-slice.js";
 import { trpc } from "@/infrastructure/trpc-client.js";
 import { createSupabaseBrowserClient } from "@/infrastructure/supabase/client.js";
+import { useScopedPath } from "@/infrastructure/workspace-slug-context.js";
 
 function getUserInitials(name: string, fallbackEmail: string): string {
   const n = name.trim();
@@ -50,6 +51,7 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const toPath = useScopedPath();
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
 
   // Real profile drives the avatar + dropdown label (Slice 2 backend).
@@ -146,7 +148,7 @@ export function NavUser() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onClick={() => router.push("/account")}>
+              <DropdownMenuItem onClick={() => router.push(toPath("/account"))}>
                 <IconUserCircle />
                 Account
               </DropdownMenuItem>
@@ -154,7 +156,7 @@ export function NavUser() {
                 <IconCreditCard />
                 Billing
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/notifications")}>
+              <DropdownMenuItem onClick={() => router.push(toPath("/notifications"))}>
                 <IconNotification />
                 <span className="flex-1">Notifications</span>
                 {unreadCount > 0 && (

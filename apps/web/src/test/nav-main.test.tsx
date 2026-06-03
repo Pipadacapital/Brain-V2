@@ -20,6 +20,12 @@ vi.mock('next/navigation', () => ({
   usePathname: () => h.pathname,
 }));
 
+// Stub out the workspace slug context — return empty string so the nav
+// falls back to flat paths (matching the hardcoded paths in this test's SECTIONS).
+vi.mock('@/infrastructure/workspace-slug-context.js', () => ({
+  useWorkspaceSlug: () => '',
+}));
+
 vi.mock('next/link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => (
     <a href={href}>{children}</a>

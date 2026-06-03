@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 import { useQueryState, parseAsString } from 'nuqs';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
+import { useScopedPath } from '@/infrastructure/workspace-slug-context.js';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 import { EmptyWorkspaceState } from '@/interfaces/components/dashboard/empty-workspace-state.js';
@@ -97,6 +98,7 @@ const DAILY_CHART_CONFIG: ChartConfig = {
 export function AnalyticsContent() {
   const workspaceId = useAppSelector((s) => s.session.workspaceId);
   const isAuthenticated = useAppSelector((s) => s.session.isAuthenticated);
+  const toPath = useScopedPath();
 
   // Look up slug from workspace list — same pattern as DashboardContent.
   const workspaceListQuery = trpc.workspace.list.useQuery(undefined, {
@@ -335,7 +337,7 @@ export function AnalyticsContent() {
             Goal RAG colouring: green ≥95% of goal · amber 80–95% · red &lt;80%.
             Set targets in{' '}
             <a
-              href="/settings/goals"
+              href={toPath("/settings/goals")}
               className="underline text-foreground font-medium"
             >
               Settings → Goals
