@@ -2,6 +2,8 @@
 .engineering-os/index/
 .engineering-os/live.log
 .engineering-os/dashboard.html
+# Per-session agent spawn telemetry — regenerated every run, placeholder values
+.engineering-os/spawn-heartbeat.jsonl
 # State backups are local safety copies; git history is the real audit trail
 .engineering-os/state/*.bak.*
 
