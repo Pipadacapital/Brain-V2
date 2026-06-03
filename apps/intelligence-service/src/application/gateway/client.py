@@ -12,8 +12,14 @@ CF-C5-LAYER3-CAP-1 + CF-C5-RESIDENCY-1 + CF-C5-PARADIGM-IMPL-1:
   - OTel span per gateway call.
 
 Model roster (small_llm -> Haiku-class; frontier_llm -> Sonnet-class):
-  small_llm: "anthropic/claude-haiku-3-5"  (India-resident via ap-south-1 endpoint)
+  small_llm: "anthropic/claude-haiku-4-5"  (India-resident via ap-south-1 endpoint)
   frontier_llm: "anthropic/claude-sonnet-4-6"  (India-resident — tripwire ARMED for 5b)
+
+  NOTE: model ids MUST be live Anthropic API names. Verified against the real API
+  (B3 Morning Brief): this org serves the Claude 4.x line — the prior "claude-haiku-3-5"
+  / "claude-3-5-haiku-latest" defaults BOTH returned not_found_error (3.5 not entitled).
+  The current Haiku-class model is claude-haiku-4-5 (resolves to claude-haiku-4-5-20251001).
+  Override per-tier with GATEWAY_SMALL_LLM_MODEL / GATEWAY_FRONTIER_LLM_MODEL.
 
 India-resident routing (CF-C5-RESIDENCY-1):
   All Anthropic models are routed via the Anthropic API; Brain's LiteLLM config
@@ -47,7 +53,7 @@ _tracer = otel_trace.get_tracer("brain.intelligence_service.gateway")
 
 _MODEL_ROSTER: dict[str, str] = {
     "small_llm": os.environ.get(
-        "GATEWAY_SMALL_LLM_MODEL", "anthropic/claude-haiku-3-5"
+        "GATEWAY_SMALL_LLM_MODEL", "anthropic/claude-haiku-4-5"
     ),
     "frontier_llm": os.environ.get(
         "GATEWAY_FRONTIER_LLM_MODEL", "anthropic/claude-sonnet-4-6"
@@ -107,6 +113,13 @@ class GatewayRequest:
     request_id: str = ""
     trace_id: str = ""
     actor_id: str = "system"
+    # Pre-formatted user-turn content (Defect 3 convergent fix — B3 live-run):
+    # When set, _build_messages uses this verbatim instead of re-deriving from
+    # raw signal integers.  This is the only way to guarantee the model sees
+    # display-formatted values (e.g. "₹4.8Cr") rather than raw paise integers
+    # (e.g. "48037359") that it will mis-convert by 10×.
+    # If empty, falls back to the legacy raw-signal dump for backward compat.
+    user_content: str = ""
 
 
 @dataclass(frozen=True)
@@ -434,13 +447,28 @@ class GatewayClient:
         Untrusted operator-entered strings are fenced (spotlighted) in the
         user turn, never in the instruction region.
         CF-C5-INJECTION-SPOTLIGHT-7: untrusted_blocks are fenced separately.
-        """
-        # Build signal context (typed values, not free text).
-        signal_context = "\n".join(
-            f"- {sig.signal_id}: {sig.value_canonical}" for sig in request.signals
-        )
 
-        user_content = f"Deterministic signals:\n{signal_context}"
+        Defect 3 convergent fix (B3 live-run 2026-05-19):
+        If request.user_content is set, use it verbatim as the user-turn body.
+        This is the pre-formatted display content produced by
+        _format_signals_as_user_content() in pnl_insight_agent — it contains
+        ₹4.8Cr display strings rather than raw paise integers, preventing the
+        model from doing its own (wrong) paise→lakh/crore conversion.
+        Untrusted blocks are still appended after the pre-formatted content.
+        If user_content is empty, falls back to the legacy raw-signal dump for
+        backward compatibility with callers that have not yet adopted the field.
+        """
+        if request.user_content:
+            # Use the Tier-A pre-formatted display content verbatim.
+            user_content = request.user_content
+        else:
+            # Legacy fallback: raw signal dump (DO NOT use for new agents —
+            # the model will mis-convert raw paise integers).
+            signal_context = "\n".join(
+                f"- {sig.signal_id}: {sig.value_canonical}" for sig in request.signals
+            )
+            user_content = f"Deterministic signals:\n{signal_context}"
+
         if request.untrusted_blocks:
             # Spotlighting: fence untrusted content as data, not instructions.
             fenced = "\n".join(
@@ -471,10 +499,26 @@ class GatewayClient:
         CF-C5-FAITHFULNESS-1: max 1 retry (not infinite frontier retries).
         CF-C5-FAITHFULNESS-COST-1: retry count emitted to telemetry.
         request_id surfaced on error (CF-SEC-5 / C5-SEC-003).
+
+        CORRECTIVE RETRY (last-mile faithfulness fix, 2026-06-03):
+        On attempt 0 failure, instead of re-sending the IDENTICAL messages
+        (which re-generates the same class of violation), we append a
+        correction turn so attempt 1 sees:
+          [original system + user messages]
+          + assistant turn: the bad narration from attempt 0
+          + user turn: explicit correction instruction listing the offending numbers
+
+        This makes the gate self-correcting for the long tail of derived ratios
+        (MER %-change, ACOS, CM%-of-net-sales, z-scores) the model habitually
+        computes from supplied data even when instructed not to.
+        The 1-retry cap (CF-C5-FAITHFULNESS-1) is preserved.
+        If attempt 1 still fails, the hard error (VETO) still raises.
         """
+        retry_messages = messages  # start with the original messages
+
         for attempt in range(2):  # max 1 retry
             narration, tokens_in, tokens_out = self._call_litellm(
-                model=model, messages=messages, max_tokens=max_tokens
+                model=model, messages=retry_messages, max_tokens=max_tokens
             )
 
             faith_result = validate_faithfulness(narration, request.signals)
@@ -486,10 +530,29 @@ class GatewayClient:
                 # Emit retry telemetry (CF-C5-FAITHFULNESS-COST-1).
                 emit_faithfulness_retry(workspace_id=workspace_id, agent_id=agent_id)
                 logger.warning(
-                    "gateway: faithfulness failed, retrying (1 allowed). "
+                    "gateway: faithfulness failed, retrying with correction turn (1 allowed). "
                     "offending_numbers=%r workspace_id=%r agent_id=%r request_id=%r",
                     faith_result.offending_numbers, workspace_id, agent_id, request_id,
                 )
+                # Build the corrective turn: show the bad narration as an assistant
+                # message, then inject a user correction listing the offending numbers.
+                # The model sees EXACTLY what it said and what to remove — more
+                # targeted than a blind regeneration which reproduces the same class
+                # of violation (MER %-change, ACOS, CM%-of-net-sales, z-scores etc.).
+                offending_list = ", ".join(faith_result.offending_numbers)
+                correction_user_msg = (
+                    f"The following numbers in your response are NOT in the provided "
+                    f"data and are not allowed: [{offending_list}]. "
+                    "Rewrite the brief using ONLY the display values provided above. "
+                    "Remove or rephrase any sentence that requires a number not in the "
+                    "provided list — do not compute ratios, percentage-changes, ACOS, "
+                    "%-of-total, or z-scores unless that exact value was provided."
+                )
+                retry_messages = [
+                    *messages,
+                    {"role": "assistant", "content": narration},
+                    {"role": "user", "content": correction_user_msg},
+                ]
             else:
                 # Second attempt failed: hard error, no Decision-Log write.
                 # Surface request_id so failures are traceable (CF-SEC-5 / C5-SEC-003).
