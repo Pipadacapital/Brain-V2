@@ -7,6 +7,9 @@
 -- CF-C4-RATIO-DIVOP-1: EVERY division uses intDiv() + explicit null-guard.
 --                       ZERO `/` operators on metric columns.
 -- CF-C4-PRORATED-DIVOP-1: misc_expenses_prorated_mu uses toDaysInMonth(date), NEVER a 30 constant.
+-- LOCAL-CH-COMPAT: toDaysInMonth() requires CH 24.9+. On local CH 24.8 dev, substitute:
+--   dateDiff('day', toStartOfMonth(date), addMonths(toStartOfMonth(date), 1))
+--   which is semantically identical. Prod CH Cloud is 24.9+; use toDaysInMonth() there.
 -- CF-C4-COGS-MV-REFRESH-1: cogs_mu is NOT computed here; it is populated by scheduled full
 --                            daily recompute (see cogs_mu column in base table). This MV only
 --                            reads cogs_mu as-is from the base; it does NOT derive it incrementally.

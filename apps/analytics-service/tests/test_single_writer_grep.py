@@ -38,9 +38,21 @@ _SCAN_PATHS = [
 
 # ---------------------------------------------------------------------------
 # Legacy rollup table names — SQL targets (Pattern 1)
+#
+# NOTE: workspace_daily_metrics_base and workspace_daily_metrics_computed are
+# the NEW ClickHouse metric-engine tables written by recompute_daily_metrics().
+# They are NOT legacy Postgres rollup tables. The patterns below match only the
+# legacy tables:
+#   - workspace_daily_metrics_legacy (the CH shadow of the old PG table)
+#   - product_daily_aggregates
+#   - shopify_analytics_daily
+#   etc.
+# The metric-engine tables (workspace_daily_metrics_base / _computed / _mv)
+# are intentionally excluded from this list; recompute_daily.py is the
+# single authorised writer for those tables.
 # ---------------------------------------------------------------------------
 _LEGACY_SQL_TABLES = [
-    "workspace_daily_metrics",
+    "workspace_daily_metrics_legacy",   # legacy-only CH shadow table
     "product_daily_aggregates",
     "shopify_analytics_daily",
     "meta_ads_daily_metrics",
@@ -224,7 +236,10 @@ class TestSingleWriterGrepGate:
     def test_legacy_table_names_enumerated(self) -> None:
         """Sanity: the legacy table list is non-empty and covers the known rollup tables."""
         assert len(_LEGACY_SQL_TABLES) >= 5
-        assert "workspace_daily_metrics" in _LEGACY_SQL_TABLES
+        # workspace_daily_metrics_legacy is the protected legacy name.
+        # workspace_daily_metrics_base/_computed are the NEW metric-engine tables
+        # written by recompute_daily.py — they are explicitly excluded here.
+        assert "workspace_daily_metrics_legacy" in _LEGACY_SQL_TABLES
         assert "product_daily_aggregates" in _LEGACY_SQL_TABLES
         assert "shopify_analytics_daily" in _LEGACY_SQL_TABLES
 
@@ -264,19 +279,19 @@ class TestKilledMutantSingleWriter:
         assert any("upsert" in v for v in violations)
 
     def test_planted_sql_insert_mutant_detected(self) -> None:
-        """A planted INSERT INTO workspace_daily_metrics is caught by Pattern 1."""
+        """A planted INSERT INTO workspace_daily_metrics_legacy is caught by Pattern 1."""
         mutant_content = textwrap.dedent("""
             -- MUTANT: Brain should never write to the legacy rollup.
-            INSERT INTO workspace_daily_metrics (workspace_id, date, net_sales_mu)
+            INSERT INTO workspace_daily_metrics_legacy (workspace_id, date, net_sales_mu)
             VALUES ('ws_abc', '2026-01-01', 100000);
         """)
         violations = _check_sql_write_to_legacy_table(mutant_content, "fake/brain_migration.sql")
         assert violations, (
             "CF-C4-VERIFY-THE-VERIFIER-1 FAILED: planted SQL INSERT to "
-            "workspace_daily_metrics was NOT detected. "
+            "workspace_daily_metrics_legacy was NOT detected. "
             "The single-writer grep gate is not catching SQL writes."
         )
-        assert any("workspace_daily_metrics" in v for v in violations)
+        assert any("workspace_daily_metrics_legacy" in v for v in violations)
 
     def test_planted_prisma_create_mutant_detected(self) -> None:
         """A planted prisma.productDailyAggregates.create() is caught by Pattern 2."""
