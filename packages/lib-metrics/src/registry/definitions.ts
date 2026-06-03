@@ -403,8 +403,11 @@ export const BLENDED_ROAS_X100: MetricDefinition = {
   scale: 100,
   // Blended ROAS ×100: net_sales / total_ad_spend expressed as integer × 100.
   // 250 means 2.50× ROAS. display_only — ROAS is NEVER a Brain decision metric.
+  // Integer form: intDiv(net_sales_mu * 100, total_ad_spend_mu) — mirrors Python + ClickHouse SQL.
+  // BEFORE (wrong): ratioToBasisPoints(net_sales_mu * 100n, total_ad_spend_mu * 10000n) / 10000
+  //   → produced a float (e.g. 0.02 for 1M/500K instead of integer 200). ~10000× too small.
   formula_ts: (net_sales_mu: bigint, total_ad_spend_mu: bigint): number =>
-    ratioToBasisPoints(net_sales_mu * 100n, total_ad_spend_mu * 10000n) / 10000,
+    total_ad_spend_mu > 0n ? Number(net_sales_mu * 100n / total_ad_spend_mu) : 0,
   clickhouse_sql:
     'if(total_ad_spend_mu > 0, intDiv(net_sales_mu * 100, total_ad_spend_mu), NULL)',
   display_only: true,  // CF-C4-DDR-1 row: display_only; ROAS never a decision metric

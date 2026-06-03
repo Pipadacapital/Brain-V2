@@ -557,10 +557,28 @@ describe('formula_ts: display_only ratio correctness', () => {
   });
 
   it('blended_roas_x100: 1000000µ sales / 100000µ spend = 1000 (10.00×)', () => {
-    // 1000000 * 100 / 100000 = 1000 (integer ×100)
+    // intDiv(1000000 * 100, 100000) = 1000 (integer ×100; means 10.00×)
     const result = BLENDED_ROAS_X100.formula_ts(1000000n, 100000n);
-    // result should be 1000 (10.00×)
-    expect(typeof result).toBe('number');
+    expect(result).toBe(1000);
+  });
+
+  it('blended_roas_x100: 1000µ sales / 200µ spend = 500 (5.00×) — canonical parity anchor', () => {
+    // Python: intDiv(1000 * 100, 200) = 500. TS must match exactly (shared-libs-2 fix).
+    // BEFORE fix: formula returned 0.05 (float, ~10000x too small). AFTER: 500 (integer).
+    const result = BLENDED_ROAS_X100.formula_ts(1000n, 200n);
+    expect(result).toBe(500);
+    expect(Number.isInteger(result)).toBe(true);
+  });
+
+  it('blended_roas_x100: zero ad_spend → 0 (zero-guard, no throw)', () => {
+    const result = BLENDED_ROAS_X100.formula_ts(1000000n, 0n);
+    expect(result).toBe(0);
+  });
+
+  it('blended_roas_x100: 250µ sales / 100µ spend = 250 (2.50×) — integer x100 form', () => {
+    // intDiv(250 * 100, 100) = 250; displayValue = 250 / 100 = 2.50×
+    const result = BLENDED_ROAS_X100.formula_ts(250n, 100n);
+    expect(result).toBe(250);
   });
 });
 
@@ -726,6 +744,117 @@ describe('clickhouse_sql: CF-C4-RATIO-DIVOP-1 — no bare / on metric columns', 
       if (def.kind === 'ratio') {
         expect(def.clickhouse_sql, `${def.id} clickhouse_sql should use intDiv`).toContain('intDiv');
       }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// shared-libs-3: Phase-0 registry formula parity gate (CF-PARITY-GATE-1)
+//
+// Every metric's formula_ts is called with canonical inputs and asserted against
+// the EXACT integer the Python formula_py returns on the same inputs. This is the
+// missing gate — the shadow_compare structural check verified shape, not values.
+// A formula divergence (e.g. blended_roas_x100 returning a float) shipped green
+// because the test suite only checked `typeof === 'number'`.
+//
+// Each fixture row: { ts_inputs, expected_integer, note }
+// The expected_integer is the Python-canonical value (verified by running the
+// Python formula_py on the same inputs). Any TS divergence fails this gate.
+// ---------------------------------------------------------------------------
+
+describe('formula_ts: Phase-0 registry parity gate — TS == Python integer outputs', () => {
+  // Revenue ladder — passthrough + additive formulas
+  it('net_sales_mu: gross(500000) − returns(20000) − discount(30000) = 450000', () => {
+    expect(NET_SALES_MU.formula_ts(500000n, 20000n, 30000n)).toBe(450000n);
+  });
+
+  it('variable_costs_mu: ship(30000) + pack(12000) + web(8000) = 50000', () => {
+    expect(VARIABLE_COSTS_MU.formula_ts(30000n, 12000n, 8000n)).toBe(50000n);
+  });
+
+  it('cm1_mu: net_rev(779000) − cogs(200000) − var(50000) = 529000', () => {
+    // Python: f(net_revenue_mu=779000, cogs_mu=200000, variable_costs_mu=50000) == 529000
+    expect(CM1_MU.formula_ts(779000n, 200000n, 50000n)).toBe(529000n);
+  });
+
+  it('cm2_mu: cm1(500000) − ad_spend(80000) = 420000', () => {
+    expect(CM2_MU.formula_ts(500000n, 80000n)).toBe(420000n);
+  });
+
+  // Ratio metrics — integer FLOOR, no floats
+  it('rto_rate_bp: 150 rto / 1000 ship = 1500 bp (15.00%)', () => {
+    // Python: intDiv(150 * 10000, 1000) = 1500
+    expect(RTO_RATE_BP.formula_ts(150n, 1000n)).toBe(1500);
+  });
+
+  it('acos_bp: spend(100000) / sales(1000000) = 1000 bp (10.00%)', () => {
+    // Python: intDiv(100000 * 10000, 1000000) = 1000
+    expect(ACOS_BP.formula_ts(100000n, 1000000n)).toBe(1000);
+  });
+
+  // ROAS — the core parity target for shared-libs-1/2/3
+  it('blended_roas_x100: sales(1000000) / spend(500000) = 200 (2.00×) — shared-libs-1 canon', () => {
+    // Python: intDiv(1000000 * 100, 500000) = 200
+    // BEFORE fix: TS returned 0.02 (float, ~10000× too small). AFTER: 200 (integer).
+    const result = BLENDED_ROAS_X100.formula_ts(1000000n, 500000n);
+    expect(result).toBe(200);
+    expect(Number.isInteger(result as number)).toBe(true);
+  });
+
+  it('blended_roas_x100: sales(750000) / spend(300000) = 250 (2.50×)', () => {
+    // Python: intDiv(750000 * 100, 300000) = 250
+    expect(BLENDED_ROAS_X100.formula_ts(750000n, 300000n)).toBe(250);
+  });
+
+  it('blended_roas_x100: FLOOR — sales(100) / spend(3) = 3333 (33.33× truncated to integer)', () => {
+    // Python: intDiv(100 * 100, 3) = intDiv(10000, 3) = 3333
+    expect(BLENDED_ROAS_X100.formula_ts(100n, 3n)).toBe(3333);
+  });
+
+  // Correctness-fixture metrics
+  it('amer_bp: nc_revenue(6000000) / acq_spend(4000000) = 15000 bp (1.50×)', () => {
+    // Python: intDiv(6000000 * 10000, 4000000) = 15000
+    expect(AMER_BP.formula_ts(6_000_000n, 4_000_000n)).toBe(15000);
+  });
+
+  it('ltv_cac_bp: ltv(300000) / cac(100000) = 30000 bp (3.0× LTV:CAC)', () => {
+    // Python: intDiv(300000 * 10000, 100000) = 30000
+    expect(LTV_CAC_BP.formula_ts(300000n, 100000n)).toBe(30000);
+  });
+
+  // Structural: every formula_ts returns a bigint or an integer number (never a float)
+  it('all formula_ts produce integer outputs (bigint or Number.isInteger) — no floats escape', () => {
+    const integerInputs: Record<string, bigint[]> = {
+      net_sales_mu:             [500000n, 20000n, 30000n],
+      variable_costs_mu:        [30000n, 12000n, 8000n],
+      cm1_mu:                   [779000n, 200000n, 50000n],
+      cm2_mu:                   [500000n, 80000n],
+      rto_rate_bp:              [150n, 1000n],
+      prepaid_rate_bp:          [60n, 100n],
+      conversion_rate_bp:       [1n, 3n],
+      aov_mu:                   [1000000n, 47n],
+      acos_bp:                  [100000n, 1000000n],
+      blended_roas_x100:        [1000000n, 500000n],
+      rto_cost_mu:              [4480000n],
+      rto_revenue_lost_mu:      [33200000n],
+      cod_realization_rate_bp:  [612n, 800n],
+      mer_bp:                   [12000000n, 10000000n],
+      cac_mu:                   [10000000n, 200n],
+      cm2_per_nc_mu:            [2000000n, 200n],
+      amer_bp:                  [6000000n, 4000000n],
+      ltv_cac_bp:               [300000n, 100000n],
+      repeat_rate_bp:           [3n, 10n],
+      inventory_sell_through_bp:[300n, 100n],
+      email_open_rate_bp:       [300n, 1000n],
+      email_click_rate_bp:      [90n, 1000n],
+    };
+    for (const [id, inputs] of Object.entries(integerInputs)) {
+      if (!METRIC_REGISTRY[id]) continue;
+      const result = METRIC_REGISTRY[id].formula_ts(...inputs);
+      const isInteger =
+        typeof result === 'bigint' ||
+        (typeof result === 'number' && Number.isInteger(result));
+      expect(isInteger, `${id} formula_ts returned non-integer: ${result}`).toBe(true);
     }
   });
 });
