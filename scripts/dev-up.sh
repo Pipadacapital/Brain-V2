@@ -69,9 +69,13 @@ PSQL="$PG" bash scripts/seed-local-realtime.sh
 say "Applying local metric-engine (DDL + daily recompute)"
 CH="$CH" bash scripts/seed-local-metric-engine.sh
 
-# 4. Build + start the app.
-say "Building + starting api-gateway + web"
-$COMPOSE up -d --build api-gateway web
+# 4. Build + start the FULL app: api-gateway + web AND the profile-gated
+#    services (ingestion + analytics + intelligence). `--profile data` with no
+#    service args brings up every service in the default + data profiles, so a
+#    single `make up` stands up the whole stack (DBs already started above are
+#    a no-op here). Drop the `--profile data` flag for a lighter web-only run.
+say "Building + starting the full stack (web + gateway + ingestion/analytics/intelligence)"
+$COMPOSE --profile data up -d --build
 
 # 5. Wait for the gateway to report ready (probes PG + CH).
 say "Waiting for the gateway /ready"
@@ -80,8 +84,8 @@ for _ in $(seq 1 40); do
   sleep 3
 done
 echo ""
-$COMPOSE ps
+$COMPOSE --profile data ps
 echo ""
 echo "  /ready : $(curl -s localhost:3001/ready 2>/dev/null || echo 'not-ready-yet')"
 echo ""
-say "Up. Web → http://localhost:3000   API → http://localhost:3001"
+say "Up. Web → http://localhost:3000   API → http://localhost:3001   (intelligence/analytics on brain-net)"
