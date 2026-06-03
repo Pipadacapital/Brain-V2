@@ -94,8 +94,8 @@ export async function listProductsForCogs(
       args.push(status)
       where.push(`status = $${args.length}`)
     }
-    if (cogsFilter === 'set')      where.push(`cost_mu > 0`)
-    if (cogsFilter === 'not_set')  where.push(`(cost_mu = 0 OR cost_mu IS NULL)`)
+    if (cogsFilter === 'set')      where.push(`cost_mu IS NOT NULL`)
+    if (cogsFilter === 'not_set')  where.push(`cost_mu IS NULL`)
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 

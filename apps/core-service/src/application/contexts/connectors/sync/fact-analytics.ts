@@ -111,7 +111,7 @@ function pgDateClause(col: string, range?: FactDateRange): string {
 export async function readStoreSummary(workspaceId: string, range?: FactDateRange): Promise<FactStoreSummary> {
   if (READ_FROM_CH) {
     // Flag-routed CH read with PG fallback (v2 §6, Founder no-regression rule).
-    try { return await readStoreSummaryCH(workspaceId, range) } catch { /* fall through */ }
+    try { return await readStoreSummaryCH(workspaceId, range) } catch (e) { log.warn({ err: e }, "CH read failed — PG fallback") }
   }
   const dateClause = pgDateClause('processed_at', range)
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
@@ -662,27 +662,45 @@ export async function revokeTeamInvite(params: {
   }
 }
 
-/** Transfer ownership: promote new owner to OWNER, demote current actor to MANAGER. */
+/** Transfer ownership: promote new owner to OWNER, demote current actor to MANAGER.
+ *
+ * Invariants enforced here (ownership-transfer):
+ *   1. Actor must be an OWNER — non-owners cannot transfer ownership.
+ *   2. Actor and newOwner must be different members (cannot transfer to self).
+ *   3. After promoting the new owner (rowCount=1), demote the actor to MANAGER.
+ *      A rowCount of 0 means the target is not a member of this workspace.
+ */
 export async function transferTeamOwnership(params: {
   workspaceId: string
   actorUserId: string
   newOwnerUserId: string
 }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (params.actorUserId === params.newOwnerUserId) {
+    return { ok: false, error: 'Cannot transfer ownership to yourself' }
+  }
   try {
     await withWorkspace(params.workspaceId, async (tx: PoolClient) => {
+      // Invariant 1: actor must be OWNER.
+      const actorRes = await tx.query<{ role: string }>(
+        `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+        [params.workspaceId, params.actorUserId],
+      )
+      if (actorRes.rows.length === 0) throw new Error('Actor not found in workspace')
+      if (actorRes.rows[0]!.role !== 'OWNER') throw new Error('Only an OWNER can transfer ownership')
       // Verify new owner is a member.
       const newOwnerRes = await tx.query<{ role: string }>(
         `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
         [params.workspaceId, params.newOwnerUserId],
       )
       if (newOwnerRes.rows.length === 0) throw new Error('Target member not found')
-      // Promote new owner.
-      await tx.query(
+      // Promote new owner — rowCount must be 1 (confirms target exists in this workspace).
+      const promoteRes = await tx.query(
         `UPDATE workspace_members SET role = 'OWNER', updated_at = now()
           WHERE workspace_id = $1 AND user_id = $2`,
         [params.workspaceId, params.newOwnerUserId],
       )
-      // Demote the current actor to MANAGER.
+      if ((promoteRes.rowCount ?? 0) !== 1) throw new Error('Promote did not match exactly one member')
+      // Demote the current actor to MANAGER (only after confirmed promote).
       await tx.query(
         `UPDATE workspace_members SET role = 'MANAGER', updated_at = now()
           WHERE workspace_id = $1 AND user_id = $2`,
@@ -943,46 +961,39 @@ export async function readShipmentRows(
   // honest-empty rather than 500ing the logistics console.
   try {
     return await withWorkspace(workspaceId, async (tx: PoolClient) => {
-    // Build WHERE clauses for filters
-    const conditions: string[] = []
-
-    if (filters.search && filters.search.trim() !== '') {
-      const term = filters.search.trim().replace(/'/g, "''")
-      conditions.push(`(vendor_shipment_id ILIKE '%${term}%' OR vendor_order_ref ILIKE '%${term}%')`)
-    }
-    if (filters.statuses && filters.statuses.length > 0) {
-      const quoted = filters.statuses.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')
-      conditions.push(`status IN (${quoted})`)
-    }
-    if (filters.payment === 'COD') conditions.push(`is_cod = true`)
-    else if (filters.payment === 'PREPAID') conditions.push(`is_cod = false`)
-    if (filters.rtoOnly) conditions.push(`status_bucket = 'RTO'`)
-    // mapping filter: we have no shopify mapping in facts table — UNMATCHED = all rows
-    // MATCHED would return 0 rows (honest empty) because shopify refs are not in facts
-
-    // cursor is the id of the last row (UUID, sortable by synced_at then id)
-    if (cursor) {
-      conditions.push(`(synced_at, id) < (SELECT synced_at, id FROM connector_shipment_facts WHERE id = '${cursor.replace(/'/g, '')}' LIMIT 1)`)
-    }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-
-    // Aggregate counts (no cursor applied)
+    // Build WHERE clauses with positional binds — NO string interpolation of user input.
+    // All user-supplied values (search term, status list, cursor UUID) are bound as $n params.
+    const filterParams: unknown[] = []
     const filterConditions: string[] = []
+
     if (filters.search && filters.search.trim() !== '') {
-      const term = filters.search.trim().replace(/'/g, "''")
-      filterConditions.push(`(vendor_shipment_id ILIKE '%${term}%' OR vendor_order_ref ILIKE '%${term}%')`)
+      filterParams.push(`%${filters.search.trim()}%`)
+      const n = filterParams.length
+      filterConditions.push(`(vendor_shipment_id ILIKE $${n} OR vendor_order_ref ILIKE $${n})`)
     }
     if (filters.statuses && filters.statuses.length > 0) {
-      const quoted = filters.statuses.map((s) => `'${s.replace(/'/g, "''")}'`).join(',')
-      filterConditions.push(`status IN (${quoted})`)
+      filterParams.push(filters.statuses)
+      filterConditions.push(`status = ANY($${filterParams.length}::text[])`)
     }
     if (filters.payment === 'COD') filterConditions.push(`is_cod = true`)
     else if (filters.payment === 'PREPAID') filterConditions.push(`is_cod = false`)
     if (filters.rtoOnly) filterConditions.push(`status_bucket = 'RTO'`)
+    // mapping filter: we have no shopify mapping in facts table — UNMATCHED = all rows
+    // MATCHED would return 0 rows (honest empty) because shopify refs are not in facts
 
     const filterWhere = filterConditions.length > 0 ? `WHERE ${filterConditions.join(' AND ')}` : ''
 
+    // cursor params: cursor UUID is a positional bind — never interpolated.
+    // The rows query appends cursor condition after the filter conditions.
+    const rowsParams = [...filterParams]
+    const rowsConditions = [...filterConditions]
+    if (cursor) {
+      rowsParams.push(cursor)
+      rowsConditions.push(`(synced_at, id) < (SELECT synced_at, id FROM connector_shipment_facts WHERE id = $${rowsParams.length}::uuid LIMIT 1)`)
+    }
+    const rowsWhere = rowsConditions.length > 0 ? `WHERE ${rowsConditions.join(' AND ')}` : ''
+
+    // pageSize is an integer controlled by the server — safe to interpolate.
     const [aggRes, rowsRes, statusRes] = await Promise.all([
       tx.query<Record<string, string>>(
         `SELECT
@@ -990,6 +1001,7 @@ export async function readShipmentRows(
            count(*) FILTER (WHERE status_bucket='DELIVERED')::text delivered,
            count(*) FILTER (WHERE status_bucket='RTO')::text rto
          FROM connector_shipment_facts ${filterWhere}`,
+        filterParams,
       ),
       tx.query<Record<string, unknown>>(
         `SELECT
@@ -1007,9 +1019,10 @@ export async function readShipmentRows(
            shipped_at,
            synced_at
          FROM connector_shipment_facts
-         ${where}
+         ${rowsWhere}
          ORDER BY synced_at DESC, id DESC
          LIMIT ${pageSize + 1}`,
+        rowsParams,
       ),
       tx.query<Record<string, string>>(
         `SELECT DISTINCT status FROM connector_shipment_facts
@@ -1050,17 +1063,24 @@ export async function readShipmentRows(
       distinctStatuses: statusRes.rows.map((r) => r.status).filter(Boolean),
     }
     })
-  } catch {
-    // No connector_shipment_facts table in PG (CH-only fact) — honest-empty.
-    return EMPTY_SHIPMENT_PAGE
+  } catch (e: unknown) {
+    // Narrow to PG error code 42P01 (undefined_table): connector_shipment_facts is a
+    // CH-only fact with no PG mirror — honest-empty is the correct fallback.
+    // Any other error (connection failure, RLS reject, syntax) is re-thrown so it
+    // surfaces as a 500 rather than silently returning empty data.
+    if (typeof e === 'object' && e !== null && (e as { code?: string }).code === '42P01') {
+      log.warn({ err: e }, 'connector_shipment_facts not found in PG — CH path required')
+      return EMPTY_SHIPMENT_PAGE
+    }
+    throw e
   }
 }
 
 // ---------------------------------------------------------------------------
 // Cohorts — acquisition-month cohorts from order history. m[] is cumulative net
-// revenue (gross−discount−tax) by month-offset 0..11 from the cohort month; rr90 is
-// the share of the cohort that re-ordered within 90 days. CAC/payback are null (ad
-// spend is not cohort-attributed in the connector facts — honest).
+// revenue (gross−discount, tax NOT subtracted) by month-offset 0..11 from the cohort
+// month; rr90 is the share of the cohort that re-ordered within 90 days. CAC/payback
+// are null (ad spend is not cohort-attributed in the connector facts — honest).
 // ---------------------------------------------------------------------------
 const NET_EXPR = '(gross_sales_mu - total_discount_mu)'  // net = gross − discount (contract; no tax)
 const MONTH_OFFSET =
@@ -1070,7 +1090,7 @@ export interface FactCohortRow {
   cohortMonth: string
   newCustomers: bigint
   rr90Bp: number | null
-  m: bigint[] // length 12, cumulative net revenue (minor units)
+  m: bigint[] // length 12, cumulative net revenue (gross−discount, minor units; tax separate)
 }
 export async function readCohorts(workspaceId: string): Promise<FactCohortRow[]> {
   if (READ_FROM_CH) {
@@ -1357,7 +1377,9 @@ export async function readFirstProductCascade(
              ON li.vendor_order_id = fo.vendor_order_id
             AND li.vendor_product_id IS NOT NULL
            LEFT JOIN connector_product_facts pf
-             ON pf.vendor_product_id = li.vendor_product_id
+             ON pf.workspace_id = li.workspace_id
+            AND pf.vendor = li.vendor
+            AND pf.vendor_product_id = li.vendor_product_id
           ORDER BY fo.customer_ref,
                    li.quantity * li.unit_price_mu DESC,
                    li.vendor_product_id ASC NULLS LAST,
@@ -1439,7 +1461,10 @@ export async function readDistributions(workspaceId: string): Promise<{ rows: Fa
               COALESCE(mode() WITHIN GROUP (ORDER BY li.quantity * li.unit_price_mu),0)::text mode_mu,
               COALESCE(avg(li.quantity * li.unit_price_mu),0)::bigint::text mean_mu
          FROM connector_line_item_facts li
-         LEFT JOIN connector_product_facts pf ON pf.vendor_product_id = li.vendor_product_id
+         LEFT JOIN connector_product_facts pf
+           ON pf.workspace_id = li.workspace_id
+          AND pf.vendor = li.vendor
+          AND pf.vendor_product_id = li.vendor_product_id
         WHERE li.vendor_product_id IS NOT NULL
         GROUP BY li.vendor_product_id, li.title ORDER BY count(*) DESC LIMIT 100`,
     )
@@ -1538,7 +1563,7 @@ export async function readDailyAcquisition(
        )
        SELECT f.acq_date::text AS day,
               count(*)::text AS nc,
-              COALESCE(sum(o.gross_sales_mu - o.total_discount_mu - o.total_tax_mu), 0)::text AS nc_rev
+              COALESCE(sum(o.gross_sales_mu - o.total_discount_mu), 0)::text AS nc_rev
          FROM firsts f
          JOIN connector_order_facts o
            ON o.customer_ref = f.customer_ref
@@ -1678,7 +1703,7 @@ export interface FactPnlPeriodRow {
   revenue: bigint            // netSales − refunds
   ncNetRevenue: bigint       // honest 0n — no source
   ecNetRevenue: bigint       // honest 0n — no source
-  netRevenue: bigint         // revenue − tax (realized pattern: non-cancelled only)
+  netRevenue: bigint         // revenue − tax (non-cancelled only; gross/discounts also CANCELLED-filtered)
   // Cost block
   cogs: bigint
   variableCosts: bigint      // honest 0n — no variable-cost source
@@ -1712,14 +1737,16 @@ export async function readPnlPeriodGrid(
   const trunc = granularity === 'quarter' ? 'quarter' : granularity
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     // ---- Order aggregates per period ----------------------------------------
-    // Gross sales, discounts, tax for ALL orders in the period (non-cancelled).
+    // Gross sales, discounts, tax for non-cancelled orders only (consistent with
+    // the CANCELLED filter used throughout this file). The CANCELLED constant
+    // excludes voided/refunded orders so realized numbers match the rest of the ladder.
     // Refunds are sourced from rows where financial_status = 'refunded'.
     const orderRes = await tx.query<Record<string, string>>(
       `SELECT
          to_char(date_trunc('${trunc}', processed_at), 'YYYY-MM-DD') AS period,
          max(currency_code) AS currency_code,
-         COALESCE(sum(gross_sales_mu), 0)::text AS gross_sales,
-         COALESCE(sum(total_discount_mu), 0)::text AS discounts,
+         COALESCE(sum(gross_sales_mu) FILTER (WHERE ${CANCELLED}), 0)::text AS gross_sales,
+         COALESCE(sum(total_discount_mu) FILTER (WHERE ${CANCELLED}), 0)::text AS discounts,
          COALESCE(sum(total_tax_mu) FILTER (WHERE ${CANCELLED}), 0)::text AS tax,
          count(*) FILTER (WHERE ${CANCELLED})::text AS orders,
          COALESCE(sum(gross_sales_mu) FILTER (WHERE lower(coalesce(financial_status,'')) = 'refunded'), 0)::text AS refunds
@@ -1804,7 +1831,13 @@ export async function readPnlPeriodGrid(
         if (granularity === 'day') {
           label = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'UTC' })
         } else if (granularity === 'week') {
-          label = `W${Math.ceil((d.getUTCDate()) / 7) + 1} ${d.getUTCFullYear()}`
+          // ISO week number: Thursday of the target week determines the year.
+          // Algorithm: day-of-week (Mon=1..Sun=7), shift to nearest Thursday, get week ordinal.
+          const dow = d.getUTCDay() || 7 // 1 Mon .. 7 Sun
+          const thursday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + (4 - dow)))
+          const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1))
+          const isoWeek = Math.ceil(((thursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+          label = `W${isoWeek} ${thursday.getUTCFullYear()}`
         } else if (granularity === 'month') {
           label = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric', timeZone: 'UTC' })
         } else if (granularity === 'quarter') {

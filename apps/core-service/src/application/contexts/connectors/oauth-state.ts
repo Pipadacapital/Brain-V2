@@ -92,6 +92,9 @@ export async function validateAndConsumeOAuthState(
 ): Promise<OAuthStateRecord | null> {
   const stateHash = hashState(state)
   return runner.withSuperadmin(async (tx: PoolClient) => {
+    // DELETE-then-return: consume the state row FIRST (replay hardening). A replayed
+    // callback with the same nonce finds no row (null) even if the original call was
+    // still in-flight for vendor/expiry validation. Using RETURNING avoids a SELECT+DELETE.
     const res = await tx.query<{
       workspace_id: string
       vendor: ConnectorVendor
@@ -99,16 +102,15 @@ export async function validateAndConsumeOAuthState(
       shop_domain: string | null
       expires_at: Date
     }>(
-      `SELECT workspace_id, vendor, user_id, shop_domain, expires_at
-         FROM connector_oauth_states
-        WHERE state_hash = $1`,
+      `DELETE FROM connector_oauth_states
+        WHERE state_hash = $1
+        RETURNING workspace_id, vendor, user_id, shop_domain, expires_at`,
       [stateHash],
     )
     const row = res.rows[0]
     if (!row) return null
+    // Validate vendor and expiry AFTER consuming — the row is already gone.
     if (row.vendor !== vendor) return null
-    // One-time consume: delete the row whether expired or valid.
-    await tx.query(`DELETE FROM connector_oauth_states WHERE state_hash = $1`, [stateHash])
     if (new Date(row.expires_at) < new Date()) return null
     return {
       workspaceId: row.workspace_id,
