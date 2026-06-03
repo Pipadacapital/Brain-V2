@@ -23,6 +23,7 @@ import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { trpc } from '@/infrastructure/trpc-client.js';
 import { formatMoney } from '@brain/lib-metrics';
+import { formatBpPercent, formatBpMultiple } from '@brain/lib-formatters';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 
 // ---------------------------------------------------------------------------
@@ -58,15 +59,19 @@ export const ALL_METRICS: MetricDef[] = [
   { id: 'prepaidPct',     label: 'Prepaid Orders %',     category: 'Revenue',    format: 'percent',     definitionId: 'prepaid_rate_bp' },
   // --- Margins ---
   { id: 'cogs',           label: 'COGS',                 category: 'Margins',    format: 'currency',    definitionId: 'cogs_mu',                 lowerBetter: true },
-  { id: 'materialMargin', label: 'Material Margin',      category: 'Margins',    format: 'currency',    definitionId: 'net_revenue_mu' },
-  { id: 'materialMarginPct', label: 'Material Margin %', category: 'Margins',    format: 'percent',     definitionId: 'net_revenue_mu' },
+  // materialMargin = net_revenue_mu − cogs_mu (display-only derived; no registry id; honest-computed)
+  { id: 'materialMargin', label: 'Material Margin',      category: 'Margins',    format: 'currency',    definitionId: 'net_revenue_mu' /* derived: net_revenue_mu − cogs_mu */ },
+  // materialMarginPct = materialMargin / net_revenue_mu (display-only bp; no registry id)
+  { id: 'materialMarginPct', label: 'Material Margin %', category: 'Margins',    format: 'percent',     definitionId: 'net_revenue_mu' /* derived pct */ },
   { id: 'variableCosts',  label: 'Variable Costs',       category: 'Margins',    format: 'currency',    definitionId: 'variable_costs_mu',       lowerBetter: true },
-  { id: 'otherCosts',     label: 'Other Costs',          category: 'Margins',    format: 'currency',    definitionId: 'variable_costs_mu',       lowerBetter: true },
+  // otherCosts has no dedicated registry field; rendered as "—" (CF-S10-HONEST-STATE-1)
+  { id: 'otherCosts',     label: 'Other Costs',          category: 'Margins',    format: 'currency',    definitionId: 'other_costs_mu' /* not currently available — renders "—" */, lowerBetter: true },
   { id: 'cm1',            label: 'CM1',                  category: 'Margins',    format: 'currency',    definitionId: 'cm1_mu',                  drillPath: 'p-and-l' },
   { id: 'cm2',            label: 'CM2',                  category: 'Margins',    format: 'currency',    definitionId: 'cm2_mu',                  drillPath: 'p-and-l' },
   { id: 'miscExpenses',   label: 'Misc. Expenses',       category: 'Margins',    format: 'currency',    definitionId: 'misc_expenses_prorated_mu', lowerBetter: true },
   { id: 'cm3',            label: 'CM3',                  category: 'Margins',    format: 'currency',    definitionId: 'cm3_mu',                  drillPath: 'p-and-l' },
-  { id: 'cm3Pct',         label: 'CM3 %',                category: 'Margins',    format: 'percent',     definitionId: 'cm3_mu' },
+  // cm3Pct = cm3_mu / net_revenue_mu (display-only derived bp; no registry id)
+  { id: 'cm3Pct',         label: 'CM3 %',                category: 'Margins',    format: 'percent',     definitionId: 'cm3_mu' /* derived pct */ },
   // --- Marketing ---
   { id: 'metaSpend',      label: 'Meta Ad Spend',        category: 'Marketing',  format: 'currency',    definitionId: 'meta_spend_mu',           drillPath: 'meta-ads',    lowerBetter: true },
   { id: 'googleSpend',    label: 'Google Ad Spend',      category: 'Marketing',  format: 'currency',    definitionId: 'google_spend_mu',         drillPath: 'google-ads',  lowerBetter: true },
@@ -80,7 +85,8 @@ export const ALL_METRICS: MetricDef[] = [
   { id: 'totalRtoCost',   label: 'Total RTO Cost',       category: 'Logistics',  format: 'currency',    definitionId: 'rto_cost_mu',             drillPath: 'rto',         lowerBetter: true },
   { id: 'revenueLostToRto', label: 'Revenue Lost to RTO', category: 'Logistics', format: 'currency',   definitionId: 'rto_revenue_lost_mu',     drillPath: 'rto',         lowerBetter: true },
   { id: 'codOrders',      label: 'COD Orders',           category: 'Logistics',  format: 'number',      definitionId: 'cod_orders' },
-  { id: 'codPct',         label: 'COD %',                category: 'Logistics',  format: 'percent',     definitionId: 'prepaid_rate_bp' },
+  // codPct = cod_orders / (cod_orders + prepaid_orders) — display-only derived bp
+  { id: 'codPct',         label: 'COD %',                category: 'Logistics',  format: 'percent',     definitionId: 'cod_orders' /* derived pct, no registry id */ },
   { id: 'codRevenue',     label: 'COD Revenue',          category: 'Logistics',  format: 'currency',    definitionId: 'effective_revenue_cod_mu' },
   { id: 'prepaidRevenue', label: 'Prepaid Revenue',      category: 'Logistics',  format: 'currency',    definitionId: 'effective_revenue_prepaid_mu' },
   // --- Store ---
@@ -102,22 +108,11 @@ const MAX_CARDS = 20;
 // ---------------------------------------------------------------------------
 // Value formatting — render-only display helpers.
 // CF-C6-RENDER-ONLY-1: ONLY formatMoney for currency; bp/multiplier are display-only.
+// G3 formatter consolidation: all bp/multiplier formatting delegates to the ONE shared
+// module in @brain/lib-formatters (Wave A, shared-libs-5 sign-fix included).
+// formatBpPercent → bp → "12.34%" (ROUND, negative-sign correct)
+// formatBpMultiple → bp → "1.20×" (ROUND, negative-sign correct)
 // ---------------------------------------------------------------------------
-
-/** Format a bp value → percentage string (18.00%). Scale=10000: bp/100. */
-function formatBp(bp: number): string {
-  const whole = Math.floor(bp / 100);
-  const frac = Math.abs(bp % 100).toString().padStart(2, '0');
-  return `${whole}.${frac}%`;
-}
-
-/** Format a multiplier (bp/10000 → X.XXx display). MER=12000bp → "1.20×". */
-function formatMultiplierBp(bp: number): string {
-  // bp is ×10000, so 1× = 10000. Display = bp/10000 with 2dp.
-  const whole = Math.floor(bp / 10000);
-  const frac = Math.abs(Math.floor((bp % 10000) / 100)).toString().padStart(2, '0');
-  return `${whole}.${frac}×`;
-}
 
 // ---------------------------------------------------------------------------
 // RAG coloring — direction-aware, matching registry computeGoalRag thresholds.
@@ -129,9 +124,20 @@ function formatMultiplierBp(bp: number): string {
 
 type DeltaDirection = 'up' | 'down' | 'flat';
 
-/** Compute period-over-period % change. Returns null when prev is 0 or null. */
+/**
+ * Compute period-over-period % change. Returns null when prev is 0 or null.
+ * web-10 (bigint delta): when both operands are bigint, compute the diff in bigint
+ * to avoid >2^53 precision loss before converting to Number for the final ratio.
+ */
 function computeDelta(curr: number | bigint | null, prev: number | bigint | null): number | null {
   if (curr == null || prev == null) return null;
+  if (typeof curr === 'bigint' && typeof prev === 'bigint') {
+    if (prev === 0n) return null;
+    // Compute diff in bigint (avoids loss), then divide as Number.
+    const diff = curr - prev;
+    const absPrev = prev < 0n ? -prev : prev;
+    return (Number(diff) / Number(absPrev)) * 100;
+  }
   const c = typeof curr === 'bigint' ? Number(curr) : curr;
   const p = typeof prev === 'bigint' ? Number(prev) : prev;
   if (p === 0) return null;
@@ -295,11 +301,7 @@ export function DashboardMetricsGrid({
     return Math.floor((Number(codPrev.cod_orders) / total) * 10000);
   })();
 
-  // Prepaid % (bp) from cod result
-  const prepaidRateBp: number | null = cod?.prepaid_rto_rate_bp != null
-    ? null // prepaid_rto_rate_bp is NOT the same as prepaid order %; use own computation
-    : null;
-  // Actually: prepaid % = prepaid_orders / total * 10000
+  // Prepaid % = prepaid_orders / total * 10000
   const prepaidPctBp: number | null = (() => {
     if (!cod) return null;
     const total = Number(cod.cod_orders) + Number(cod.prepaid_orders);
@@ -347,7 +349,10 @@ export function DashboardMetricsGrid({
     materialMargin:   { mu: materialMarginMu,                        prevMu: materialMarginPrevMu },
     materialMarginPct:{ bp: materialMarginBp,                        prevBp: materialMarginPrevBp },
     variableCosts:    { mu: pnl?.variable_costs_mu ?? null,          prevMu: pnlPrev?.variable_costs_mu ?? null },
-    otherCosts:       { mu: pnl?.variable_costs_mu ?? null,          prevMu: pnlPrev?.variable_costs_mu ?? null },
+    // web-9: "Other Costs" has no dedicated registry field in pnl.statement; render "—"
+    // rather than fabricating a value from variable_costs_mu (which is a different metric).
+    // When the backend supplies other_costs_mu, wire it here. CF-S10-HONEST-STATE-1.
+    otherCosts:       { mu: null,                                     prevMu: null },
     cm1:              { mu: pnl?.cm1_mu ?? null,                     prevMu: pnlPrev?.cm1_mu ?? null },
     cm2:              { mu: pnl?.cm2_mu ?? null,                     prevMu: pnlPrev?.cm2_mu ?? null },
     miscExpenses:     { mu: pnl?.misc_expenses_prorated_mu ?? null,  prevMu: pnlPrev?.misc_expenses_prorated_mu ?? null },
@@ -388,12 +393,14 @@ export function DashboardMetricsGrid({
       }
       case 'percent': {
         if (v.bp == null) return '—';
-        return formatBp(v.bp);
+        // G3: canonical formatBpPercent from @brain/lib-formatters (ROUND, negative-sign correct)
+        return formatBpPercent(v.bp);
       }
       case 'multiplier': {
         // MER/aMER stored as bp (×10000). Display as "1.20×".
         if (v.bp == null) return '—';
-        return formatMultiplierBp(v.bp);
+        // G3: canonical formatBpMultiple from @brain/lib-formatters (ROUND, negative-sign correct)
+        return formatBpMultiple(v.bp);
       }
     }
   }

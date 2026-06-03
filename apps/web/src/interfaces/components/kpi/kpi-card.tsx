@@ -12,6 +12,7 @@
 // The ONLY transformation is formatMoney() or scale-display — both are pure display.
 
 import { formatMoney } from '@brain/lib-metrics';
+import { formatBpPercent, formatX100Multiple } from '@brain/lib-formatters';
 import { useAppDispatch } from '@/domain/store/hooks.js';
 import { openDrillDrawer } from '@/domain/store/ui-slice.js';
 import { StalenessLabel } from '@/interfaces/components/shared/staleness-label.js';
@@ -39,31 +40,8 @@ interface KpiCardProps {
   drillable?: boolean;
 }
 
-/**
- * Format a ratio bp value → percentage string.
- * scale=10000: 1800 bp → "18.00%"
- * CF-C6-RENDER-ONLY-1: only display math. The integer is server-produced.
- */
-function formatBp(bp: number): string {
-  // BigInt integer division semantics preserved: no rounding.
-  // bp = FLOOR(ratio × 10000), so display = bp / 100 with 2 decimal places.
-  const whole = Math.floor(bp / 100);
-  const frac = Math.abs(bp % 100).toString().padStart(2, '0');
-  return `${whole}.${frac}%`;
-}
-
-/**
- * Format a ×100 value for display.
- * scale=100: 285 → "2.85×"
- * CF-C6-ROAS-DISPLAY-CONTRACT-1: this is the ONLY place ROAS display math happens.
- * The value/100 is display-only math on the pre-formatted integer — it does NOT
- * produce a new metric value.
- */
-function formatX100(v: number): string {
-  const whole = Math.floor(v / 100);
-  const frac = Math.abs(v % 100).toString().padStart(2, '0');
-  return `${whole}.${frac}×`;
-}
+// G3 formatter consolidation (Wave C): formatBpPercent and formatX100Multiple
+// are imported from @brain/lib-formatters (canonical). No local re-implementation.
 
 export function KpiCard({
   definitionId,
@@ -91,10 +69,12 @@ export function KpiCard({
       displayValue = formatMoney(valueMu, currencyCode);
     }
   } else if (valueType === 'ratio_bp') {
-    displayValue = valueBp != null ? formatBp(valueBp) : '—';
+    // G3: canonical formatBpPercent (ROUND, negative-sign correct)
+    displayValue = valueBp != null ? formatBpPercent(valueBp) : '—';
   } else if (valueType === 'ratio_x100') {
     // CF-C6-ROAS-DISPLAY-CONTRACT-1: scale=100. displayValue = rawValue / 100 → "2.85×"
-    displayValue = valueX100 != null ? formatX100(valueX100) : '—';
+    // G3: canonical formatX100Multiple (ROUND, negative-sign correct)
+    displayValue = valueX100 != null ? formatX100Multiple(valueX100) : '—';
   } else {
     // count — bigint rendered as locale string
     displayValue = valueCount != null ? valueCount.toLocaleString('en-IN') : '—';

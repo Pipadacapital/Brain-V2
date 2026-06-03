@@ -35,7 +35,7 @@ export function Providers({ children, workspaceId }: ProvidersProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5 * 60 * 1000,   // 5 min — matches the brief's 6h cache posture
+            staleTime: 5 * 60 * 1000,   // 5 min — background refetch cadence for dashboard queries
             refetchOnWindowFocus: false,
           },
         },
