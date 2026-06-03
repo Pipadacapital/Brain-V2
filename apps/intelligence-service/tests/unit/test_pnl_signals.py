@@ -239,3 +239,79 @@ class TestParadigmEnforcement:
         # Running to completion here proves the gate is satisfied.
         signals = compute_pnl_signals(daily, summary, summary, workspace_id="ws1")
         assert signals is not None
+
+
+class TestTrendPctUnit:
+    """Defect 2 regression: trend pct_change_x10 is percent×10 (e.g. 9.9%→99),
+    but extract_numbers("9.9%") returns 990 bp (percent×100).
+
+    The agent's _compute_signals must emit pct signals as basis points
+    (pct_change_x10 * 10) so they match extract_numbers' output.
+
+    These tests verify pct_change_x10 semantics at the pnl_signals level,
+    and document what the agent-level conversion must produce.
+    """
+
+    def test_trend_pct_x10_for_9_9_pct(self) -> None:
+        """9.9% period-over-period change → pct_change_x10 = 99 (percent×10 raw).
+
+        This is the RAW value from compute_pnl_signals before the agent
+        converts to basis points for the faithfulness signal.
+        """
+        # current = 119_900; prior = 109_100 → pct ≈ (10800/109100)*1000 ≈ 99 (9.9%)
+        current = _make_summary(net_sales_mu=119_900, cm2_mu=50_000, cm3_mu=40_000)
+        prior = _make_summary(net_sales_mu=109_100, cm2_mu=40_000, cm3_mu=30_000)
+        daily = _make_daily(5, 119_900)
+        signals = compute_pnl_signals(daily, current, prior, workspace_id="ws1")
+        net_sales_trends = [t for t in signals.trends if t.metric == "Net sales"]
+        assert len(net_sales_trends) == 1
+        t = net_sales_trends[0]
+        # pct_change_x10: round((119900 - 109100) / 109100 * 1000) = round(98.99) = 99
+        assert t.pct_change_x10 == 99, (
+            f"Expected pct_change_x10=99 (9.9% × 10), got {t.pct_change_x10}"
+        )
+        # Defect 2: to match extract_numbers("9.9%") = 990, agent must emit
+        # pct_change_x10 * 10 = 990 as the faithfulness signal (NOT 99).
+        pct_bp = t.pct_change_x10 * 10
+        assert pct_bp == 990, (
+            f"Basis-point conversion: pct_change_x10 * 10 must equal 990; got {pct_bp}"
+        )
+
+    def test_extract_numbers_pct_matches_bp_not_pct_x10(self) -> None:
+        """Confirm extract_numbers("9.9%") = 990 (bp), NOT 99 (pct_x10).
+
+        This documents the unit mismatch that was the root cause of Defect 2.
+        """
+        from domain.faithfulness.extraction import extract_numbers
+        result = extract_numbers("CM1 expanded 9.9%")
+        assert 990 in result, f"extract_numbers must produce 990 for '9.9%'; got {result}"
+        assert 99 not in result, (
+            "extract_numbers must NOT produce 99 (pct_x10 unit) for '9.9%'"
+        )
+
+    def test_extract_numbers_18_7_pct_is_1870_bp(self) -> None:
+        """18.7% → 1870 bp (not 187 pct_x10)."""
+        from domain.faithfulness.extraction import extract_numbers
+        result = extract_numbers("Ad spend surged 18.7%")
+        assert 1870 in result, f"Expected 1870; got {result}"
+        assert 187 not in result
+
+    def test_trend_pct_bp_conversion_for_ad_spend_growth(self) -> None:
+        """18.7% ad spend growth: pct_change_x10 = 187; pct_bp = 1870."""
+        # current ad_spend = 118_700; prior = 100_000 → pct = 18.7% → pct_x10 = 187
+        current = PnlSummary(
+            net_sales_mu=200_000, cm1_mu=100_000, cm2_mu=60_000, cm3_mu=40_000,
+            total_ad_spend_mu=118_700, total_orders=10
+        )
+        prior = PnlSummary(
+            net_sales_mu=200_000, cm1_mu=100_000, cm2_mu=60_000, cm3_mu=40_000,
+            total_ad_spend_mu=100_000, total_orders=10
+        )
+        daily = _make_daily(5, 200_000)
+        signals = compute_pnl_signals(daily, current, prior, workspace_id="ws1")
+        ad_trends = [t for t in signals.trends if t.metric == "Ad spend"]
+        assert len(ad_trends) == 1
+        t = ad_trends[0]
+        assert t.pct_change_x10 == 187, f"Expected 187, got {t.pct_change_x10}"
+        pct_bp = t.pct_change_x10 * 10
+        assert pct_bp == 1870, f"Expected 1870 bp, got {pct_bp}"

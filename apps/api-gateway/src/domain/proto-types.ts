@@ -1053,7 +1053,7 @@ export interface PageInsightResult {
   signals: InsightSignal[];
   narrations: PageInsightNarration[];
   faithfulness_ok: boolean;
-  model_used: string;               // e.g. "anthropic/claude-haiku-3-5" or "deterministic-stub"
+  model_used: string;               // e.g. "anthropic/claude-haiku-4-5" or "deterministic-stub"
   cached: boolean;                  // filtersHash cache hit (cost: zero LLM call)
   paradigm: 'small_llm';            // pinned: never frontier per page
 }

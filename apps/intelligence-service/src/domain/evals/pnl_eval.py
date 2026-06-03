@@ -95,10 +95,14 @@ GOLDEN_SET: list[GoldenCase] = [
     ),
     GoldenCase(
         case_id="GATE2-KM-002",
-        narration="CM2 margin improved to 15% this month.",
+        narration="CM2 margin improved to 17% this month.",
         signals=[Signal("cm2_pct_bp", 1_000)],  # signal = 10% = 1000bp
         expected_ok=False,
-        description="GATE2 KILLED MUTANT: hallucinated 15% vs signal 1000bp (10%) → RED.",
+        description=(
+            "GATE2 KILLED MUTANT: hallucinated 17% (1700 bp) vs signal 1000 bp (10%) → RED. "
+            "Note: 15% was updated to 17% because 15% (1500 bp) is now whitelisted as the "
+            "CM2% warning benchmark threshold. 17% (1700 bp) is not a benchmark constant."
+        ),
     ),
 
     # --- FALSE-REJECT PASS CASES (CF-C5-FAITHFULNESS-COST-1) ---
