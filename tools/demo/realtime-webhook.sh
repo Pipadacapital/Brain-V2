@@ -28,7 +28,7 @@ if [ -z "${SECRET:-}" ]; then echo "FATAL: SHOPIFY_CLIENT_SECRET not in .env.doc
 
 # A realistic orders/create REST payload (snake_case, as Shopify sends).
 read -r -d '' BODY <<JSON || true
-{"id":${ORDER_ID},"order_number":${ORDER_ID},"financial_status":"paid","fulfillment_status":null,"email":"demo@example.com","currency":"INR","total_price":"${TOTAL}","subtotal_price":"${TOTAL}","total_discounts":"0.00","total_tax":"0.00","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","updated_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","closed_at":null,"cancelled_at":null,"billing_address":{"first_name":"Demo","last_name":"Buyer","zip":"560001","city":"Bengaluru"},"line_items":[{"id":${ORDER_ID}01,"sku":"DEMO-SKU-1","title":"Demo Attar 50ml","quantity":1,"price":"${TOTAL}"}]}
+{"id":${ORDER_ID},"order_number":${ORDER_ID},"financial_status":"paid","fulfillment_status":null,"email":"demo@example.com","currency":"INR","total_price":"${TOTAL}","subtotal_price":"${TOTAL}","total_discounts":"0.00","total_tax":"0.00","created_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","updated_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","closed_at":null,"cancelled_at":null,"billing_address":{"first_name":"Demo","last_name":"Buyer","zip":"560001","city":"Bengaluru"},"line_items":[{"id":${ORDER_ID}01,"product_id":8086715597106,"variant_id":44512345678901,"sku":"DEMO-SKU-1","title":"Demo Attar 50ml","quantity":1,"price":"${TOTAL}"}]}
 JSON
 
 # HMAC-SHA256 over the EXACT bytes, base64-encoded.

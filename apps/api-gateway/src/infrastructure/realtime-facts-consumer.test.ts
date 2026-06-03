@@ -22,6 +22,8 @@ import { mapEnvelopeToFacts } from './realtime-facts-consumer.js'
 
 const RAW_LINE_ITEM = {
   id: 12345678,
+  product_id: 8086715597106,
+  variant_id: 44512345678901,
   sku: 'SKU-001',
   title: 'Test Product',
   quantity: 2,
@@ -210,6 +212,19 @@ describe('mapEnvelopeToFacts — line items', () => {
   it('vendorLineId = String(li.id)', () => {
     const { lineItems } = mapEnvelopeToFacts(makeEnvelope())
     expect(lineItems[0]!.vendorLineId).toBe('12345678')
+  })
+
+  it('reconstructs the product/variant GID from REST numeric ids (joins to facts)', () => {
+    const { lineItems } = mapEnvelopeToFacts(makeEnvelope())
+    expect(lineItems[0]!.vendorProductId).toBe('gid://shopify/Product/8086715597106')
+    expect(lineItems[0]!.vendorVariantId).toBe('gid://shopify/ProductVariant/44512345678901')
+  })
+
+  it('vendorProductId is empty when REST omits product_id (no fake GID)', () => {
+    const { lineItems } = mapEnvelopeToFacts(
+      makeEnvelope({ raw_payload: { line_items: [{ id: 5, sku: 'X', quantity: 1, price: '1.00' }] } }),
+    )
+    expect(lineItems[0]!.vendorProductId).toBe('')
   })
 
   it('vendorOrderId matches order.vendorOrderId', () => {
