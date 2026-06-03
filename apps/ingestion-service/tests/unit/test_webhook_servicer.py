@@ -1846,3 +1846,67 @@ class TestTopicAllowlistCoverage:
 
     def test_empty_topic_not_in_allowlist(self):
         assert "" not in SHOPIFY_TOPIC_ALLOWLIST
+
+
+# ---------------------------------------------------------------------------
+# Webhook counter pre-seed (python-services-12 fix)
+# ---------------------------------------------------------------------------
+
+class TestWebhookCounterPreSeed:
+    """Webhook counters must be pre-seeded in _COUNTERS on cold start.
+
+    BEFORE (bug): webhook_* keys were not in _COUNTERS until the first event
+    was processed, causing get_counters() to return missing keys on cold-start
+    and monitoring dashboards to show gaps.
+    AFTER: all four webhook_* keys are pre-seeded to 0 in _COUNTERS init.
+    """
+
+    def test_webhook_received_total_pre_seeded(self) -> None:
+        """webhook_received_total must be present in _COUNTERS at import time."""
+        from src.application.framework.ingest import get_counters
+        counters = get_counters()
+        assert "webhook_received_total" in counters, (
+            "webhook_received_total missing from _COUNTERS on cold-start. "
+            "Monitoring dashboards will show a missing-metric gap."
+        )
+
+    def test_webhook_rejected_total_pre_seeded(self) -> None:
+        """webhook_rejected_total must be present in _COUNTERS at import time."""
+        from src.application.framework.ingest import get_counters
+        counters = get_counters()
+        assert "webhook_rejected_total" in counters
+
+    def test_webhook_parked_total_pre_seeded(self) -> None:
+        """webhook_parked_total must be present in _COUNTERS at import time."""
+        from src.application.framework.ingest import get_counters
+        counters = get_counters()
+        assert "webhook_parked_total" in counters
+
+    def test_webhook_ignored_total_pre_seeded(self) -> None:
+        """webhook_ignored_total must be present in _COUNTERS at import time."""
+        from src.application.framework.ingest import get_counters
+        counters = get_counters()
+        assert "webhook_ignored_total" in counters
+
+    def test_all_webhook_counters_start_at_zero(self) -> None:
+        """All pre-seeded webhook counters must start at 0."""
+        from src.application.framework.ingest import get_counters, reset_counters
+        reset_counters()
+        counters = get_counters()
+        for key in ("webhook_received_total", "webhook_rejected_total",
+                    "webhook_parked_total", "webhook_ignored_total"):
+            assert counters[key] == 0, (
+                f"{key} must start at 0 after reset, got {counters[key]}"
+            )
+
+    def test_get_counters_always_has_webhook_keys_after_reset(self) -> None:
+        """After reset_counters(), the webhook_* keys must still be present.
+
+        reset_counters() sets existing keys to 0; pre-seeded keys survive the reset.
+        """
+        from src.application.framework.ingest import get_counters, reset_counters
+        reset_counters()
+        counters = get_counters()
+        for key in ("webhook_received_total", "webhook_rejected_total",
+                    "webhook_parked_total", "webhook_ignored_total"):
+            assert key in counters, f"{key} missing after reset_counters()"

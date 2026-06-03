@@ -252,14 +252,11 @@ def _write_decision_log(
         "actor_id": actor_id,
     }
     if writer is not None:
-        try:
-            return str(writer(workspace_id, row))
-        except Exception as exc:
-            logger.error(
-                "dispatch_tool_call: failed to write Decision-Log row: %s "
-                "request_id=%r", exc, request_id,
-            )
-            return None
+        # Do NOT swallow writer failures — a failed audit write must be
+        # observable. The caller (dispatch_tool_call) will see the exception.
+        # Matches the gateway client's Decision-Log write behavior (client.py
+        # line 643: self._decision_log_writer(workspace_id, row) with no try/except).
+        return str(writer(workspace_id, row))
     # Production path: wire a real writer in bootstrap.
     logger.debug("_write_decision_log: no writer configured, row=%r", row)
     return None

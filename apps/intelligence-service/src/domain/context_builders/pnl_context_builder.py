@@ -286,15 +286,14 @@ def _aggregate_summary(rows: list[Any]) -> PnlPeriodSummary:
     total_cm3 = sum(int(r.cm3_mu) for r in rows)
     total_ad_spend = sum(int(r.total_ad_spend_mu) for r in rows)
 
-    # Orders: sum aov_mu × days / net_sales if no direct order count
-    # The MetricRow doesn't have a direct order count, but aov_mu = net_sales / orders
-    # so orders ≈ net_sales / aov (for non-zero aov)
-    total_orders = 0
-    for r in rows:
-        if r.aov_mu and r.aov_mu > 0:
-            total_orders += int(r.net_sales_mu) // int(r.aov_mu)
+    # Real per-day order counts from MetricRow (python-services-13 fix).
+    # Previously reverse-derived as net_sales / aov_mu, which is lossy and
+    # incorrect when aov_mu is NULL (zero-order days). total_orders is now
+    # a real base-table column passed through the MV.
+    total_orders = sum(getattr(r, "total_orders", 0) or 0 for r in rows)
 
-    # AOV for the period = total_net_sales / total_orders (if positive)
+    # AOV for the period = total_net_sales / total_orders (if positive).
+    # Guard: None when total_orders == 0 (zero-order days / empty window).
     aov_mu: int | None = None
     if total_orders > 0:
         aov_mu = total_net_sales // total_orders

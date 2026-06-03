@@ -14,94 +14,40 @@ Signature (LOCKED from §A0.3):
     FaithfulnessResult.ok: bool
     FaithfulnessResult.offending_numbers: list[str]
 
-Algorithm (CF-C5-FAITHFULNESS-1 — revised to fix B3 live-run defect):
-  The narration is the raw JSON the model emits (InsightItem[] schema).  Running
-  extract_numbers() on the entire JSON blob captures structural integers that are
-  NOT metric data claims:
+Algorithm (CF-C5-FAITHFULNESS-1):
+  Validate over NARRATIVE TEXT only, against an extended allowed set.
 
-    - "confidence": 95      → self-assessed confidence (0-100 int), NOT a signal.
-    - "2026-05-19"          → calendar date in detail/summary text.  Day/month/year
-                              digits appear as bare numbers after extraction.
-    - "20%", "15%", "5%"   → benchmark thresholds _BENCHMARKS_BLOCK EXPLICITLY
-                              tells the model to cite ("critical <20%", etc.).
-                              Normalised to bp these are 2000, 1500, 500 — not signals.
-    - "up 12%"              → percentage-change phrasing normalised to 1200 bp.
+  Step 1 — Parse the model JSON (after stripping any markdown fence; falls back
+    to slicing first '{' to last '}'). Extract only the free-text claim fields
+    (title, summary, detail, rationale). Structural fields (confidence int,
+    recommendation.action enum, metrics[] signal-id strings) are excluded. If
+    parsing fails, fall back to full-string validation (fail-safe, same VETO).
 
-  None of these are fabricated signal values; the gate was tripping on structural
-  noise, not hallucinations.  This is defect CF-C5-FAITHFULNESS-1 (B3 live run,
-  workspace f165da80-e6d5-4c58-9aff-ec654b873bd7, date 2026-05-19).
-
-  Fix — validate over NARRATIVE TEXT only, extended allowed set:
-
-  Step 1 — Parse the model JSON.  Extract only the free-text claim fields
-    (title, summary, detail, rationale).  Structural fields (confidence int,
-    recommendation.action enum, metrics[] signal-id strings) are excluded.
-    If JSON parsing fails (malformed output), fall back to full-string
-    validation — fail-safe, same VETO strength as before.
-
-  Step 2 — Build the allowed set as:
-    (a) all signal.value_canonical values (the authoritative data claims), PLUS
-    (b) STRUCTURAL_CONFIDENCE_RANGE: integers 0-100 (confidence self-assessment
-        — a structural schema field, never a data claim), PLUS
-    (c) BENCHMARK_BP_VALUES: the threshold bp values the prompt's
-        _BENCHMARKS_BLOCK explicitly instructs the model to cite (e.g. 20% →
-        2000 bp, 15% → 1500 bp).  These are prompt-injected constants, not
-        invented by the model, PLUS
-    (d) calendar date tokens: year digits (e.g. 2026), and generic day/month
-        ordinals 1-31.  The model is instructed to write period dates in detail
-        fields; these are structurally injected from the brief date, not
-        hallucinated metric values.
+  Step 2 — Build the allowed set:
+    (a) all signal.value_canonical values (the authoritative data claims), plus
+    (b) confidence range 0-100 (a structural schema field), plus
+    (c) the benchmark bp thresholds _BENCHMARKS_BLOCK instructs the model to
+        cite (e.g. 20% → 2000 bp) — prompt constants, not model-invented, plus
+    (d) calendar tokens: year digits + day/month ordinals 1-31 (period dates
+        are structurally injected from the brief date), plus
+    (e) the display-rounded paise form of each money signal, so a correctly
+        rounded ₹X.XL value matches its signal despite last-digit rounding.
 
   Step 3 — extract_numbers() on the concatenated narrative text, set-compare
-    against the extended allowed set.  A number in narrative text NOT in the
-    extended allowed set is still an offending hallucination.
+    against the allowed set. Any narrative number NOT in the set is an offending
+    hallucination → ok=False.
 
-  This preserves the VETO: "CM2 was ₹9.9L" where no signal equals 990_000
-  will still fail.  The gate's purpose — catching LLM-invented or contradicted
-  DATA numbers — is fully preserved.
+  VETO preserved: an invented/contradicted metric value (e.g. "CM2 was ₹9.9L"
+  with no signal near 9.9L) still fails. The allowed-set extensions are bounded
+  and deterministic — they cannot whitelist an arbitrary hallucinated number.
+
+  Note: trend percentage signals are emitted in basis points ("trend:*:pct_bp"),
+  matching extract_numbers() (9.9% → 990 bp), so faithfully-narrated percentage
+  changes are not false-rejected.
 
 False-reject prevention (CF-C5-FAITHFULNESS-COST-1):
   "₹1.2L" normalizes to 120_000 before comparison; if signal value_canonical
   is 120_000, this PASSES. See extraction.py for all normalization rules.
-
-Three B3-live-run defects (2026-05-19, workspace f165da80-e6d5-4c58-9aff-ec654b873bd7):
-
-  Defect 1 — Markdown fence breaks JSON parser:
-    The model wraps output in ```json … ``` despite Rule 10.  json.loads()
-    throws → _extract_narrative_text returns None → strict fallback path →
-    _STRUCTURAL_ALLOWED never applies → confidence 95/92 and year 2026 VETO.
-    Fix: _strip_markdown_fence() in _extract_narrative_text() strips the fence
-    before json.loads(); also slices from first '{' to last '}' as last resort.
-
-  Defect 2 — Percentage unit mismatch (pct_x10 vs basis points):
-    pnl_insight_agent.py emitted Signal("trend:*:pct_x10", pct_change_x10)
-    where 9.9% → value 99.  But extract_numbers("9.9%") → 990 bp.
-    990 ∉ {99} → false VETO on faithfully-narrated percentage changes.
-    Fix: emit pct signals as basis points (pct_change_x10 * 10 = 990).
-    Signal renamed to "trend:*:pct_bp" to make the unit explicit.
-
-  Defect 3 — Money rounding + derived numbers:
-    The model converts paise → lakhs/crores itself and gets it wrong (10× error).
-    Fix (approach a — primary): Tier-A now emits all derived signals the model
-    needs (delta, ratio metrics: MER, CM2%, CM3%), and pre-formats every display
-    string in _format_signals_as_user_content.  The model is instructed to quote
-    provided display values verbatim, never recompute.
-    Fix (approach b — safety net): _build_display_tolerance_set() adds the
-    display-rounded paise form of each money signal to the allowed set, so that
-    a correctly-rounded ₹X.XL value matches its signal even when the exact paise
-    differ in the last digit of rounding.  Invented/contradicted values still fail.
-
-Reviewer note (Shreya — security): this change narrows the validation surface
-  from the full JSON blob to the free-text claim fields only.  Structural fields
-  that carry no data claims (confidence, action enum, metric ids) are excluded.
-  The hallucination guard is preserved: any invented metric value that appears
-  in title/summary/detail/rationale and is NOT a signal value will still trigger
-  ok=False.  The allowed-set extensions (confidence 0-100, benchmark bp,
-  calendar date tokens, display-rounded money) are bounded and deterministic —
-  they cannot be exploited to whitelist an arbitrary hallucinated number.
-  An invented money value "₹9.9L" (990_000_000 paise? No — 9.9L = 9_900_000
-  paise) must equal the display-rounded form of a real signal to pass; it will
-  not do so unless there is a real signal near 9.9L.
 """
 
 from __future__ import annotations

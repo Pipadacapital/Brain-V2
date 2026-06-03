@@ -53,6 +53,7 @@ def _make_row_dict(workspace_id: str, date_val: date) -> dict:
         "cm2_mu": 425_00,
         "misc_expenses_prorated_mu": None,
         "cm3_mu": 425_00,
+        "total_orders": 0,
         "rto_rate_bp": 1500,
         "prepaid_rate_bp": 6000,
         "conversion_rate_bp": 333,

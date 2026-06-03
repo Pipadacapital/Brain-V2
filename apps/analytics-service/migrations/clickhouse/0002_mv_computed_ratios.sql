@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS brain.workspace_daily_metrics_computed
 
     cm3_mu                      Int64,
 
+    -- Order / session counts (passed through from base for servicer / context-builder use)
+    total_orders                Int64,
+
     -- Ratio metrics (basis points = FLOOR(ratio × 10000), CF-C4-RATIO-DIVOP-1)
     -- All use: if(<denom> > 0, intDiv(<num>, <denom>), NULL)
 
@@ -115,6 +118,9 @@ SELECT
     google_ad_spend_mu,
     cm1_mu,
     cm2_mu,
+
+    -- Pass-through order count (used by servicer + context-builder; denominates ratios)
+    total_orders,
 
     -- CF-C4-PRORATED-DIVOP-1: calendar-aware proration over days-in-month.
     -- LOCAL-CH-COMPAT: dateDiff('day', toStartOfMonth, +1 month) == toDaysInMonth(date),

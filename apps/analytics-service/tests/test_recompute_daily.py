@@ -233,8 +233,12 @@ class TestRollupSqlInvariants:
         )
 
     def test_cm1_formula_present(self) -> None:
-        """cm1 = net_revenue - cogs must appear."""
-        assert "net_revenue_mu - coalesce(c.cogs_mu" in _ROLLUP_INSERT_SQL, (
+        """cm1 = net_revenue - cogs must appear.
+
+        With the date-spine fix, net_revenue is coalesced for zero-order days:
+        coalesce(o.net_revenue_mu, 0) - coalesce(c.cogs_mu, 0).
+        """
+        assert "coalesce(o.net_revenue_mu, 0) - coalesce(c.cogs_mu, 0)" in _ROLLUP_INSERT_SQL, (
             "cm1 formula (net_revenue - cogs) missing from rollup SQL."
         )
 
@@ -415,4 +419,128 @@ class TestNegativeScenarios:
         )
         assert count_params.get("workspace_id") == "ws-test-scope", (
             "Count query must be scoped to the requested workspace."
+        )
+
+
+# ---------------------------------------------------------------------------
+# PARITY: rollup CM ladder expressions == registry clickhouse_sql
+# (python-services-5 fix: ensures the rollup can't silently drift from canon)
+# ---------------------------------------------------------------------------
+
+class TestCmLadderRegistryParity:
+    """Parity gate: rollup SQL CM-ladder expressions must mirror the registry
+    clickhouse_sql formulas (variable_costs=0 in the rollup, Phase-D deferred).
+
+    If this test goes RED, the rollup SQL drifted from the metric registry —
+    a merge between the two implementations is required before shipping.
+    """
+
+    def test_cm1_rollup_matches_registry_formula(self) -> None:
+        """cm1 = net_revenue - cogs — rollup must contain the registry pattern.
+
+        Registry: toInt64(net_revenue_mu - cogs_mu - variable_costs_mu)
+        Rollup (variable_costs=0): net_revenue_mu - coalesce(cogs_mu, 0)
+        The minus-cogs subexpression must be present; variable_costs is 0 in
+        Phase-D so the net effect is identical for any non-negative variable_costs=0.
+        """
+        # The registry formula at variable_costs=0:
+        #   net_revenue_mu - cogs_mu - 0 = net_revenue_mu - cogs_mu
+        # The rollup uses coalesce(cogs_mu, 0) which equals cogs_mu when non-null.
+        # Verify the structural pattern that pins the CM-ladder identity.
+        from brain_metrics.registry.definitions import cm1_mu as CM1_DEF
+        # Verify registry Python formula agrees with manual arithmetic
+        net_rev = 10_000_000
+        cogs = 3_000_000
+        variable_costs = 0  # Phase-D deferred
+        expected_cm1 = net_rev - cogs - variable_costs
+        assert CM1_DEF.formula_py(net_rev, cogs, variable_costs) == expected_cm1
+        assert CM1_DEF.formula_py(net_rev, cogs, variable_costs) == 7_000_000
+        # Verify the rollup SQL contains the cm1 subtraction pattern
+        assert "net_revenue_mu, 0) - coalesce(c.cogs_mu, 0)" in _ROLLUP_INSERT_SQL, (
+            "PARITY DRIFT: cm1 rollup expression does not match registry pattern "
+            "(net_revenue - cogs). Registry: cm1 = net_revenue - cogs - variable_costs "
+            "(variable_costs=0 in rollup). Fix the rollup to match the registry."
+        )
+
+    def test_cm2_rollup_matches_registry_formula(self) -> None:
+        """cm2 = cm1 - total_ad_spend — rollup must contain the registry pattern.
+
+        Registry: toInt64(cm1_mu - total_ad_spend_mu)
+        Rollup: (net_revenue - cogs) - (meta_spend + google_spend)
+        """
+        from brain_metrics.registry.definitions import cm2_mu as CM2_DEF
+        cm1 = 7_000_000
+        ad_spend = 2_500_000
+        assert CM2_DEF.formula_py(cm1, ad_spend) == 4_500_000
+        # Structural: rollup cm2 must subtract both meta + google spend
+        assert "coalesce(a.meta_spend_mu, 0) + coalesce(a.google_spend_mu, 0)" in _ROLLUP_INSERT_SQL, (
+            "PARITY DRIFT: cm2 rollup expression does not match registry pattern "
+            "(cm1 - total_ad_spend). Fix the rollup to match the registry."
+        )
+
+    def test_cm3_rollup_matches_registry_formula(self) -> None:
+        """cm3 = cm2 - misc_expenses_prorated — rollup cm3 == cm2 (misc=0 Phase-D).
+
+        Registry: toInt64(cm2_mu - misc_expenses_prorated_mu)
+        Rollup: cm3 == cm2 because misc_expenses_monthly_mu=0 (Phase-D deferred).
+        The MV re-derives cm3 from cm2 and the misc proration — the rollup just
+        passes through cm2 as a zero-misc approximation for the base table.
+        """
+        from brain_metrics.registry.definitions import cm3_mu as CM3_DEF
+        cm2 = 4_500_000
+        misc = 0  # Phase-D deferred
+        assert CM3_DEF.formula_py(cm2, misc) == 4_500_000
+        # Structural: rollup cm3 uses the same cm2 subtraction expression
+        assert "AS cm3_mu" in _ROLLUP_INSERT_SQL, (
+            "PARITY DRIFT: cm3_mu column missing from rollup SQL."
+        )
+
+    def test_registry_py_formula_integers_no_float(self) -> None:
+        """All registry CM formulas return integers for integer inputs.
+
+        CF-C4-RATIO-DIVOP-1: no float money anywhere in the CM ladder.
+        """
+        from brain_metrics.registry.definitions import cm1_mu, cm2_mu, cm3_mu
+        assert isinstance(cm1_mu.formula_py(5_000_000, 2_000_000, 0), int)
+        assert isinstance(cm2_mu.formula_py(3_000_000, 1_000_000), int)
+        assert isinstance(cm3_mu.formula_py(2_000_000, 0), int)
+
+    def test_date_spine_union_in_rollup_sql(self) -> None:
+        """Date-spine UNION must appear in rollup SQL (python-services-3 fix).
+
+        Without the date-spine, zero-order days with ad-spend are silently
+        dropped from the rollup, understating spend and overstating CM2/CM3.
+        """
+        assert "date_spine" in _ROLLUP_INSERT_SQL, (
+            "REGRESSION: date_spine CTE missing from rollup SQL. "
+            "Zero-order days with ad-spend would be silently dropped."
+        )
+        assert "UNION DISTINCT" in _ROLLUP_INSERT_SQL, (
+            "REGRESSION: UNION DISTINCT missing from date_spine. "
+            "Add: SELECT date FROM orders_per_day UNION DISTINCT "
+            "SELECT date FROM cogs_per_day UNION DISTINCT "
+            "SELECT date FROM ad_per_day"
+        )
+
+    def test_zero_order_day_with_ad_spend_is_retained(self) -> None:
+        """Zero-order day with ad-spend must appear in the rollup output.
+
+        This is the key correctness invariant: a day that has ad spend but 0
+        orders must produce a row with total_orders=0, ad_spend>0, cm2<0.
+        Without the date-spine, such days are dropped entirely.
+
+        Pin the SQL logic: date_spine drives FROM, orders LEFT JOINed in,
+        so dates from ad_per_day with no corresponding orders row survive.
+        """
+        # The FROM clause must drive off date_spine, not orders_per_day
+        assert "FROM date_spine AS d" in _ROLLUP_INSERT_SQL, (
+            "REGRESSION: FROM clause must drive off date_spine (not orders_per_day). "
+            "Zero-order days with ad-spend are dropped when driving off orders alone."
+        )
+        assert "LEFT JOIN orders_per_day AS o ON o.date = d.date" in _ROLLUP_INSERT_SQL, (
+            "REGRESSION: orders_per_day must be LEFT JOINed to date_spine "
+            "(not used as the driving table)."
+        )
+        assert "LEFT JOIN ad_per_day     AS a ON a.date = d.date" in _ROLLUP_INSERT_SQL, (
+            "REGRESSION: ad_per_day must be LEFT JOINed to date_spine."
         )

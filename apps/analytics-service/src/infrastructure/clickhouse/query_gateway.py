@@ -92,6 +92,9 @@ class MetricRow:
     misc_expenses_prorated_mu: int | None
     cm3_mu: int
 
+    # Order / session counts
+    total_orders: int
+
     # Ratio metrics (None = NULL from ClickHouse zero-denominator guard)
     rto_rate_bp: int | None
     prepaid_rate_bp: int | None
@@ -171,6 +174,7 @@ _METRIC_COLUMNS = (
     "cm2_mu",
     "misc_expenses_prorated_mu",
     "cm3_mu",
+    "total_orders",
     "rto_rate_bp",
     "prepaid_rate_bp",
     "conversion_rate_bp",

@@ -386,6 +386,76 @@ class TestDecisionLogMiddleware:
 
 
 # ---------------------------------------------------------------------------
+# Cost estimate scale (python-services-2 fix)
+# ---------------------------------------------------------------------------
+
+class TestCostEstimateScale:
+    """Pin the LLM cost estimate to the correct paise scale.
+
+    BEFORE (bug): 1_000_000 divisor → 100x too high, mis-tripping Layer-3 cap
+    at ~1/100th of real spend and corrupting every Decision-Log cost_mu.
+    AFTER: 100_000_000 divisor → correct paise per token.
+    """
+
+    def test_haiku_known_tokens_exact_cost_mu(self) -> None:
+        """Haiku 1000 tokens_in + 100 tokens_out → correct paise value.
+
+        Manual derivation:
+            1000 * $0.25/MTok + 100 * $1.25/MTok
+            = $0.00025 + $0.000125 = $0.000375
+            × 84 INR/USD × 100 paise/INR = 3.15 paise → int 3
+
+        BEFORE bug: would have returned 315 (100x too high).
+        """
+        from application.gateway.client import GatewayClient
+        result = GatewayClient._estimate_cost_mu("claude-haiku-4-5", 1000, 100)
+        assert result == 3, (
+            f"Haiku cost scale bug: expected 3 paise, got {result}. "
+            "If >100, the 100x scale bug is still present."
+        )
+        assert result < 50, "Cost must be in single-digit paise for this token count."
+
+    def test_sonnet_known_tokens_exact_cost_mu(self) -> None:
+        """Sonnet 500 tokens_in + 200 tokens_out → correct paise value.
+
+        Manual derivation:
+            500 * $3/MTok + 200 * $15/MTok
+            = $0.0015 + $0.003 = $0.0045
+            × 84 × 100 = 37.8 paise → int 37
+
+        BEFORE bug: would have returned 3780 (100x too high).
+        """
+        from application.gateway.client import GatewayClient
+        result = GatewayClient._estimate_cost_mu("claude-sonnet-4-6", 500, 200)
+        assert result == 37, (
+            f"Sonnet cost scale bug: expected 37 paise, got {result}. "
+            "If >1000, the 100x scale bug is still present."
+        )
+
+    def test_cost_mu_is_integer(self) -> None:
+        """cost_mu must always be a Python int (no float money)."""
+        from application.gateway.client import GatewayClient
+        result = GatewayClient._estimate_cost_mu("claude-haiku-4-5", 5000, 1000)
+        assert isinstance(result, int), f"cost_mu must be int, got {type(result)}"
+
+    def test_cost_mu_not_100x_inflated(self) -> None:
+        """Layer-3 cap smoke test: a typical Haiku call must not exceed ₹1.
+
+        At the old scale, 10k tokens would have produced ~3150 paise = ₹31.50,
+        which would trip the Layer-3 cap after ~10 calls on a ₹300 Launch-tier cap.
+        At the correct scale, 10k tokens costs ~31 paise = ₹0.31, giving proper headroom.
+        """
+        from application.gateway.client import GatewayClient
+        # 10k input + 2k output = typical summarization call on Haiku
+        result = GatewayClient._estimate_cost_mu("claude-haiku-4-5", 10_000, 2_000)
+        # Must be < 100 paise (₹1), not > 3000 paise (₹30) as the bug produced.
+        assert result < 100, (
+            f"cost_mu={result} paise exceeds ₹1 for a 10k/2k Haiku call. "
+            "100x inflation bug may be present."
+        )
+
+
+# ---------------------------------------------------------------------------
 # India residency assertion
 # ---------------------------------------------------------------------------
 

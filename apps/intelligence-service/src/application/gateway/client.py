@@ -15,10 +15,7 @@ Model roster (small_llm -> Haiku-class; frontier_llm -> Sonnet-class):
   small_llm: "anthropic/claude-haiku-4-5"  (India-resident via ap-south-1 endpoint)
   frontier_llm: "anthropic/claude-sonnet-4-6"  (India-resident — tripwire ARMED for 5b)
 
-  NOTE: model ids MUST be live Anthropic API names. Verified against the real API
-  (B3 Morning Brief): this org serves the Claude 4.x line — the prior "claude-haiku-3-5"
-  / "claude-3-5-haiku-latest" defaults BOTH returned not_found_error (3.5 not entitled).
-  The current Haiku-class model is claude-haiku-4-5 (resolves to claude-haiku-4-5-20251001).
+  Model ids must be live Anthropic API names (Claude 4.x line).
   Override per-tier with GATEWAY_SMALL_LLM_MODEL / GATEWAY_FRONTIER_LLM_MODEL.
 
 India-resident routing (CF-C5-RESIDENCY-1):
@@ -647,14 +644,29 @@ class GatewayClient:
         """Estimate cost in paise (minor units).
 
         Haiku: ~$0.25/MTok input, ~$1.25/MTok output (approximate).
-        At 1 USD = 84 INR = 8400 paise per rupee.
-        Returns integer paise, no float.
+        Sonnet-class: ~$3/MTok input, ~$15/MTok output.
+        At 1 USD = 84 INR = 100 paise/INR.
+
+        Unit derivation:
+            price_per_million_tokens_usd × tokens / 1_000_000 = USD
+            USD × 84 × 100 = paise
+
+        cost_units = tokens × price_per_million  (units: USD × 1e-6 × per-token-count)
+        paise = cost_units × 84 × 100 / 1_000_000 / 100
+              = cost_units × 8_400 / 100_000_000
+
+        The previous divisor (1_000_000) was 100x too small, producing costs
+        100x larger than actual and mis-tripping the Layer-3 monthly cap at ~1/100th
+        of real spend. Fixed divisor: 100_000_000.
+
+        Returns integer paise (rounded down), no float.
         """
         if "haiku" in model.lower():
-            # $0.25/MTok input = 0.00000025 USD/token = 0.0000021 INR = 0.021 paise/token
-            cost_usd_millionths = tokens_in * 25 + tokens_out * 125
+            # $0.25/MTok input → 25; $1.25/MTok output → 125
+            cost_units = tokens_in * 25 + tokens_out * 125
         else:
-            # Sonnet-class: ~$3/MTok input, ~$15/MTok output
-            cost_usd_millionths = tokens_in * 300 + tokens_out * 1500
-        # Convert: cost_usd_millionths / 1_000_000 USD * 84 INR/USD * 100 paise/INR
-        return int(cost_usd_millionths * 84 * 100 // 1_000_000)
+            # Sonnet-class: $3/MTok input → 300; $15/MTok output → 1500
+            cost_units = tokens_in * 300 + tokens_out * 1500
+        # paise = cost_units × 84 × 100 / 100_000_000
+        # (= price_per_million × tokens / 1_000_000 × 84 × 100, integer arithmetic)
+        return int(cost_units * 84 * 100 // 100_000_000)

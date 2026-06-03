@@ -105,6 +105,13 @@ _COUNTERS: dict[str, int] = {
     "ingest_events_upserted_total": 0,
     "ingest_events_deduped_total": 0,
     "ingest_pii_manifest_rejections_total": 0,
+    # Pre-seeded so get_counters() always exposes these keys even before the
+    # first webhook is processed (python-services-12 fix). Without pre-seeding,
+    # monitoring dashboards show missing-metric gaps on cold-start.
+    "webhook_received_total": 0,
+    "webhook_rejected_total": 0,
+    "webhook_parked_total": 0,
+    "webhook_ignored_total": 0,
 }
 
 

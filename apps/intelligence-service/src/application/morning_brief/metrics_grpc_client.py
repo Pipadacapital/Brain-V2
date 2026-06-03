@@ -268,38 +268,6 @@ class MetricsGrpcClient:
 # Proto row → MetricRowView mapping
 # ---------------------------------------------------------------------------
 
-def _nullable_int32(wrapper: Any) -> Optional[int]:
-    """Extract int from a proto Int32Value wrapper, returning None if not set.
-
-    The proto uses HasField semantics for Int32Value. When the servicer did not
-    set the field, the wrapper is the default (value=0, but HasField=False).
-    We mirror the analytics MetricRow contract: None means zero-denominator day.
-    """
-    if wrapper is None:
-        return None
-    # Int32Value with ByteSize()==0 means the field was not set (proto default).
-    # We check via the wrapper's ByteSize — if 0, it was not CopyFrom'd.
-    # More idiomatic: proto3 wrappers are always present as a message but
-    # HasField tells us if the field was explicitly set.
-    try:
-        if not wrapper.DESCRIPTOR:
-            return None
-    except Exception:
-        return None
-    # value=0 with ByteSize()>0 is a legit zero; ByteSize()==0 is not set.
-    # In practice, the analytics servicer uses CopyFrom() only for non-None values.
-    # The proto client receives a default Int32Value(value=0) for unset fields —
-    # we cannot distinguish "set to 0" from "not set" at the proto level without
-    # HasField. Use HasField on the parent (not available here); so we treat
-    # value=0 for ratio fields as None (ratio=0 on a zero-denominator day is
-    # semantically equivalent to None in the analytics contract).
-    #
-    # NOTE: For _mu fields this would be wrong (0 is a valid zero). But all
-    # nullable fields in MetricRow are ratio/rate fields (_bp, aov_mu) where
-    # 0 is always a zero-denominator-day sentinel in the analytics contract.
-    return wrapper.value if wrapper.HasField else None
-
-
 def _proto_row_to_view(proto_row: Any) -> MetricRowView:
     """Map a proto MetricRow to a MetricRowView.
 
@@ -328,7 +296,7 @@ def _unwrap_int32value(wrapper: Any) -> Optional[int]:
 
     The proto client deserialises Int32Value as a message object with a .value
     field. The analytics servicer sets it via CopyFrom() only when the domain
-    row has a non-None value (see _nullable_int32 in metrics_servicer.py).
+    row has a non-None value.
 
     When the field is not set in the serialized bytes, the proto client returns
     a default Int32Value message (value=0, ByteSize()==0). We cannot call

@@ -251,10 +251,26 @@ orders_per_day AS (
         cod_orders,
         prepaid_orders
     FROM orders_raw
+),
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Date-spine: UNION of every date that appears in orders, cogs, OR ad-spend.
+-- This ensures zero-order days that carry ad-spend or COGS are NOT silently
+-- dropped (python-services-3 fix: previously drove off orders_per_day alone,
+-- so ad-spend on zero-order days was lost, understating spend and overstating
+-- CM2/CM3 for those days).
+-- ─────────────────────────────────────────────────────────────────────────
+date_spine AS (
+    SELECT date FROM orders_per_day
+    UNION DISTINCT
+    SELECT date FROM cogs_per_day
+    UNION DISTINCT
+    SELECT date FROM ad_per_day
 )
 
 -- ─────────────────────────────────────────────────────────────────────────
--- Final SELECT: join orders × cogs × ad_spend on date.
+-- Final SELECT: drive off date_spine, LEFT JOIN all sources.
+-- Zero-order days: revenue ladder = 0, ad/COGS preserved via LEFT JOIN.
 -- All CM ladder columns populated so the MV 0002 derives ratios.
 -- CF-C4-RATIO-DIVOP-1: all expressions are integer arithmetic; no division.
 -- DEFERRED (rto_orders, total_shipments, total_sessions): 0 for now.
@@ -262,17 +278,18 @@ orders_per_day AS (
 -- ─────────────────────────────────────────────────────────────────────────
 SELECT
     %(workspace_id)s                                           AS workspace_id,
-    o.date                                                     AS date,
+    d.date                                                     AS date,
 
     -- Revenue ladder (exact parity with fact-analytics-ch.ts readStoreSummaryCH)
-    o.gross_sales_mu,
-    o.returns_mu,
-    o.discounts_mu,
-    o.net_sales_mu,
-    o.total_tax_mu,
-    o.net_net_tax_mu,
-    o.shipping_revenue_mu,
-    o.net_revenue_mu,
+    -- Zero-order days: all revenue fields coalesce to 0.
+    coalesce(o.gross_sales_mu, 0)                              AS gross_sales_mu,
+    coalesce(o.returns_mu, 0)                                  AS returns_mu,
+    coalesce(o.discounts_mu, 0)                                AS discounts_mu,
+    coalesce(o.net_sales_mu, 0)                                AS net_sales_mu,
+    coalesce(o.total_tax_mu, 0)                                AS total_tax_mu,
+    coalesce(o.net_net_tax_mu, 0)                              AS net_net_tax_mu,
+    coalesce(o.shipping_revenue_mu, 0)                         AS shipping_revenue_mu,
+    coalesce(o.net_revenue_mu, 0)                              AS net_revenue_mu,
 
     -- COGS (readCogsCH parity: qty × argMax cost_mu, 0 for uncosted lines)
     coalesce(c.cogs_mu, 0)                                     AS cogs_mu,
@@ -288,20 +305,20 @@ SELECT
 
     -- CM ladder: all integer arithmetic, no division (CF-C4-RATIO-DIVOP-1)
     -- cm1 = net_revenue - cogs
-    o.net_revenue_mu - coalesce(c.cogs_mu, 0)                  AS cm1_mu,
+    coalesce(o.net_revenue_mu, 0) - coalesce(c.cogs_mu, 0)    AS cm1_mu,
     -- cm2 = cm1 - total_ad_spend
-    (o.net_revenue_mu - coalesce(c.cogs_mu, 0))
+    (coalesce(o.net_revenue_mu, 0) - coalesce(c.cogs_mu, 0))
         - (coalesce(a.meta_spend_mu, 0) + coalesce(a.google_spend_mu, 0))
                                                                AS cm2_mu,
     -- cm3 = cm2 (misc_expenses_monthly_mu is 0; MV recomputes from base anyway)
-    (o.net_revenue_mu - coalesce(c.cogs_mu, 0))
+    (coalesce(o.net_revenue_mu, 0) - coalesce(c.cogs_mu, 0))
         - (coalesce(a.meta_spend_mu, 0) + coalesce(a.google_spend_mu, 0))
                                                                AS cm3_mu,
 
-    -- Order counts
-    o.total_orders,
-    o.cod_orders,
-    o.prepaid_orders,
+    -- Order counts (zero for zero-order days)
+    coalesce(o.total_orders, 0)                                AS total_orders,
+    coalesce(o.cod_orders, 0)                                  AS cod_orders,
+    coalesce(o.prepaid_orders, 0)                              AS prepaid_orders,
 
     -- DEFERRED: rto_orders, total_shipments (shipment join Phase-D)
     toInt64(0)                                                 AS rto_orders,
@@ -318,9 +335,10 @@ SELECT
     now()                                                      AS inserted_at,
     'brain-analytics-service-recompute'                        AS source
 
-FROM orders_per_day AS o
-LEFT JOIN cogs_per_day  AS c ON c.date = o.date
-LEFT JOIN ad_per_day    AS a ON a.date = o.date
+FROM date_spine AS d
+LEFT JOIN orders_per_day AS o ON o.date = d.date
+LEFT JOIN cogs_per_day   AS c ON c.date = d.date
+LEFT JOIN ad_per_day     AS a ON a.date = d.date
 """.replace("{CANCELLED_OK}", _CANCELLED_OK)
 
 
