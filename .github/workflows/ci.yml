@@ -195,3 +195,24 @@ jobs:
           PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true"
       - name: eslint — backend (api-gateway + core-service)
         run: pnpm lint:backend
+
+  # DB-backed integration tests (advisor review P1-12). The ingestion-service
+  # integration suite (raw-write + RLS session-context) needs a real Postgres and
+  # was SKIPPED everywhere — so the "passes against mocks, breaks against real
+  # psycopg" bug class (the realtime epic hit four) could merge green. The harness
+  # provisions a disposable PG+CH like local dev (real role files + the tracked
+  # migrator + the raw landing DDL) and runs `uv run pytest tests/integration`.
+  # Needs Docker (runner has it) + uv. Now blocking.
+  db-integration:
+    name: DB integration tests (ingestion vs real PG+CH)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.22"
+      - name: ingestion integration suite vs disposable PG+CH
+        run: bash tests/integration/db-integration/run.sh
