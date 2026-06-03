@@ -47,13 +47,12 @@ def _build_morning_brief_provider() -> Optional[Callable]:
     Returns None (provider absent) when either condition is not met — the
     servicer then falls back to the Phase-D typed-empty response (safe default).
 
-    B1 wires PnlInsightAgent only.
-    The metric_source is an in-process dict adapter matching the _query_gateway
-    contract expected by build_pnl_context (avoids a full cross-service gRPC
-    client for B1 scope).
+    B2 wires PnlInsightAgent with MetricsGrpcClient as the metric_source.
+    MetricsGrpcClient opens a gRPC channel to analytics-service (ANALYTICS_GRPC_TARGET)
+    so metric reads cross the service boundary in production (multi-process deployment).
+    The B1 in-process analytics import is replaced — it always fails in prod.
 
-    TODO (Phase-D): replace metric_source with the analytics-service gRPC client
-    once that cross-service boundary is ready to carry.
+    Phase-D: fan out to all 15 agents, wire daily-tick scheduler, insight cache.
 
     PII/NEVERLOG: no credentials or operator data are logged here.
     """
@@ -75,25 +74,30 @@ def _build_morning_brief_provider() -> Optional[Callable]:
         from application.gateway.client import GatewayClient
         from application.morning_brief.pnl_signals_provider import build_pnl_signals_provider
 
-        # In-process metric_source adapter: passes through to the real analytics
-        # query_gateway when available, otherwise will surface errors at call time.
-        # B1 defers the full cross-service client to Phase-D; the _query_gateway
-        # dict contract lets us inject a real or fake source via DI.
+        # B2: use MetricsGrpcClient as the metric_source so metric reads cross the
+        # analytics-service boundary via a real gRPC channel in production.
+        # The B1 in-process import is removed — it always fails in multi-process prod.
+        # MetricsGrpcClient lazily opens the channel on first query_metrics() call.
+        # If the channel cannot be built, query_metrics() will surface a grpc.RpcError
+        # at call time (graceful degradation: the provider returns [] on any exception,
+        # so the Morning Brief falls back to typed-empty, not a crash).
+        # ANALYTICS_GRPC_TARGET defaults to "analytics-service:50052" (set in compose/k8s).
         try:
-            from apps.analytics_service.src.infrastructure.clickhouse.query_gateway import (  # type: ignore
-                query_metrics,
-                DateRange,
+            from application.morning_brief.metrics_grpc_client import MetricsGrpcClient
+            metric_source = MetricsGrpcClient().as_metric_source()
+            logger.info(
+                "intelligence gRPC: MetricsGrpcClient wired as metric_source "
+                "(target=%s). B2 scope: real gRPC hop to analytics-service.",
+                os.environ.get("ANALYTICS_GRPC_TARGET", "analytics-service:50052"),
             )
-            metric_source = {"query_metrics": query_metrics, "DateRange": DateRange}
-        except ImportError:
-            # analytics-service is a separate process; its module is not importable
-            # in the intelligence-service process. In production, B1 uses an
-            # in-process adapter stub here; the full cross-service path is Phase-D.
-            logger.warning(
-                "intelligence gRPC: analytics-service query_gateway not importable "
-                "in-process (expected in production multi-process deployment). "
-                "Morning Brief provider wiring skipped. "
-                "TODO (Phase-D): replace with analytics-service gRPC client."
+        except Exception as exc:
+            # MetricsGrpcClient import/construction failed — safe fallback to None
+            # so the provider is not wired (GetMorningBrief → typed-empty).
+            logger.error(
+                "intelligence gRPC: MetricsGrpcClient construction FAILED — "
+                "Morning Brief provider wiring skipped. error=%s. "
+                "B2: ensure grpcio is installed and ANALYTICS_GRPC_TARGET is set.",
+                exc,
             )
             return None
 
@@ -104,7 +108,7 @@ def _build_morning_brief_provider() -> Optional[Callable]:
         )
         logger.info(
             "intelligence gRPC: PnlInsightSignalsProvider wired for Morning Brief. "
-            "MORNING_BRIEF_LIVE=true. B1 scope: PnlInsightAgent only."
+            "MORNING_BRIEF_LIVE=true. B2: MetricsGrpcClient (real gRPC hop)."
         )
         return provider
 
