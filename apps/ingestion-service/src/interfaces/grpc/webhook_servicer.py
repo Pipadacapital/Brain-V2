@@ -166,11 +166,28 @@ async def _live_intake_runner(receive_webhook_fn, workspace_id: str, **kwargs) -
     KAFKA-LAZY-SINGLETON-1: passes the module-level _KAFKA_PRODUCER (may be None
     if KAFKA_BOOTSTRAP_SERVERS is not set — receive_webhook skips produce when None).
 
+    P0-B / CF-C3-PII-TOKENIZER-1: fetches the per-workspace HMAC salt from KmsVault
+    before opening the DB session.  Local dev: set BRAIN_PII_SALT_LOCAL_DEV=true to
+    return a deterministic test salt without any AWS call (KmsVault handles this).
+    Real AWS Secrets Manager provisioning (brain/{workspace_id}/pii_salt/v1) is a
+    Stage-8 console ceremony.  When PII_TOKENIZER=false the salt fetch is skipped
+    (tokenizer is a no-op; any bytes — including b"" — are acceptable).
+
     NEVERLOG-1: no PII or secrets in log lines.
     """
     from src.infrastructure.db.session_context import with_workspace
+    from src.infrastructure.pii.kms_vault import KmsVault
+    from src.domain.framework.pii_tokenizer import _tokenizer_enabled
 
     producer = get_kafka_producer()
+
+    # Fetch the per-workspace PII salt only when the tokenizer is ON.
+    # When PII_TOKENIZER=false the tokenizer is a no-op and any bytes are safe.
+    pii_salt: bytes = b""
+    pii_salt_version: str = kwargs.pop("pii_salt_version", "v1")
+    if _tokenizer_enabled():
+        vault = KmsVault()
+        pii_salt = await vault.get_salt(workspace_id, pii_salt_version)
 
     async def _fn(conn):
         return await receive_webhook_fn(
@@ -178,6 +195,8 @@ async def _live_intake_runner(receive_webhook_fn, workspace_id: str, **kwargs) -
             workspace_id=workspace_id,
             db_conn=conn,
             kafka_producer=producer,
+            pii_workspace_salt=pii_salt,
+            pii_salt_version=pii_salt_version,
         )
 
     await with_workspace(workspace_id, _fn)

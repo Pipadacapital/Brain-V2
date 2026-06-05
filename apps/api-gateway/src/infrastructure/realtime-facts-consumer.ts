@@ -391,6 +391,33 @@ let _consumer: Consumer | null = null
 export async function startRealtimeFactsConsumer(
   log: { info(msg: string, obj?: object): void; error(obj: object, msg: string): void; warn(obj: object, msg: string): void },
 ): Promise<void> {
+  // P0-C guard: when BRONZE_RAW_ARCHIVER==='true' AND shadow-parity is verified
+  // (B10 step 5 — shadow-read diff == 0 over a soak period), this bespoke Shopify
+  // consumer is a no-op.  It is PRESERVED (not deleted) per B6 §3:
+  //   "The bespoke integrations.shopify.v1 → CH-facts consumer keeps running until
+  //    the generic transform worker is shadow-verified at parity; only then is it
+  //    retired."
+  // Until shadow-parity is declared, both consumers run in parallel (dual-write
+  // window — B10 step 3).  BRONZE_RAW_ARCHIVER_SHADOW_VERIFIED is the latch that
+  // retires this consumer when set to 'true' after soak verification.
+  const bronzeArchiverOn = process.env['BRONZE_RAW_ARCHIVER'] === 'true'
+  const shadowVerified = process.env['BRONZE_RAW_ARCHIVER_SHADOW_VERIFIED'] === 'true'
+  if (bronzeArchiverOn && shadowVerified) {
+    log.info(
+      'realtime-facts-consumer: BRONZE_RAW_ARCHIVER=true + SHADOW_VERIFIED=true ' +
+      '— bespoke Shopify facts consumer is a no-op (transform worker shadow-verified). ' +
+      'The raw-archiver consumer (GROUP_ID=brain-bronze-archiver) is the sole bronze writer.',
+    )
+    return
+  }
+  if (bronzeArchiverOn) {
+    log.info(
+      'realtime-facts-consumer: BRONZE_RAW_ARCHIVER=true (dual-write window) — ' +
+      'running in parallel with raw-archiver consumer; shadow parity not yet declared. ' +
+      'Set BRONZE_RAW_ARCHIVER_SHADOW_VERIFIED=true to retire this consumer after soak.',
+    )
+  }
+
   const brokers = (process.env['KAFKA_BOOTSTRAP_SERVERS'] ?? 'localhost:19092')
     .split(',')
     .map((b) => b.trim())

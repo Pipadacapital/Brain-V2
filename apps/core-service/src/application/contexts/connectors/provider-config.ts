@@ -143,6 +143,11 @@ export function buildAuthUrl(vendor: ConnectorVendor, opts: AuthUrlOpts): string
       })
       return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
     }
+    default:
+      // P0-R6: ConnectorVendor is now an open string (registry-backed). Vendors
+      // other than SHOPIFY/META/GOOGLE do not support OAuth consent URL flows;
+      // they use API key / basic-auth patterns configured in connector_definitions.
+      throw new Error(`[provider-config] buildAuthUrl: vendor '${vendor}' does not support OAuth consent URL.`)
   }
 }
 
@@ -193,6 +198,10 @@ export async function exchangeCode(
       return exchangeMeta(code, http)
     case 'GOOGLE':
       return exchangeGoogle(code, http)
+    default:
+      // P0-R6: ConnectorVendor is now an open string. Non-OAuth vendors do not
+      // support code exchange; they use API key / basic-auth patterns.
+      throw new Error(`[provider-config] exchangeCode: vendor '${vendor}' does not support OAuth code exchange.`)
   }
 }
 

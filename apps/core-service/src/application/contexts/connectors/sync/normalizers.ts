@@ -73,8 +73,18 @@ function moneyAmount(m?: ShopifyMoney): string {
   return m?.shopMoney?.amount ?? '0'
 }
 
-/** Normalize one Shopify order node → an OrderFact + its LineItemFacts. */
-export function normalizeShopifyOrder(node: ShopifyOrderNode): { order: OrderFact; lineItems: LineItemFact[] } {
+/**
+ * Normalize one Shopify order node → an OrderFact + its LineItemFacts.
+ *
+ * @param workspaceSalt - Per-workspace HMAC salt (32 bytes).  Pass this when
+ *   IDENTITY_STITCHER=true so customerRef is computed as HMAC(salt, vendorId)
+ *   rather than bare SHA-256.  Without a salt the legacy bare-hash path is taken
+ *   (flag-off backward compatibility).  See acl.ts `customerRef` for details.
+ */
+export function normalizeShopifyOrder(
+  node: ShopifyOrderNode,
+  workspaceSalt?: Buffer,
+): { order: OrderFact; lineItems: LineItemFact[] } {
   const currency = node.currencyCode ?? node.totalPriceSet?.shopMoney?.currencyCode ?? 'INR'
   const vendorOrderId = String(node.id ?? '')
 
@@ -92,7 +102,7 @@ export function normalizeShopifyOrder(node: ShopifyOrderNode): { order: OrderFac
     totalDiscountMu: decimalStringToMinorUnits(moneyAmount(node.totalDiscountsSet), currency),
     totalTaxMu: decimalStringToMinorUnits(moneyAmount(node.totalTaxSet), currency),
     shippingMu: decimalStringToMinorUnits(moneyAmount(node.totalShippingPriceSet), currency),
-    customerRef: customerRef(node.customer?.id),
+    customerRef: customerRef(node.customer?.id, workspaceSalt),
     deliveryPincode: node.shippingAddress?.zip ?? null,
     deliveryCity: node.shippingAddress?.city ?? null,
     processedAt: node.processedAt ?? null,

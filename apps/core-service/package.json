@@ -21,6 +21,7 @@
   "dependencies": {
     "@brain/lib-clickhouse-ts": "workspace:*",
     "@brain/lib-logger": "workspace:*",
+    "@clickhouse/client": "^1.13.4",
     "pg": "^8.21.0"
   }
 }

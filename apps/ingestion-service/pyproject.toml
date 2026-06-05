@@ -10,6 +10,9 @@ dependencies = [
   "pydantic>=2.12.5",
   "pydantic-settings>=2.13.1",
   "boto3>=1.38.0",
+  # ClickHouse client — raw-archiver consumer (P0-C) and BACKUP cron write to CH.
+  # Aligns with analytics-service's clickhouse-connect version.
+  "clickhouse-connect>=0.8.0",
   # gRPC transport for the internal WebhookIngest service (T2 — Track 2, connector-webhook-intake).
   # Justified: gRPC is the chosen internal transport (Option C ruling, Aryan §3).
   # Smaller than Option B (no FastAPI/uvicorn added).

@@ -1,0 +1,187 @@
+# pii-catalog.yaml — PII field catalog for all Brain connectors (P1-E, R9).
+#
+# @paradigm: sql (static catalog; no LLM/ML)
+#
+# PURPOSE:
+#   Every connector adapter MUST declare its PII fields here.  This file is the
+#   authoritative catalog of which personal data each connector ingests, its lawful
+#   basis (DPDP §5), and its purpose code.  The CI gate (tools/ci/check_pii_catalog.py)
+#   verifies that every connector in pii_manifest.MANIFEST_REGISTRY has a corresponding
+#   entry here, and that the declared pii_fields match.
+#
+# DPDP §2(t) DEFINITION: "personal data" = any data about an identifiable natural person.
+#   Brain's standard categories:
+#     - contact: email, phone, name
+#     - location: pincode, city, state, street_address
+#     - transactional: order amounts, payment methods (indirectly identifying)
+#     - behavioral: click/view data (out of scope until explicitly gated)
+#
+# LAWFUL BASIS CODES (DPDP §5):
+#   owner_brand_controller  — Brand owner processes its own customers' data for analytics.
+#   consent_explicit        — Explicit digital consent captured at collection.
+#   legitimate_interest     — Legitimate interest (documented; subject to DPIA).
+#
+# PURPOSE CODES:
+#   analytics_performance   — Store/marketing analytics; CM-ladder computation.
+#   logistics_tracking      — Delivery tracking; shipment analytics.
+#   email_performance       — Email/SMS campaign performance metrics.
+#   catalog_sync            — Product catalog synchronization; no individual PII.
+#
+# MIGRATION SAFETY: this file is additive-only.  Removing a connector's entry
+# is a DPDP-gate action that requires Security (Shreya) VETO review.
+#
+# FORMAT:
+#   connectors:
+#     <vendor_key>:
+#       display_name: string
+#       lawful_basis: string
+#       purpose_code: string
+#       pii_fields:
+#         <field_name>:
+#           category: contact|location|transactional|behavioral
+#           description: string
+#           dpdp_category: string  # DPDP §2(t) sub-category
+#       non_pii_note: string  # present when pii_fields is empty
+#
+# CI GATE: tools/ci/check_pii_catalog.py
+#   - Every vendor key in pii_manifest.MANIFEST_REGISTRY must be in this file.
+#   - Every field listed in pii_manifest for a vendor must be in this file's pii_fields.
+#   - A new adapter without a catalog entry → CI fail.
+
+connectors:
+
+  shopify:
+    display_name: Shopify
+    lawful_basis: owner_brand_controller
+    purpose_code: analytics_performance
+    pii_fields:
+      email:
+        category: contact
+        description: Customer email address collected at checkout.
+        dpdp_category: contact_data
+      first_name:
+        category: contact
+        description: Customer first name collected at checkout.
+        dpdp_category: contact_data
+      last_name:
+        category: contact
+        description: Customer last name collected at checkout.
+        dpdp_category: contact_data
+
+  woocommerce:
+    display_name: WooCommerce
+    lawful_basis: owner_brand_controller
+    purpose_code: analytics_performance
+    pii_fields:
+      customer_email:
+        category: contact
+        description: Customer email address from WooCommerce order.
+        dpdp_category: contact_data
+      customer_phone:
+        category: contact
+        description: Customer phone number from WooCommerce order.
+        dpdp_category: contact_data
+      billing_first_name:
+        category: contact
+        description: Billing first name.
+        dpdp_category: contact_data
+      billing_last_name:
+        category: contact
+        description: Billing last name.
+        dpdp_category: contact_data
+      billing_city:
+        category: location
+        description: Billing city (geo-bucketing; no full address — P0-B DPDP GATE).
+        dpdp_category: location_data
+      billing_state:
+        category: location
+        description: Billing state/province.
+        dpdp_category: location_data
+      billing_postcode:
+        category: location
+        description: Billing postcode (geo-bucketing; no street address).
+        dpdp_category: location_data
+      shipping_first_name:
+        category: contact
+        description: Shipping first name.
+        dpdp_category: contact_data
+      shipping_last_name:
+        category: contact
+        description: Shipping last name.
+        dpdp_category: contact_data
+      shipping_city:
+        category: location
+        description: Shipping city (geo-bucketing; no full address — P0-B DPDP GATE).
+        dpdp_category: location_data
+      shipping_state:
+        category: location
+        description: Shipping state/province.
+        dpdp_category: location_data
+      shipping_postcode:
+        category: location
+        description: Shipping postcode.
+        dpdp_category: location_data
+    removed_fields:
+      billing_address_1:
+        reason: "P0-B DPDP GATE — full street address removed; not required for analytics."
+        removed_at: "2026-06-05"
+      shipping_address_1:
+        reason: "P0-B DPDP GATE — full street address removed; not required for analytics."
+        removed_at: "2026-06-05"
+
+  shiprocket:
+    display_name: Shiprocket
+    lawful_basis: owner_brand_controller
+    purpose_code: logistics_tracking
+    pii_fields:
+      delivery_pincode:
+        category: location
+        description: Delivery pincode — identifies customer location; DPDP §2(t) personal data.
+        dpdp_category: location_data
+      delivery_city:
+        category: location
+        description: Delivery city.
+        dpdp_category: location_data
+      delivery_state:
+        category: location
+        description: Delivery state/province.
+        dpdp_category: location_data
+
+  klaviyo:
+    display_name: Klaviyo
+    lawful_basis: owner_brand_controller
+    purpose_code: email_performance
+    pii_fields: {}
+    non_pii_note: >
+      Klaviyo connector ingests aggregate campaign metrics only (open_rate, click_rate,
+      revenue, unsubscribes).  No individual subscriber email or phone is in scope.
+      If individual subscriber sync is added, this catalog MUST be updated with a
+      Security (Shreya) VETO review before shipping.
+
+  meta:
+    display_name: Meta Ads
+    lawful_basis: owner_brand_controller
+    purpose_code: analytics_performance
+    pii_fields: {}
+    non_pii_note: >
+      Meta connector ingests aggregate ad campaign metrics (spend, impressions, clicks,
+      conversions).  No individual PII.  Conversions API / hashed-PII (SHA-256
+      email/phone) is OUT OF SCOPE until separately gated.
+
+  google:
+    display_name: Google Ads
+    lawful_basis: owner_brand_controller
+    purpose_code: analytics_performance
+    pii_fields: {}
+    non_pii_note: >
+      Google connector ingests aggregate ad campaign metrics.  No individual PII.
+      Enhanced conversions hashed-PII is OUT OF SCOPE until separately gated.
+
+  unicommerce:
+    display_name: Unicommerce
+    lawful_basis: owner_brand_controller
+    purpose_code: catalog_sync
+    pii_fields: {}
+    non_pii_note: >
+      Unicommerce connector ingests product catalog and inventory data only.
+      No individual customer PII is in scope.

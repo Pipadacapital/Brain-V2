@@ -56,13 +56,22 @@ class TestCheckPiiFieldsPositive:
         check_pii_fields(SHOPIFY_MANIFEST, fields)  # must not raise
 
     def test_woocommerce_all_billing_shipping_declared_pass(self):
-        """All WooCommerce billing/shipping PII fields are declared → pass."""
+        """
+        WooCommerce billing/shipping PII fields (post P0-B) are declared → pass.
+
+        P0-B DPDP GATE: billing_address_1 and shipping_address_1 have been
+        REMOVED from both the DDL and this manifest (full street address not
+        needed for analytics; city/state/postcode retained for geo-bucketing).
+        This test now reflects the post-removal manifest.
+        """
         fields = [
             "customer_email", "customer_phone",
             "billing_first_name", "billing_last_name",
-            "billing_address_1", "billing_city", "billing_state", "billing_postcode",
+            # billing_address_1 intentionally absent (P0-B removal)
+            "billing_city", "billing_state", "billing_postcode",
             "shipping_first_name", "shipping_last_name",
-            "shipping_address_1", "shipping_city", "shipping_state", "shipping_postcode",
+            # shipping_address_1 intentionally absent (P0-B removal)
+            "shipping_city", "shipping_state", "shipping_postcode",
             "woo_order_id", "total_raw",
         ]
         check_pii_fields(WOOCOMMERCE_MANIFEST, fields)  # must not raise

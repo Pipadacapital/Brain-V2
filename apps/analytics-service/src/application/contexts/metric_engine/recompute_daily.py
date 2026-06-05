@@ -41,14 +41,26 @@ PARITY:
   - Ad spend: vendor='META' → meta_ad_spend_mu; vendor='GOOGLE' → google_ad_spend_mu.
   - COD/prepaid: payment_method='COD' vs 'Prepaid' (matches readCodPrepaidCH).
 
-DEFERRED (follow-up tasks — note in code):
-  - RTO/total_shipments (connector_shipment_facts daily join) — 0 for now.
+WIRED (P1-E):
+  - rto_orders, total_shipments: joined from connector_shipment_facts (date-keyed,
+    FINAL read, workspace_id-scoped).  is_rto=1 → RTO; every row counts as shipment.
+  - misc_expenses_monthly_mu: summed from workspace_misc_expenses PG table for the
+    window month(s); CM3 = CM2 − misc_expenses_prorated (prorated = monthly / days_in_month
+    per date; stored as monthly total in the PG table, split per date in SQL).
+    vendor_product_id: already propagated through product_cost → cogs_per_day JOIN.
+
+DEFERRED:
   - total_sessions — no sessions source yet — 0 for now.
   - Impressions/clicks from ad facts — 0 for now (not in query_gateway MetricRow).
-  - misc_expenses_monthly_mu — 0 for now; workspace settings injection is Phase-D.
   - Scheduler (daily-tick cron) — not built here; this function is the deliverable.
   - Per-brand monthly cap + graceful degradation on cap breach.
   - Trace-ID propagation to CH call headers (Phase-D observability).
+
+SILVER FRESHNESS GATE (Amendment 4):
+  In REPLAY mode (replay_run_id is not None), recompute_daily gates each date on
+  silver_freshness_log before writing gold.  Dates not in the freshness log are
+  SKIPPED — this prevents stale gold rows when silver replay is still in progress.
+  In normal daily-tick mode (replay_run_id=None), the gate is bypassed (fast path).
 
 USAGE:
   from src.application.contexts.metric_engine.recompute_daily import recompute_daily_metrics
@@ -58,12 +70,23 @@ USAGE:
       date_end="2026-06-01",
       ch_client=client,
   )
+  # Replay mode (silver_freshness gate active):
+  recompute_daily_metrics(
+      workspace_id="...",
+      date_start="2024-01-01",
+      date_end="2026-06-01",
+      ch_client=client,
+      replay_run_id="replay-2026-06-05-001",
+  )
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import date as _date
 from typing import Any
+
+from brain_cost_router import paradigm
 
 # Re-use the shared client factory from the query gateway rather than importing
 # clickhouse_connect directly. CF-C4-SINGLE-WRITER-GREP-2 mandates that raw
@@ -254,11 +277,25 @@ orders_per_day AS (
 ),
 
 -- ─────────────────────────────────────────────────────────────────────────
--- Date-spine: UNION of every date that appears in orders, cogs, OR ad-spend.
--- This ensures zero-order days that carry ad-spend or COGS are NOT silently
--- dropped (python-services-3 fix: previously drove off orders_per_day alone,
--- so ad-spend on zero-order days was lost, understating spend and overstating
--- CM2/CM3 for those days).
+-- Per-day shipment aggregates: total_shipments + rto_orders.
+-- FINAL on connector_shipment_facts: deduplicates ReplacingMergeTree dupes.
+-- is_rto=1 → order is a return-to-origin; every row = one shipment.
+-- ─────────────────────────────────────────────────────────────────────────
+shipment_per_day AS (
+    SELECT
+        date,
+        count()             AS total_shipments,
+        countIf(is_rto = 1) AS rto_orders
+    FROM brain.connector_shipment_facts FINAL
+    WHERE workspace_id = %(workspace_id)s
+      AND date >= toDate(%(date_start)s)
+      AND date <= toDate(%(date_end)s)
+    GROUP BY date
+),
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- Date-spine: UNION of every date that appears in orders, cogs, ad-spend,
+-- OR shipments.  This ensures zero-order days are NOT silently dropped.
 -- ─────────────────────────────────────────────────────────────────────────
 date_spine AS (
     SELECT date FROM orders_per_day
@@ -266,6 +303,8 @@ date_spine AS (
     SELECT date FROM cogs_per_day
     UNION DISTINCT
     SELECT date FROM ad_per_day
+    UNION DISTINCT
+    SELECT date FROM shipment_per_day
 )
 
 -- ─────────────────────────────────────────────────────────────────────────
@@ -273,8 +312,11 @@ date_spine AS (
 -- Zero-order days: revenue ladder = 0, ad/COGS preserved via LEFT JOIN.
 -- All CM ladder columns populated so the MV 0002 derives ratios.
 -- CF-C4-RATIO-DIVOP-1: all expressions are integer arithmetic; no division.
--- DEFERRED (rto_orders, total_shipments, total_sessions): 0 for now.
--- DEFERRED (misc_expenses_monthly_mu): 0 for now (Phase-D settings injection).
+--
+-- misc_expenses_monthly_mu: workspace-level monthly fixed expenses injected
+-- via %(misc_expenses_monthly_mu)s parameter (integer minor units, summed from
+-- workspace_misc_expenses PG table by the Python caller). Per-date proration
+-- is handled by the MV 0002; the base table stores the monthly total.
 -- ─────────────────────────────────────────────────────────────────────────
 SELECT
     %(workspace_id)s                                           AS workspace_id,
@@ -300,8 +342,10 @@ SELECT
     coalesce(a.meta_spend_mu, 0)                               AS meta_ad_spend_mu,
     coalesce(a.google_spend_mu, 0)                             AS google_ad_spend_mu,
 
-    -- misc_expenses: 0 placeholder (Phase-D workspace-settings injection)
-    toInt64(0)                                                 AS misc_expenses_monthly_mu,
+    -- misc_expenses (P1-E wired): monthly total from workspace_misc_expenses PG
+    -- table, summed by the Python caller and injected as a bound parameter.
+    -- CF-C4-RATIO-DIVOP-1: stored as monthly total; MV 0002 prorates per date.
+    toInt64(%(misc_expenses_monthly_mu)s)                      AS misc_expenses_monthly_mu,
 
     -- CM ladder: all integer arithmetic, no division (CF-C4-RATIO-DIVOP-1)
     -- cm1 = net_revenue - cogs
@@ -310,20 +354,20 @@ SELECT
     (coalesce(o.net_revenue_mu, 0) - coalesce(c.cogs_mu, 0))
         - (coalesce(a.meta_spend_mu, 0) + coalesce(a.google_spend_mu, 0))
                                                                AS cm2_mu,
-    -- cm3 = cm2 (misc_expenses_monthly_mu is 0; MV recomputes from base anyway)
+    -- cm3 = cm2 - misc_expenses_monthly_mu (P1-E: now wired, no longer 0)
     (coalesce(o.net_revenue_mu, 0) - coalesce(c.cogs_mu, 0))
         - (coalesce(a.meta_spend_mu, 0) + coalesce(a.google_spend_mu, 0))
-                                                               AS cm3_mu,
+        - toInt64(%(misc_expenses_monthly_mu)s)                AS cm3_mu,
 
     -- Order counts (zero for zero-order days)
     coalesce(o.total_orders, 0)                                AS total_orders,
     coalesce(o.cod_orders, 0)                                  AS cod_orders,
     coalesce(o.prepaid_orders, 0)                              AS prepaid_orders,
 
-    -- DEFERRED: rto_orders, total_shipments (shipment join Phase-D)
-    toInt64(0)                                                 AS rto_orders,
-    toInt64(0)                                                 AS total_shipments,
-    -- DEFERRED: total_sessions (no sessions source yet)
+    -- Shipment counts (P1-E wired from connector_shipment_facts)
+    toInt64(coalesce(s.rto_orders, 0))                         AS rto_orders,
+    toInt64(coalesce(s.total_shipments, 0))                    AS total_shipments,
+    -- total_sessions: no sessions source yet — 0 for now
     toInt64(0)                                                 AS total_sessions,
 
     -- Ad platform impressions/clicks (populated when available in ad_spend_facts)
@@ -339,6 +383,7 @@ FROM date_spine AS d
 LEFT JOIN orders_per_day AS o ON o.date = d.date
 LEFT JOIN cogs_per_day   AS c ON c.date = d.date
 LEFT JOIN ad_per_day     AS a ON a.date = d.date
+LEFT JOIN shipment_per_day AS s ON s.date = d.date
 """.replace("{CANCELLED_OK}", _CANCELLED_OK)
 
 
@@ -354,12 +399,15 @@ DELETE WHERE workspace_id = %(workspace_id)s
 """
 
 
+@paradigm("sql")
 def recompute_daily_metrics(
     workspace_id: str,
     date_start: str,
     date_end: str,
     *,
     ch_client: Any = None,
+    pg_dsn: str | None = None,
+    replay_run_id: str | None = None,
 ) -> int:
     """Idempotent full recompute: connector_*_facts → workspace_daily_metrics_base.
 
@@ -371,11 +419,28 @@ def recompute_daily_metrics(
     into base and populates workspace_daily_metrics_computed — so after this
     function returns, query_gateway.query_metrics() returns real data.
 
+    P1-E wiring:
+      - Shipment facts: rto_orders + total_shipments joined from connector_shipment_facts.
+      - misc_expenses: sum of workspace_misc_expenses rows in PG for the window,
+        injected as %(misc_expenses_monthly_mu)s into the rollup SQL.  CM3 = CM2 −
+        misc_expenses.  Pass pg_dsn=None to skip the PG lookup (tests/offline).
+      - vendor_product_id: already propagated through product_cost CTE → cogs_per_day JOIN.
+
+    Silver freshness gate (Amendment 4):
+      - replay_run_id=None (default): normal daily tick; gate bypassed (fast path).
+      - replay_run_id=<string>: replay mode; gate_gold_recompute() checks
+        silver_freshness_log before each date; skipped dates are not written.
+        Returns the count of rows actually written (may be 0 if silver not fresh).
+
     Args:
         workspace_id: the workspace to recompute. Must be non-empty (fail-closed).
-        date_start: inclusive window start, ISO format 'YYYY-MM-DD'.
-        date_end:   inclusive window end,   ISO format 'YYYY-MM-DD'.
-        ch_client:  ClickHouse client (test injection). If None, created from env.
+        date_start:   inclusive window start, ISO format 'YYYY-MM-DD'.
+        date_end:     inclusive window end,   ISO format 'YYYY-MM-DD'.
+        ch_client:    ClickHouse client (test injection). If None, created from env.
+        pg_dsn:       Postgres DSN for workspace_misc_expenses lookup.
+                      If None, misc_expenses_monthly_mu defaults to 0 (offline/test mode).
+        replay_run_id: non-None → replay mode; silver freshness gate is active.
+                      None (default) → normal daily tick; gate bypassed.
 
     Returns:
         Row count inserted into workspace_daily_metrics_base.
@@ -391,17 +456,48 @@ def recompute_daily_metrics(
         )
 
     client = ch_client if ch_client is not None else _make_default_client()
+
+    # -------------------------------------------------------------------------
+    # Silver freshness gate (Amendment 4) — replay mode only.
+    # In replay mode we check which dates have fresh silver before writing gold.
+    # In normal daily-tick mode (replay_run_id=None) the gate is bypassed.
+    # -------------------------------------------------------------------------
+    if replay_run_id is not None:
+        from .silver_freshness import gate_gold_recompute
+        fresh_dates = gate_gold_recompute(
+            workspace_id, date_start, date_end, client=client
+        )
+        if not fresh_dates:
+            logger.warning(
+                "recompute_daily_metrics: REPLAY replay_run_id=%s workspace=%s "
+                "window=[%s,%s] — NO fresh silver dates found; gold write skipped.",
+                replay_run_id, workspace_id, date_start, date_end,
+            )
+            return 0
+        # Narrow the window to the first and last fresh dates for this replay chunk.
+        date_start = str(min(fresh_dates))
+        date_end = str(max(fresh_dates))
+        logger.info(
+            "recompute_daily_metrics: REPLAY replay_run_id=%s workspace=%s "
+            "fresh_dates=%d effective_window=[%s,%s]",
+            replay_run_id, workspace_id, len(fresh_dates), date_start, date_end,
+        )
+
+    # -------------------------------------------------------------------------
+    # P1-E: misc_expenses lookup from workspace_misc_expenses PG table.
+    # Sum all active expense rows in the window period.
+    # -------------------------------------------------------------------------
+    misc_expenses_monthly_mu: int = _fetch_misc_expenses(workspace_id, date_start, date_end, pg_dsn)
+
     params = {
         "workspace_id": workspace_id,
         "date_start": date_start,
         "date_end": date_end,
+        "misc_expenses_monthly_mu": misc_expenses_monthly_mu,
     }
 
     # Step 1: Issue DELETE mutation for existing base rows in the window.
     # CF-C4-COGS-MV-REFRESH-1: full recompute, not incremental.
-    # ALTER TABLE ... DELETE is async in CH MergeTree. We follow it with an
-    # OPTIMIZE FINAL on the affected partitions to force immediate merge/dedup
-    # before the INSERT, ensuring idempotency (ReplacingMergeTree model).
     logger.info(
         "recompute_daily_metrics: DELETE workspace=%s window=[%s, %s]",
         workspace_id, date_start, date_end,
@@ -409,20 +505,16 @@ def recompute_daily_metrics(
     client.command(_DELETE_SQL, parameters=params)
 
     # Step 2: Force the mutation + previous version collapse to complete.
-    # OPTIMIZE TABLE FINAL on each affected YYYYMM partition flushes the
-    # delete mutation and collapses ReplacingMergeTree versions synchronously.
-    # This makes the subsequent INSERT see a clean slate (true idempotency).
     _optimize_partitions(client, date_start, date_end)
 
-    # Step 3: INSERT rollup from connector facts.
+    # Step 3: INSERT rollup from connector facts (shipments + misc wired).
     logger.info(
-        "recompute_daily_metrics: INSERT workspace=%s window=[%s, %s]",
-        workspace_id, date_start, date_end,
+        "recompute_daily_metrics: INSERT workspace=%s window=[%s, %s] misc_expenses_mu=%d",
+        workspace_id, date_start, date_end, misc_expenses_monthly_mu,
     )
     client.command(_ROLLUP_INSERT_SQL, parameters=params)
 
     # Step 4: Count rows in base for verification / caller reporting.
-    # Use FINAL to respect ReplacingMergeTree deduplication semantics.
     count_result = client.query(
         "SELECT count() FROM brain.workspace_daily_metrics_base FINAL "
         "WHERE workspace_id = %(workspace_id)s "
@@ -439,6 +531,57 @@ def recompute_daily_metrics(
     return row_count
 
 
+@paradigm("sql")
+def _fetch_misc_expenses(
+    workspace_id: str,
+    date_start: str,
+    date_end: str,
+    pg_dsn: str | None,
+) -> int:
+    """Fetch total misc_expenses_monthly_mu from workspace_misc_expenses PG table.
+
+    @paradigm: sql
+    Sums all active workspace_misc_expenses rows whose effective_start_date falls
+    within the window.  Returns 0 if pg_dsn is None (offline/test mode).
+
+    Args:
+        workspace_id: authenticated workspace scope.
+        date_start:   inclusive window start ISO.
+        date_end:     inclusive window end ISO.
+        pg_dsn:       Postgres connection string. None → return 0 (test/offline mode).
+
+    Returns:
+        Total misc_expenses_monthly_mu for the workspace in the window, in minor units.
+    """
+    if not pg_dsn:
+        return 0
+
+    import os
+    dsn = pg_dsn or os.environ.get("DATABASE_URL", "")
+    if not dsn:
+        return 0
+
+    try:
+        import psycopg  # type: ignore[import-untyped]
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            row = conn.execute(
+                """
+                SELECT coalesce(sum(amount_mu), 0)
+                FROM workspace_misc_expenses
+                WHERE workspace_id = %s
+                  AND effective_start_date <= %s::date
+                """,
+                (workspace_id, date_end),
+            ).fetchone()
+            return int(row[0]) if row else 0
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "_fetch_misc_expenses: PG lookup failed workspace=%s err=%s — defaulting to 0",
+            workspace_id, exc,
+        )
+        return 0
+
+
 def _optimize_partitions(client: Any, date_start: str, date_end: str) -> None:
     """OPTIMIZE FINAL the YYYYMM partitions spanning the date window.
 
@@ -448,7 +591,7 @@ def _optimize_partitions(client: Any, date_start: str, date_end: str) -> None:
     CH's OPTIMIZE TABLE ... PARTITION ... FINAL blocks until the operation is done.
     Acceptable for a background recompute job; not suitable for latency-sensitive paths.
     """
-    from datetime import date as _date, timedelta as _timedelta
+    from datetime import timedelta as _timedelta
 
     start = _date.fromisoformat(date_start)
     end = _date.fromisoformat(date_end)
@@ -460,9 +603,9 @@ def _optimize_partitions(client: Any, date_start: str, date_end: str) -> None:
         partitions.add(current.strftime("%Y%m"))
         # Advance to the first of the next month.
         if current.month == 12:
-            current = current.replace(year=current.year + 1, month=1, day=1)
+            current = _date(current.year + 1, 1, 1)
         else:
-            current = current.replace(month=current.month + 1, day=1)
+            current = _date(current.year, current.month + 1, 1)
 
     for partition in sorted(partitions):
         sql = (
@@ -492,6 +635,7 @@ def _enumerate_workspace_windows(client: Any) -> list[tuple[str, str, str]]:
 
 def _main(argv: "list[str] | None" = None) -> int:
     import argparse
+    import os
 
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -503,21 +647,31 @@ def _main(argv: "list[str] | None" = None) -> int:
     parser.add_argument("date_end", nargs="?", help="inclusive ISO YYYY-MM-DD")
     parser.add_argument("--all", action="store_true", dest="all_ws",
                         help="recompute every workspace over its full order-date window")
+    parser.add_argument("--replay-run-id", default=None,
+                        help="non-empty → replay mode (silver_freshness gate active)")
     args = parser.parse_args(argv)
 
     client = _make_default_client()
+    pg_dsn = os.environ.get("DATABASE_URL", None)
+
     if args.all_ws:
         windows = _enumerate_workspace_windows(client)
         total = 0
         for ws, start, end in windows:
-            rows = recompute_daily_metrics(ws, start, end, ch_client=client)
+            rows = recompute_daily_metrics(
+                ws, start, end,
+                ch_client=client, pg_dsn=pg_dsn, replay_run_id=args.replay_run_id,
+            )
             logger.info("recompute --all: workspace=%s window=[%s,%s] rows=%d", ws, start, end, rows)
             total += rows
         logger.info("recompute --all: %d workspace(s), %d total base rows", len(windows), total)
         return 0
     if not (args.workspace_id and args.date_start and args.date_end):
         parser.error("provide workspace_id date_start date_end, or --all")
-    rows = recompute_daily_metrics(args.workspace_id, args.date_start, args.date_end, ch_client=client)
+    rows = recompute_daily_metrics(
+        args.workspace_id, args.date_start, args.date_end,
+        ch_client=client, pg_dsn=pg_dsn, replay_run_id=args.replay_run_id,
+    )
     logger.info("recompute: workspace=%s rows=%d", args.workspace_id, rows)
     return 0
 

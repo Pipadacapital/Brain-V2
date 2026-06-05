@@ -219,9 +219,21 @@ class TestShopifyNormalize:
         result = self.adapter.normalize(self.raw)
         assert result.purpose_code == "analytics_performance"
 
-    def test_normalize_includes_raw_payload(self):
+    def test_normalize_excludes_raw_payload(self):
+        """
+        P0-B Option-a: raw_payload must NOT be in NormalizedEvent.columns.
+
+        The verbatim vendor JSON (which contains plaintext email/names) belongs
+        in the S3 bronze archive (P1-D s3_raw_writer), not in the Kafka envelope
+        or the Postgres JSONB columns.  Stripping it here is the gate that prevents
+        plaintext PII reaching the wire even when PII_TOKENIZER=true only tokenizes
+        the declared pii_fields (email, first_name, last_name) but not the full JSON.
+        """
         result = self.adapter.normalize(self.raw)
-        assert "raw_payload" in result.columns
+        assert "raw_payload" not in result.columns, (
+            "raw_payload must be stripped from NormalizedEvent.columns (P0-B Option-a). "
+            "Raw vendor bytes belong in the S3 bronze archive (P1-D), not the Kafka envelope."
+        )
 
     def test_idempotency_key_returns_vendor_event_id(self):
         key = self.adapter.idempotency_key(self.raw)

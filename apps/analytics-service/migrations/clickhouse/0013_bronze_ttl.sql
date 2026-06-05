@@ -1,0 +1,41 @@
+-- @paradigm: sql
+-- 0013 — Bronze TTL: add 90-day TTL to brain.connector_raw_events
+--
+-- P0-C Task 4 / R7 (data-warehouse-implementation-plan.md §B7):
+--   Documents the TTL that makes CH bronze a REPLAY CACHE, not the durable SoT.
+--
+-- CRITICAL: This migration is NOT APPLIED until P1-D (BronzeStorageStack CDK).
+-- Applying the TTL before S3 is the durable copy would make CH the ONLY copy
+-- for the window between TTL-apply and S3 provisioning — a data-loss risk.
+--
+-- The bridge until P1-D:
+--   • CH bronze TTL is withheld (this file exists but is NOT applied).
+--   • The daily BACKUP cron (bronze_backup_cron.py) provides the independent copy.
+--   • s3_raw_writer.py non-fatal writes provide per-event durability once the
+--     S3_BRONZE_BUCKET is provisioned (Stage-8 console ceremony).
+--
+-- Apply only after (B10 step 4):
+--   1. S3 BronzeStorageStack (P1-D) is deployed + verified.
+--   2. s3_raw_writer.py is confirmed writing rows (bronze_s3_writes_total > 0).
+--   3. BACKUP cron is retired (or suspended until next P0-C run).
+--
+-- TTL semantics:
+--   received_at + INTERVAL 90 DAY → DELETE
+--   This makes the hot CH bronze MergeTree a 90-day rolling cache.
+--   Rows older than 90 days are dropped by the TTL merge.
+--   S3 is the durable source of truth for historical replay.
+--
+-- Migration safety:
+--   - MODIFY TTL is a metadata-only operation in CH (does not immediately delete).
+--   - CH TTL merges run asynchronously; rows are physically removed by background
+--     MergeTree merges, not immediately on MODIFY TTL.
+--   - Reversible via down.sql (remove the TTL).
+
+ALTER TABLE brain.connector_raw_events
+    MODIFY TTL received_at + INTERVAL 90 DAY DELETE;
+
+-- Optional: metadata-only TTL recompress (ZSTD(3) for cold portions).
+-- Commented out until P1-D cold volume is configured.
+-- ALTER TABLE brain.connector_raw_events
+--     MODIFY TTL received_at + INTERVAL 30 DAY RECOMPRESS CODEC(ZSTD(3)),
+--              received_at + INTERVAL 90 DAY DELETE;

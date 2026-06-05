@@ -73,6 +73,11 @@ function defaultDeps(): ConnectorDeps {
   return { withWorkspace, custody: selectCustody(), http: fetchProviderHttp }
 }
 
+// P0-R6: ConnectorVendor is now an open string (registry-backed). ALL_VENDORS is
+// the static display list for the /settings/integrations OAuth-flow UI. Non-OAuth
+// vendors (SHIPROCKET etc.) are shown via connector_definitions; they are not in
+// this list because they do not go through the OAuth callback flow. Extending the
+// OAuth display list requires only an addition here — no TS type change needed.
 const ALL_VENDORS: ConnectorVendor[] = ['SHOPIFY', 'META', 'GOOGLE']
 
 // ---------------------------------------------------------------------------

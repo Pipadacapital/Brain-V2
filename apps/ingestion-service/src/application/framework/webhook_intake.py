@@ -68,6 +68,7 @@ from src.application.framework.ingest import (
 from src.bootstrap.startup_gates import assert_workspace_allowed
 from src.domain.framework.adapter import NormalizedEvent, RawEvent
 from src.domain.framework.pii_manifest import check_pii_fields
+from src.domain.framework.pii_tokenizer import tokenize_event_if_enabled
 from src.interfaces.adapters.shopify_adapter import (
     SHOPIFY_PII_MANIFEST,
     ShopifyAdapter,
@@ -114,6 +115,10 @@ async def receive_webhook(
     allowed_workspace_ids: Optional[frozenset[str]] = None,
     db_conn=None,
     kafka_producer=None,
+    # P0-B: per-workspace HMAC salt for PII tokenizer.  Required when
+    # PII_TOKENIZER=true; ignored (no-op) when flag is OFF.
+    pii_workspace_salt: bytes = b"",
+    pii_salt_version: str = "v1",
 ) -> None:
     """
     Push-intake for a verified webhook event (vendor-agnostic).
@@ -198,6 +203,26 @@ async def receive_webhook(
     # Uses the same SHOPIFY_PII_MANIFEST as ingest_batch — no new gate logic.
     check_pii_fields(SHOPIFY_PII_MANIFEST, list(normalized.columns.keys()))
 
+    # P0-B / CF-C3-PII-TOKENIZER-1: replace PII fields with HMAC tokens BEFORE
+    # _produce_kafka emits the Kafka envelope.  When PII_TOKENIZER is OFF this
+    # is a cheap no-op passthrough.
+    tokenizer_result = tokenize_event_if_enabled(
+        columns=normalized.columns,
+        manifest=SHOPIFY_PII_MANIFEST,
+        workspace_salt=pii_workspace_salt,
+        salt_version=pii_salt_version,
+    )
+    # Rebuild normalized with tokenized columns for the Kafka envelope + DB write.
+    normalized = NormalizedEvent(
+        vendor=normalized.vendor,
+        vendor_event_id=normalized.vendor_event_id,
+        event_type=normalized.event_type,
+        occurred_at=normalized.occurred_at,
+        lawful_basis=normalized.lawful_basis,
+        purpose_code=normalized.purpose_code,
+        columns=tokenizer_result.columns,
+    )
+
     ingested_at = datetime.now(timezone.utc)
     # Kafka topic: "integrations.{vendor}.v1" — vendor is parameterized, not hardcoded.
     # VENDOR-REGISTRY-DISPATCH-1: topic name uses the vendor parameter.
@@ -239,6 +264,7 @@ async def receive_webhook(
                 ingested_at,
                 request_id=request_id,
                 trace_id=trace_id,
+                salt_version=pii_salt_version,
             )
         except Exception as exc:
             # Log warning; event is already durably upserted.

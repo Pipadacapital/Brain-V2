@@ -99,6 +99,9 @@ importers:
       '@brain/lib-logger':
         specifier: workspace:*
         version: link:../../packages/lib-logger
+      '@clickhouse/client':
+        specifier: ^1.13.4
+        version: 1.18.5
       pg:
         specifier: ^8.21.0
         version: 8.21.0
