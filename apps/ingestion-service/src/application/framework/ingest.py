@@ -187,13 +187,19 @@ _ALLOWED_COLUMNS: dict[str, frozenset[str]] = {
         "email", "first_name", "last_name",
         "total_price", "subtotal_price", "total_discounts", "total_tax", "currency",
         "created_at", "updated_at", "closed_at", "cancelled_at",
-        "total_price_raw", "tags", "raw_payload",
+        # raw_payload REMOVED (warehouse-epic S4 LOW-1): on a PII-carrying table the
+        # verbatim vendor JSON must NOT land in JSONB — it goes to the S3 raw archive
+        # only (P0-B Option-a). Removing it from the allowlist makes any event that
+        # still carries raw_payload fail-closed; the _PII_RAW_TABLES gate below is the
+        # explicit belt-and-suspenders.
+        "total_price_raw", "tags",
     }),
     "raw_shopify_customers": frozenset({
         "workspace_id", "vendor_event_id", "event_type", "occurred_at",
         "lawful_basis", "purpose_code", "ingested_at", "vendor",
         "shopify_customer_id", "email", "first_name", "last_name",
-        "orders_count", "total_spent_raw", "raw_payload",
+        # raw_payload REMOVED (warehouse-epic S4 LOW-1) — see raw_shopify_orders above.
+        "orders_count", "total_spent_raw",
     }),
     "raw_shopify_products": frozenset({
         "workspace_id", "vendor_event_id", "event_type", "occurred_at",
@@ -250,6 +256,16 @@ _ALLOWED_COLUMNS: dict[str, frozenset[str]] = {
     }),
 }
 
+# Raw landing tables that carry customer PII columns (email/name/phone). For these,
+# the verbatim vendor JSON (raw_payload) must NEVER reach the JSONB column — it is
+# routed to the S3 raw archive only (P0-B Option-a). The _upsert_event gate below
+# rejects raw_payload for these tables even if a future adapter or allowlist edit
+# re-introduces it. (warehouse-epic S4 LOW-1 follow-up.)
+_PII_RAW_TABLES: frozenset[str] = frozenset({
+    "raw_shopify_orders",
+    "raw_shopify_customers",
+})
+
 
 def _table_for(vendor: str, event_type: str) -> str:
     tables = _RAW_TABLE_MAP.get(vendor, {})
@@ -295,6 +311,17 @@ async def _upsert_event(
         "ingested_at": ingested_at,
         **event.columns,
     }
+
+    # DPDP defense-in-depth (warehouse-epic S4 LOW-1): on a PII-carrying raw table,
+    # the verbatim vendor JSON (raw_payload) must never reach the JSONB column — it
+    # belongs in the S3 raw archive (P0-B Option-a). Reject it explicitly here, with a
+    # security-specific error, so it fails closed even if the allowlist is loosened.
+    if table in _PII_RAW_TABLES and "raw_payload" in cols:
+        raise ValueError(
+            f"[_upsert_event] raw_payload is forbidden on PII-carrying table {table!r} "
+            f"(DPDP: raw vendor JSON goes to the S3 archive, not JSONB). "
+            f"request_id={request_id!r}. warehouse-epic S4 LOW-1 gate."
+        )
 
     # Defense-in-depth column allowlist (bandit B608 / L1)
     allowed = _ALLOWED_COLUMNS.get(table)

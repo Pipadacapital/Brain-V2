@@ -152,9 +152,15 @@ export async function getWorkspaceSaltVersion(
 async function _readActiveSalt(workspaceId: string): Promise<WorkspaceSalt | null> {
   let result: WorkspaceSalt | null = null
 
-  // Use withSuperadmin here because workspace_identity_salt is a system table
-  // that may not have RLS policies yet, and the caller may not have a workspace
-  // session established when first bootstrapping the salt.
+  // SECURITY (warehouse-epic S4 LOW-2 — flagged for the Stage-8 KMS review):
+  // workspace_identity_salt IS now RLS-FORCEd (migration 37-enable-rls-identity),
+  // but this vault read intentionally uses withSuperadmin: the salt is part of the
+  // tenancy-isolation substrate and is read during bootstrap, before a workspace
+  // session/GUC exists. The bypass is NOT a cross-tenant exposure — the query is
+  // explicitly scoped `WHERE workspace_id = $1`, so it returns only the caller's
+  // salt. When the local-aesgcm backing is replaced by real AWS KMS at Stage-8,
+  // re-review this path: the decrypt should move behind the KMS boundary and the
+  // superadmin read should stay workspace_id-scoped (never an unfiltered SELECT).
   await withSuperadmin(async (tx: PoolClient) => {
     const row = await tx.query<SaltRow>(
       `SELECT id, workspace_id, salt_version, salt_enc, is_active
