@@ -15,7 +15,7 @@
  * is sync-use-cases.ts. This file is unit-testable with zero IO.
  */
 
-import { createHash } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 import type { ConnectorVendor } from '../oauth-state.js'
 
 // ISO 4217 subunit multiplier lookup (mirrors @brain/lib-metrics subunits — CF-C2-SUBUNIT-1:
@@ -166,11 +166,48 @@ export function resolveGstSlabBp(opts: { explicitBp?: number | null } = {}): num
 }
 
 // ---------------------------------------------------------------------------
-// Opaque customer reference — sha256 of the vendor customer id. NOT reversible to
-// PII; supports new-vs-returning without storing email/name (DPDP, persona P-006).
+// Opaque customer reference — NOT reversible to PII; supports new-vs-returning
+// without storing email/name (DPDP, persona P-006).
+//
+// P1-C / R10 (IDENTITY_STITCHER=true): HMAC-SHA256(per-workspace-salt, vendorCustomerId)
+//   — per-workspace salt prevents cross-workspace collision (G4/G6 fix).
+//
+// IDENTITY_STITCHER=false (default): legacy bare sha256 (no salt) — preserved for
+//   backward compat until the flag is flipped and existing customer_ref values
+//   in connector_order_facts are backfilled to the salted form.
+//
+// The salted variant requires a `workspaceSalt` Buffer (32 bytes) parameter.
+// Callers that do not yet have a salt (pre-flag, legacy path) pass undefined and
+// get the legacy bare-hash result.
+//
+// IMPORTANT: cross-workspace isolation is ONLY guaranteed when IDENTITY_STITCHER=true
+// and a per-workspace salt is passed. Without a salt, two brands with the same
+// Shopify customer ID produce the same customer_ref.
 // ---------------------------------------------------------------------------
 
-export function customerRef(vendorCustomerId: string | null | undefined): string | null {
+/**
+ * Compute an opaque customer reference.
+ *
+ * When `workspaceSalt` is provided AND the IDENTITY_STITCHER flag is ON:
+ *   result = HMAC-SHA256(workspaceSalt, vendorCustomerId).hex.slice(0, 32)
+ *   → per-workspace isolation; same customer at two brands = different refs.
+ *
+ * Otherwise (flag OFF or no salt):
+ *   result = SHA-256(vendorCustomerId).hex.slice(0, 32)
+ *   → legacy behavior; backward-compatible; cross-workspace collision possible.
+ */
+export function customerRef(
+  vendorCustomerId: string | null | undefined,
+  workspaceSalt?: Buffer,
+): string | null {
   if (!vendorCustomerId) return null
-  return createHash('sha256').update(String(vendorCustomerId)).digest('hex').slice(0, 32)
+  const id = String(vendorCustomerId)
+
+  if (workspaceSalt && process.env.IDENTITY_STITCHER === 'true') {
+    // Salted HMAC — cross-workspace isolation guaranteed.
+    return createHmac('sha256', workspaceSalt).update(id).digest('hex').slice(0, 32)
+  }
+
+  // Legacy: bare sha256, no salt. Same result as before P1-C for backward compat.
+  return createHash('sha256').update(id).digest('hex').slice(0, 32)
 }

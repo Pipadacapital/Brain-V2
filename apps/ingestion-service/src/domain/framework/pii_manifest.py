@@ -175,13 +175,21 @@ def _woocommerce_manifest() -> PiiManifest:
     WooCommerce: customer_email, customer_phone, billing_*, shipping_* are PII.
     lawful_basis: owner_brand_controller.
     purpose_code: analytics_performance.
+
+    P0-B DPDP GATE: billing_address_1 and shipping_address_1 REMOVED from both
+    the DDL (step-a-enable-create.sql) and this manifest.  Full street addresses
+    are not required for analytics; city/state/postcode are retained for geo-
+    bucketing.  Removing them from the manifest prevents the ingest gate from
+    accepting them even if a WooCommerce webhook mistakenly sends them.
     """
     pii_field_names = [
         "customer_email", "customer_phone",
         "billing_first_name", "billing_last_name",
-        "billing_address_1", "billing_city", "billing_state", "billing_postcode",
+        # billing_address_1 REMOVED — P0-B DPDP GATE (full street address)
+        "billing_city", "billing_state", "billing_postcode",
         "shipping_first_name", "shipping_last_name",
-        "shipping_address_1", "shipping_city", "shipping_state", "shipping_postcode",
+        # shipping_address_1 REMOVED — P0-B DPDP GATE (full street address)
+        "shipping_city", "shipping_state", "shipping_postcode",
     ]
     pii_fields = {
         name: _make_spec(name, "owner_brand_controller", "analytics_performance")

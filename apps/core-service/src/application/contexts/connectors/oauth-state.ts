@@ -21,7 +21,18 @@ import { withSuperadmin } from '../../../infrastructure/db/workspace-context.js'
 
 const STATE_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
-export type ConnectorVendor = 'SHOPIFY' | 'META' | 'GOOGLE'
+/**
+ * ConnectorVendor — the vendor code string stored in connector_vendors.code.
+ *
+ * P0-R6 (vendor ENUM→TEXT+FK): widened from a closed union literal to an open
+ * string so that any value present in the connector_vendors registry (SHIPROCKET,
+ * WOOCOMMERCE, KLAVIYO, UNICOMMERCE, …) is accepted without a TS type edit.
+ * The DB enforces referential integrity via the FK to connector_vendors(code).
+ *
+ * Well-known codes are still documented here for readers but are NOT exhaustive:
+ *   'SHOPIFY' | 'META' | 'GOOGLE' | 'SHIPROCKET' | 'WOOCOMMERCE' | 'UNICOMMERCE' | 'KLAVIYO'
+ */
+export type ConnectorVendor = string
 
 export interface OAuthStateRecord {
   workspaceId: string

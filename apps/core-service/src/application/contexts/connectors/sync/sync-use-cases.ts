@@ -41,6 +41,7 @@ import {
   normalizeGoogleSpend,
 } from './normalizers.js'
 import type { OrderFact, LineItemFact, ProductFact, AdSpendFact } from './acl.js'
+import { getOrCreateWorkspaceSalt } from '../../../../infrastructure/identity/workspace-salt-vault.js'
 
 export interface SyncDeps {
   withWorkspace: typeof withWorkspace
@@ -191,8 +192,21 @@ export async function syncConnector(
       const shopDomain = conn.account_ref ?? ''
       const window = params.window ?? defaultWindow(shopifyBackfillDays())
       const pull = await d.fetch.fetchShopify(token, shopDomain, window)
+
+      // Resolve the per-workspace salt ONCE, before the order loop (R10 / P1-C).
+      // When IDENTITY_STITCHER=true this guarantees the HMAC path is taken for
+      // every order in the batch — the same Shopify customer at two brands will
+      // produce different customer_ref values (cross-workspace isolation).
+      // When IDENTITY_STITCHER=false the salt is still fetched/created but
+      // normalizeShopifyOrder ignores it (the flag check lives in acl.customerRef).
+      let workspaceSalt: Buffer | undefined
+      if (process.env.IDENTITY_STITCHER === 'true') {
+        const saltResult = await getOrCreateWorkspaceSalt(workspaceId)
+        workspaceSalt = saltResult.salt
+      }
+
       for (const node of pull.orders) {
-        const { order, lineItems: lis } = normalizeShopifyOrder(node)
+        const { order, lineItems: lis } = normalizeShopifyOrder(node, workspaceSalt)
         orders.push(order)
         lineItems.push(...lis)
       }

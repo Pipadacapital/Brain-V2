@@ -37,6 +37,7 @@ SELECT
   -- net_sales = gross - discount (tax is NOT subtracted here; it is removed downstream
   -- at net_net_tax_mu per the metric registry). Subtracting tax here double-counted it
   -- and understated every CM-waterfall metric (ADR-CONVERGENCE-001 finding A).
+  -- ADR ruling A: net_sales = gross - discount (no tax subtraction).
   gross_sales_mu - total_discount_mu,
   coalesce(total_refund_mu, 0),
   currency_code, coalesce(payment_method, ''),
@@ -44,7 +45,10 @@ SELECT
   coalesce(financial_status, ''), coalesce(fulfillment_status, ''),
   cancelled_at,                                          -- PG-parity for realized filter
   [],
-  toUInt64(toUnixTimestamp(synced_at)), now()
+  -- ADR ruling A: version uses millisecond-precision timestamp so the transform worker
+  -- can re-ingest with a strictly-higher version (toUnixTimestamp produces seconds,
+  -- which collides across re-ingests within the same second).
+  toUInt64(toUnixTimestamp64Milli(toDateTime64(synced_at, 3, 'UTC'))), now()
 FROM postgresql('host.docker.internal:5432','brain_dev','connector_order_facts_hot','postgres','postgres');
 
 -- 3) connector_line_item_facts (346K) — reads connector_line_item_facts_hot (Phase-5 rename).

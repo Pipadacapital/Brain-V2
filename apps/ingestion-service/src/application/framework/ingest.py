@@ -57,6 +57,7 @@ from src.domain.framework.adapter import (
 )
 from src.domain.framework.cursor import upsert_cursor
 from src.domain.framework.pii_manifest import PiiManifestViolation, check_pii_fields
+from src.domain.framework.pii_tokenizer import tokenize_event_if_enabled
 from src.infrastructure.db.session_context import DbConn, with_workspace
 from src.infrastructure.secrets.custody import CredentialCustody
 
@@ -234,9 +235,11 @@ _ALLOWED_COLUMNS: dict[str, frozenset[str]] = {
         "workspace_id", "vendor_event_id", "event_type", "occurred_at",
         "lawful_basis", "purpose_code", "ingested_at", "vendor",
         "woo_order_id", "status", "customer_email", "customer_phone",
-        "billing_first_name", "billing_last_name", "billing_address_1",
+        "billing_first_name", "billing_last_name",
+        # billing_address_1 REMOVED (P0-B DPDP GATE): full street address not needed.
         "billing_city", "billing_state", "billing_postcode",
-        "shipping_first_name", "shipping_last_name", "shipping_address_1",
+        "shipping_first_name", "shipping_last_name",
+        # shipping_address_1 REMOVED (P0-B DPDP GATE): same rationale.
         "shipping_city", "shipping_state", "shipping_postcode",
         "total_raw", "currency", "raw_payload",
     }),
@@ -341,15 +344,20 @@ async def _produce_kafka(
     ingested_at: datetime,
     request_id: str = "",
     trace_id: str = "",
+    salt_version: str = "",
 ) -> int:
     """Produce an IntegrationEvent to the Kafka topic.
 
     Returns the offset of the produced message.
     workspace_id is the partition key (CF-C3-SINGLE-PRIMITIVE-1 / envelope spec).
     request_id and trace_id are propagated into the envelope (CF-SEC-5 / H1 fix).
+    salt_version travels in the envelope for replay stability (P0-B / R1.4).
+    When PII_TOKENIZER is ON, event.columns already has PII fields replaced with
+    HMAC tokens; this function emits those tokenized columns verbatim.
     """
     # Build the envelope payload (proto-shaped dict; real proto codegen at Stage-8).
     # correlation_id and trace_id added per H1 fix — mirrors Child-1 CF-SEC-5.
+    # salt_version added per P0-B R1.4 (replay stability for HMAC tokens).
     envelope = {
         "workspace_id": workspace_id,
         "vendor": event.vendor,
@@ -364,6 +372,8 @@ async def _produce_kafka(
         "request_id": request_id,
         "trace_id": trace_id,
         "actor": "system:ingest",
+        # P0-B R1.4: salt_version for HMAC replay stability
+        "salt_version": salt_version,
     }
     key = workspace_id.encode()
     value = json.dumps(envelope).encode()
@@ -387,6 +397,12 @@ async def ingest_batch(
     allowed_workspace_ids: Optional[frozenset[str]] = None,
     request_id: Optional[str] = None,
     trace_id: Optional[str] = None,
+    # P0-B: per-workspace HMAC salt for PII tokenizer (bytes).  Required when
+    # PII_TOKENIZER=true; ignored (not called) when flag is OFF.
+    # Callers in production pass this from KmsVault.get_salt(workspace_id).
+    # Tests may pass a fixed test salt.
+    pii_workspace_salt: bytes = b"",
+    pii_salt_version: str = "v1",
 ) -> IngestResult:
     """
     The single generic ingest primitive.
@@ -464,8 +480,33 @@ async def ingest_batch(
             )
             raise
 
+        # P0-B / CF-C3-PII-TOKENIZER-1: replace PII fields with HMAC tokens BEFORE
+        # the event is appended to the queue (and thus before _produce_kafka emits
+        # the Kafka envelope).  The tokenizer is a pure-domain function (no I/O).
+        # When PII_TOKENIZER env-var is OFF this is a cheap no-op passthrough.
+        # The result is a new columns dict (shallow copy — normalized.columns unchanged).
+        tokenizer_result = tokenize_event_if_enabled(
+            columns=normalized.columns,
+            manifest=adapter.pii_manifest,
+            workspace_salt=pii_workspace_salt,
+            salt_version=pii_salt_version,
+        )
+        # Produce a new NormalizedEvent with tokenized columns to protect the
+        # Kafka envelope.  The DB write (Step 3) uses this tokenized version too —
+        # raw landing tables are Stage-8 ceremony only; the raw JSONB raw_payload
+        # column retains the original event shape for Stage-8 audit.
+        tokenized_normalized = NormalizedEvent(
+            vendor=normalized.vendor,
+            vendor_event_id=normalized.vendor_event_id,
+            event_type=normalized.event_type,
+            occurred_at=normalized.occurred_at,
+            lawful_basis=normalized.lawful_basis,
+            purpose_code=normalized.purpose_code,
+            columns=tokenizer_result.columns,
+        )
+
         last_event_id = raw.vendor_event_id
-        normalized_events.append((normalized, raw.vendor_event_id))
+        normalized_events.append((tokenized_normalized, raw.vendor_event_id))
 
         if dry_run:
             result.events_upserted += 1
@@ -536,6 +577,7 @@ async def ingest_batch(
                     ingested_at,
                     request_id=req_id,
                     trace_id=tr_id,
+                    salt_version=pii_salt_version,
                 )
                 result.kafka_offsets.append(offset)
             except Exception as exc:

@@ -1,0 +1,55 @@
+{
+  "_generated_by": "tools/codegen/gen_facts.py",
+  "_source": "docs/schema/canonical-facts.yaml",
+  "_note": "Machine-readable manifest for the P0-D erasure orchestrator MV fan-out. Every CH table/MV carrying customer_ref must be registered here. CI gate (check_codegen_drift.py) enforces this file is always current. A new MV added without regenerating → CI fails.",
+  "targets": [
+    {
+      "table": "brain.connector_raw_events",
+      "type": "bronze",
+      "store": "clickhouse",
+      "customer_ref_column": "customer_ref",
+      "workspace_id_column": "workspace_id",
+      "key_columns": [
+        "workspace_id",
+        "customer_ref"
+      ],
+      "erasure_mechanism": "ALTER TABLE brain.connector_raw_events DELETE WHERE workspace_id={ws} AND customer_ref={ref}",
+      "note": "Bronze append-only MergeTree. customer_ref added in P0-B (0012). Partition-scoped delete (PARTITION BY toYYYYMM(received_at))."
+    },
+    {
+      "table": "brain.connector_order_facts",
+      "type": "silver_fact",
+      "store": "clickhouse",
+      "fact": "connector_order_facts",
+      "customer_ref_column": "customer_ref",
+      "workspace_id_column": "workspace_id",
+      "key_columns": [
+        "workspace_id",
+        "customer_ref"
+      ],
+      "erasure_mechanism": "ALTER TABLE brain.connector_order_facts DELETE WHERE workspace_id={ws} AND customer_ref={ref}",
+      "note": "Silver fact table for connector_order_facts."
+    },
+    {
+      "table": "connector_order_facts_hot",
+      "type": "silver_fact_pg_mirror",
+      "store": "postgres",
+      "fact": "connector_order_facts",
+      "customer_ref_column": "customer_ref",
+      "workspace_id_column": "workspace_id",
+      "key_columns": [
+        "workspace_id",
+        "customer_ref"
+      ],
+      "erasure_mechanism": "UPDATE connector_order_facts_hot SET customer_ref = '' WHERE workspace_id={ws} AND customer_ref={ref}; -- or DELETE per erasure policy",
+      "note": "PG hot-mirror for connector_order_facts."
+    },
+    {
+      "table": "brain.workspace_daily_metrics_mv",
+      "type": "materialized_view",
+      "source": "brain.workspace_daily_metrics_base",
+      "note": "MV over base — base does not carry customer_ref directly; included for completeness; erasure on source table suffices.",
+      "has_customer_ref": false
+    }
+  ]
+}

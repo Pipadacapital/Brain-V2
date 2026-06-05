@@ -33,6 +33,7 @@ _PG_GLOBS = (
 _ALLOWLIST = {
     "cross_brand_pattern": "k-anonymity cohort aggregate; no workspace_id, RLS intentionally absent",
     "connector_identity_map": "system-scoped pre-workspace lookup that PRODUCES workspace_id; RLS intentionally absent",
+    "pii_purge_log": "system-scoped purge audit log; populated only by SECURITY DEFINER purge_closed_order_pii() (not rls_app); rls_app has SELECT-only; workspace_id is present for filtering, not tenancy isolation — multi-workspace rows are written per purge run (ADR-CONVERGENCE-001 ruling C, P0-A)",
 }
 
 _ENABLE_RLS = re.compile(

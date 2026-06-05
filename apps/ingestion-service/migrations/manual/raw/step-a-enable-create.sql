@@ -240,13 +240,14 @@ CREATE TABLE IF NOT EXISTS raw_woocommerce_orders (
     customer_phone         TEXT,           -- DPDP §2(t) personal data
     billing_first_name     TEXT,           -- DPDP §2(t) personal data
     billing_last_name      TEXT,           -- DPDP §2(t) personal data
-    billing_address_1      TEXT,           -- DPDP §2(t) personal data
+    -- billing_address_1 REMOVED (P0-B DPDP GATE): full street address is not
+    -- required for analytics; city/state/postcode retained for geo-bucketing.
     billing_city           TEXT,           -- DPDP §2(t) personal data
     billing_state          TEXT,           -- DPDP §2(t) personal data
     billing_postcode       TEXT,           -- DPDP §2(t) personal data
     shipping_first_name    TEXT,           -- DPDP §2(t) personal data
     shipping_last_name     TEXT,           -- DPDP §2(t) personal data
-    shipping_address_1     TEXT,           -- DPDP §2(t) personal data
+    -- shipping_address_1 REMOVED (P0-B DPDP GATE): same rationale as billing_address_1.
     shipping_city          TEXT,           -- DPDP §2(t) personal data
     shipping_state         TEXT,           -- DPDP §2(t) personal data
     shipping_postcode      TEXT,           -- DPDP §2(t) personal data

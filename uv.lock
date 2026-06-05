@@ -677,6 +677,7 @@ source = { editable = "apps/ingestion-service" }
 dependencies = [
     { name = "aiokafka" },
     { name = "boto3" },
+    { name = "clickhouse-connect" },
     { name = "grpcio" },
     { name = "grpcio-health-checking" },
     { name = "httpx" },
@@ -698,6 +699,7 @@ dev = [
 requires-dist = [
     { name = "aiokafka", specifier = ">=0.14.0" },
     { name = "boto3", specifier = ">=1.38.0" },
+    { name = "clickhouse-connect", specifier = ">=0.8.0" },
     { name = "grpcio", specifier = ">=1.68.0,<2.0.0" },
     { name = "grpcio-health-checking", specifier = ">=1.68.0,<2.0.0" },
     { name = "httpx", specifier = ">=0.28.1" },

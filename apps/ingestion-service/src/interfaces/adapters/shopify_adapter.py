@@ -22,7 +22,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import json
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -165,8 +164,16 @@ class ShopifyAdapter:
         Map a Shopify order RawEvent to a NormalizedEvent.
 
         PII fields (email, first_name, last_name) are PRESERVED verbatim in the
-        normalized output — they pass through to the raw landing table under RLS.
+        normalized output — they will be tokenized before the Kafka envelope is
+        emitted (P0-B / CF-C3-PII-TOKENIZER-1).
         NO money conversion (raw Shopify decimal strings stay as-is; Child-2 at ACL).
+
+        P0-B OPTION-A: raw_payload (verbatim vendor JSON) is NOT included in
+        NormalizedEvent.columns.  It belongs in the S3 bronze raw-archive path
+        (P1-D s3_raw_writer) — NEVER on the Kafka wire or in the JSONB columns.
+        The Kafka envelope and raw_shopify_orders JSONB carry ONLY tokenized
+        columns so no plaintext PII ever reaches the wire.
+        Stage-8 hold: S3 archive write is wired when P1-D is promoted.
         """
         p = raw.raw_payload
         columns: dict[str, Any] = {
@@ -175,7 +182,7 @@ class ShopifyAdapter:
             "order_number": p.get("order_number"),
             "financial_status": p.get("financial_status"),
             "fulfillment_status": p.get("fulfillment_status"),
-            # PII fields — declared in SHOPIFY_PII_MANIFEST
+            # PII fields — declared in SHOPIFY_PII_MANIFEST; tokenized before Kafka emit
             "email": p.get("email"),
             "first_name": p.get("billing_address", {}).get("first_name") if p.get("billing_address") else None,
             "last_name": p.get("billing_address", {}).get("last_name") if p.get("billing_address") else None,
@@ -190,8 +197,9 @@ class ShopifyAdapter:
             "updated_at": p.get("updated_at"),
             "closed_at": p.get("closed_at"),
             "cancelled_at": p.get("cancelled_at"),
-            # Raw payload archive
-            "raw_payload": json.dumps(p),
+            # raw_payload STRIPPED (P0-B Option-a): raw vendor bytes belong in the
+            # S3 bronze archive (P1-D), NOT in NormalizedEvent.columns.
+            # Stage-8 hold: s3_raw_writer.write(raw.raw_payload) called here when P1-D promotes.
         }
 
         return NormalizedEvent(

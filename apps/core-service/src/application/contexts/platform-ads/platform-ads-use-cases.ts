@@ -85,7 +85,7 @@ export async function listCampaigns(
 ): Promise<CampaignsListResult> {
   return withWorkspace(workspaceId, async (tx: PoolClient) => {
     const where: string[] = [
-      `f.vendor = $1::connector_vendor`,
+      `f.vendor = $1`,
       `f.spend_date >= $2::date`,
       `f.spend_date <= $3::date`,
     ]
@@ -219,7 +219,7 @@ export async function listAdAccounts(
     const res = await tx.query<{ n: string }>(
       `SELECT count(DISTINCT campaign_id)::text AS n
          FROM public.connector_ad_spend_facts
-        WHERE vendor = $1::connector_vendor`,
+        WHERE vendor = $1`,
       [vendor],
     )
     const n = Number(res.rows[0]?.n ?? '0')
@@ -242,7 +242,7 @@ export async function spendByIntent(
                 ON c.workspace_id = f.workspace_id
                AND c.platform = f.vendor::text
                AND c.campaign_id = f.campaign_id
-        WHERE f.vendor = $1::connector_vendor
+        WHERE f.vendor = $1
           AND f.spend_date >= $2::date
           AND f.spend_date <= $3::date
         GROUP BY f.campaign_id
