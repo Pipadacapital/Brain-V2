@@ -37,7 +37,10 @@ import pytest
 
 from src.application.framework.ingest import (
     IngestResult,
+    _ALLOWED_COLUMNS,
+    _PII_RAW_TABLES,
     _RAW_TABLE_MAP,
+    _upsert_event,
     get_correlation_context,
     get_counters,
     ingest_batch,
@@ -531,3 +534,42 @@ class TestCounters:
         _COUNTERS["ingest_events_received_total"] = 99
         reset_counters()
         assert get_counters()["ingest_events_received_total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# warehouse-epic S4 LOW-1: raw_payload must never reach a PII-carrying raw
+# table's JSONB (it goes to the S3 raw archive only — P0-B Option-a). Verifies
+# the allowlist removal + the explicit _upsert_event reject-gate.
+# ---------------------------------------------------------------------------
+class TestPiiRawPayloadGate:
+    def _event(self, columns: dict) -> NormalizedEvent:
+        return NormalizedEvent(
+            vendor="shopify",
+            vendor_event_id="evt-1",
+            event_type="order",  # -> raw_shopify_orders (a PII table)
+            occurred_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            lawful_basis="owner_brand_controller",
+            purpose_code="analytics_performance",
+            columns=columns,
+        )
+
+    @pytest.mark.asyncio
+    async def test_raw_payload_rejected_on_pii_table(self):
+        # The gate raises before any DB access, so conn=None is sufficient.
+        event = self._event({"shopify_order_id": "1", "raw_payload": '{"email":"a@b.com"}'})
+        with pytest.raises(ValueError, match="raw_payload is forbidden"):
+            await _upsert_event(None, _WID, event, SHOPIFY_MANIFEST, request_id="rq-1")
+
+    def test_pii_raw_tables_scoped_to_pii_carriers(self):
+        assert "raw_shopify_orders" in _PII_RAW_TABLES
+        assert "raw_shopify_customers" in _PII_RAW_TABLES
+        # non-PII raw tables must NOT be over-gated (they may still archive raw_payload)
+        assert "raw_shopify_products" not in _PII_RAW_TABLES
+        assert "raw_shopify_line_items" not in _PII_RAW_TABLES
+
+    def test_raw_payload_removed_from_pii_allowlists_only(self):
+        # removed from the two PII-carrying tables...
+        assert "raw_payload" not in _ALLOWED_COLUMNS["raw_shopify_orders"]
+        assert "raw_payload" not in _ALLOWED_COLUMNS["raw_shopify_customers"]
+        # ...but still present on a non-PII table (scoped change, no broad break)
+        assert "raw_payload" in _ALLOWED_COLUMNS["raw_shopify_products"]
