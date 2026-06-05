@@ -1,0 +1,29 @@
+{
+  "req_id": "epic-warehouse-medallion-wiring",
+  "stage": 1,
+  "decision_type": "epic-intake",
+  "decided_at": "2026-06-05T00:00:00Z",
+  "decided_by": "rishabhporwal (Founder) — authorized epic opening explicitly",
+  "cto_advisor_disposition": "ADVANCE — proceed with 5 amendments bound",
+  "founder_confirmed_defaults": {
+    "Q1": "Hold Debezium + MSK tiered storage to Phase-2 TECH/00 trigger",
+    "Q2": "CH-only + S3 archive correct for next 12 months; Iceberg deferred",
+    "Q3": "ADR-J archetypes deferred; do not build now",
+    "Q4": "Default ap-south-1 CDK synth residency assert is sufficient",
+    "Q5": "Accept key-destruction + COUNT=0 + WORM ledger as DPDP S12 evidence",
+    "Q6": "Option (a): mark legacy facts provenance=legacy_etl, raw_event_id=NULL; opportunistic Shopify/Woo bronze synthesis",
+    "Q7": "Hold Glue Registry to integration #5 / 2nd-consumer trigger"
+  },
+  "build_gated_on": [
+    "P0-B clears Stage-4 (Shreya VETO) before any P1 slice begins",
+    "P0-D clears Stage-4 (Shreya VETO) before any P1 slice begins"
+  ],
+  "plan_amendments_bound": [
+    "P0-B and P0-D Stage-4 clearance gates all P1 work",
+    "P1-B shadow-mode shell starts in parallel with P0-C (not after P1-A)",
+    "P1-B: fail-closed on PG cursor unavailability (no silent gap)",
+    "P1-E: silver_freshness metric + gold-recompute gated on it during replay windows",
+    "P0-C: BACKUP cron is a day-zero acceptance criterion, not an afterthought"
+  ],
+  "pending_founder_attention": "R12/Q6 pre-bronze historical provenance — billing-provenance gap for 83k anchor-customer orders (non-blocking; no decision required before Stage-3 build)"
+}

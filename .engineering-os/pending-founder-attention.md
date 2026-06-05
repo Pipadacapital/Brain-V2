@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-06-05 — Stage 1 intake complete — `epic-warehouse-medallion-wiring`
+
+**Rohan's verdict: ADVANCE — proceed with 5 amendments bound.** Signed Stage-1 intake under standing delegation. This is the epic that wires Brain's designed-but-uncalled 100+ integration data warehouse (medallion-on-ClickHouse). The architecture and implementation plan (produced by a 28-agent workflow) are pre-built and sound; all seven Founder-confirmed decision defaults (Q1–Q7) are locked. The critical path is `P0-A → P0-B → P0-C → P1-D → P1-B → P1-E`. The two DPDP gates (P0-B: PII tokenizer + `customer_ref`; P0-D: erasure orchestrator) are the unconditional dependency root — no P1 slice begins until both clear Stage-4 (Shreya VETO).
+
+**Five plan amendments I've bound (recorded in `02-cto-advisor-review.md`):**
+1. P0-B and P0-D must clear Stage-4 (Shreya VETO) before ANY P1 slice begins.
+2. P1-B shadow-mode shell starts in parallel with P0-C (not after P1-A).
+3. P1-B must fail-closed on PG cursor table unavailability (logged stall, no silent gap).
+4. P1-E must emit a `silver_freshness{workspace_id, date}` metric; `recompute_daily.py` gates on it during replay windows (billing-integrity guard).
+5. P0-C: the daily CH BACKUP cron is a day-zero acceptance criterion, not an afterthought.
+
+**One non-blocking item for your awareness (no decision required before Stage-3 build):** the pre-bronze historical provenance gap (R12/Q6). The plan's default — mark legacy 83k orders `provenance='legacy_etl'`, `raw_event_id=NULL` — is the right Day-1 call. But this means the anchor customer's first 83k orders have no `raw_event_id` billing traceability. The opportunistic Shopify/Woo bronze synthesis (Option b, partially) can close some of this. If you want full re-pull funded (bounded by each vendor's replay window — Shopify is `FULL_60D`; Meta/Google history is partially unrecoverable regardless), that adds a backfill slice. The default ships without it.
+
+**Three held Stage-8 ceremonies (Founder-at-console, none delegable):** S3 bucket provisioning (`cdk deploy BronzeStorageStack`), KMS CMK creation, MSK graduation. No Founder action needed now on these.
+
+**Run folder:** `.engineering-os/runs/2026-06-05T00-00-00Z__warehouse-medallion__epic-warehouse-medallion-wiring__rishabhporwal/` (`01-requirement.md`, `02-cto-advisor-review.md`, `03-founder-decision.json`). Architecture artifacts: `docs/data-warehouse-architecture-proposal.md`, `docs/data-warehouse-implementation-plan.md`.
+
+---
+
 ## 🆕 2026-05-29 — Stage 6 PASS (delegated gate signed) — `connector-webhook-intake`
 
 **Rohan's verdict: PASS → APPROVE.** Signed the Founder gate on your behalf under standing delegation (hard-rule deviation scan CLEAN). This is the **inbound webhook ingress** that consumes the HMAC-custody seam from `chore-app-hmac-secret-custody` — now generalized (per your "100+ sources" directive) into a **vendor-dispatched registry**: a generic `POST /webhooks/:vendor` at the gateway → internal gRPC → a verify-first/default-deny Python servicer that reads every per-vendor fact (verify fn, secret fn, signature/identity/idempotency/topic headers, allowlist) from `WEBHOOK_VERIFIERS[request.vendor]`. **Shopify is the FIRST registered vendor, not the shape.** Adding vendor #2 is zero core change (proven by a 2nd test-vendor running the full ACCEPTED/PARKED/IGNORED/REJECTED matrix GREEN with zero servicer/route/proto edits). `connector_identity_map` is composite-PK `(vendor, external_identity)` — the integration-extensible-schema posture, not per-vendor tables. `@paradigm sql`, **₹0/mo** (zero LLM/ML). 18 CFs MET; 0 CRITICAL/HIGH at S4/S5/S6; over-engineering audit CLEAN; four-tenancy PRESENT; legacy diff==0. Run folder: `.engineering-os/runs/2026-05-29T19-00-00Z__13116e1__connector-webhook-intake__rishabhporwal/` (`11-final-review.md`, `14-retro.md`, `12-founder-decision.json`).
