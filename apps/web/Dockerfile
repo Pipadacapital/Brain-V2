@@ -49,7 +49,9 @@ COPY packages/ui/package.json packages/ui/
 COPY packages/ui-mobile/package.json packages/ui-mobile/
 
 ENV PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
-RUN pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true
+RUN pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true \
+      --config.fetch-timeout=600000 --config.fetch-retries=5 \
+      --config.fetch-retry-maxtimeout=600000 --config.fetch-retry-mintimeout=20000
 
 # ----- Stage 2: build -----------------------------------------------------
 FROM node:24-alpine AS builder

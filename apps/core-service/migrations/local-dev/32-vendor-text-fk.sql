@@ -149,10 +149,14 @@ ALTER TABLE connector_refund_facts
     FOREIGN KEY (vendor) REFERENCES connector_vendors(code);
 
 -- 4.9  connector_shipment_facts
-ALTER TABLE connector_shipment_facts
+-- IF EXISTS: this fact table is not in the base local-dev schema — it is created
+-- (and populated) by the legacy ETL (tools/migrate-legacy/phase5). On a from-scratch
+-- DB it is absent at migration time, so guard the conversion; the ETL creates it
+-- already vendor-as-TEXT against the connector_vendors registry seeded above.
+ALTER TABLE IF EXISTS connector_shipment_facts
   ALTER COLUMN vendor TYPE TEXT USING vendor::TEXT;
 
-ALTER TABLE connector_shipment_facts
+ALTER TABLE IF EXISTS connector_shipment_facts
   ADD CONSTRAINT connector_shipment_facts_vendor_fk
     FOREIGN KEY (vendor) REFERENCES connector_vendors(code);
 

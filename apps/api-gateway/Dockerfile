@@ -52,7 +52,9 @@ COPY packages/ui-mobile/package.json packages/ui-mobile/
 # in Docker we relax further so esbuild + native binaries (sharp, @swc/core,
 # @parcel/watcher, unrs-resolver) can compile inside the image.
 ENV PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
-RUN pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true
+RUN pnpm install --frozen-lockfile --config.dangerously-allow-all-builds=true \
+      --config.fetch-timeout=600000 --config.fetch-retries=5 \
+      --config.fetch-retry-maxtimeout=600000 --config.fetch-retry-mintimeout=20000
 
 # ----- Stage 2: runtime --------------------------------------------------
 FROM node:24-alpine AS runtime

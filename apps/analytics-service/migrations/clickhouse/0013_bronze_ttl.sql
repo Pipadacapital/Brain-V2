@@ -1,4 +1,10 @@
 -- @paradigm: sql
+-- migrate: skip
+--   HELD until Stage-8 (P1-D BronzeStorageStack): this file is applied by the
+--   Founder-gated cutover runbook ONLY after S3 is the durable copy — never by the
+--   local/CI auto-migrator (its own header below says "NOT APPLIED until P1-D").
+--   (Also note: the TTL expression needs received_at as DateTime, not DateTime64 —
+--   resolved as part of the Stage-8 apply, e.g. toDateTime(received_at).)
 -- 0013 — Bronze TTL: add 90-day TTL to brain.connector_raw_events
 --
 -- P0-C Task 4 / R7 (data-warehouse-implementation-plan.md §B7):

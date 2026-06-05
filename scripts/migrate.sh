@@ -59,8 +59,12 @@ sha() {
 }
 
 # In-scope, ordered migration files for a store (exclude down-migrations).
-pg_files() { ls "$PG_MIG_DIR"/[0-9]*.sql 2>/dev/null | grep -v '/down' | sort; }
-ch_files() { ls "$CH_MIG_DIR"/[0-9]*.sql 2>/dev/null | sort; }
+# Down-files use three conventions across the tree — exclude all of them:
+#   down-NN-*.sql (prefix) · NN-down-*.sql (infix) · *.down.sql (suffix, CH).
+# '[-/.]down[-.]' matches /down-, -down- and .down. without excluding a legit
+# forward file that merely contains the substring "down".
+pg_files() { ls "$PG_MIG_DIR"/[0-9]*.sql 2>/dev/null | grep -viE '[-/.]down[-.]' | sort; }
+ch_files() { ls "$CH_MIG_DIR"/[0-9]*.sql 2>/dev/null | grep -viE '[-/.]down[-.]' | sort; }
 
 # A migration self-declares it is NOT part of the automatic local/CI apply with a
 # `-- migrate: skip` directive in its header (HELD cutover steps, runbook-gated DDL).

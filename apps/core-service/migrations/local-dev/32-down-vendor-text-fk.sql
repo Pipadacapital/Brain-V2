@@ -43,9 +43,9 @@ ALTER TABLE connector_definitions DROP CONSTRAINT IF EXISTS connector_definition
 ALTER TABLE connector_definitions
   ALTER COLUMN vendor TYPE connector_vendor USING vendor::connector_vendor;
 
--- connector_shipment_facts
-ALTER TABLE connector_shipment_facts DROP CONSTRAINT IF EXISTS connector_shipment_facts_vendor_fk;
-ALTER TABLE connector_shipment_facts
+-- connector_shipment_facts (IF EXISTS — ETL-created table, absent on a fresh DB)
+ALTER TABLE IF EXISTS connector_shipment_facts DROP CONSTRAINT IF EXISTS connector_shipment_facts_vendor_fk;
+ALTER TABLE IF EXISTS connector_shipment_facts
   ALTER COLUMN vendor TYPE connector_vendor USING vendor::connector_vendor;
 
 -- connector_refund_facts

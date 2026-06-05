@@ -246,7 +246,7 @@ CREATE FOREIGN TABLE legacy_src.shiprocket_shipments (
 CREATE TABLE IF NOT EXISTS public.connector_shipment_facts (
     id                 uuid                     NOT NULL DEFAULT gen_random_uuid(),
     workspace_id       uuid                     NOT NULL,
-    vendor             connector_vendor         NOT NULL,
+    vendor             TEXT         NOT NULL,
     vendor_shipment_id text                     NOT NULL,
     vendor_order_ref   text,
     status             text,
@@ -317,7 +317,7 @@ INSERT INTO public.connector_order_facts_hot (
 )
 SELECT
     c.workspace_id,
-    'SHOPIFY'::connector_vendor                     AS vendor,
+    'SHOPIFY'::TEXT                     AS vendor,
     o.shopify_id                                    AS vendor_order_id,
     o.order_number,
     o.financial_status,
@@ -367,7 +367,7 @@ INSERT INTO public.connector_line_item_facts_hot (
 )
 SELECT
     c.workspace_id,
-    'SHOPIFY'::connector_vendor                     AS vendor,
+    'SHOPIFY'::TEXT                     AS vendor,
     o.shopify_id                                    AS vendor_order_id,
     li.shopify_id                                   AS vendor_line_id,
     li.sku,
@@ -407,7 +407,7 @@ INSERT INTO public.connector_product_facts (
 )
 SELECT
     c.workspace_id,
-    'SHOPIFY'::connector_vendor                     AS vendor,
+    'SHOPIFY'::TEXT                     AS vendor,
     p.shopify_id                                    AS vendor_product_id,
     p.title,
     p.product_type,
@@ -445,7 +445,7 @@ INSERT INTO public.connector_ad_spend_facts (
 )
 SELECT
     m.workspace_id,
-    'META'::connector_vendor                        AS vendor,
+    'META'::TEXT                        AS vendor,
     d.campaign_id,
     d.campaign_name,
     d.date                                          AS spend_date,
@@ -480,7 +480,7 @@ INSERT INTO public.connector_ad_spend_facts (
 )
 SELECT
     g.workspace_id,
-    'GOOGLE'::connector_vendor                      AS vendor,
+    'GOOGLE'::TEXT                      AS vendor,
     d.customer_id || '_' || d.campaign_id           AS campaign_id,
     d.campaign_name,
     d.date                                          AS spend_date,
@@ -521,7 +521,7 @@ INSERT INTO public.connector_shipment_facts (
 )
 SELECT
     sc.workspace_id,
-    'SHIPROCKET'::connector_vendor                  AS vendor,
+    'SHIPROCKET'::TEXT                  AS vendor,
     s.shipment_id                                   AS vendor_shipment_id,
     s.channel_order_id                              AS vendor_order_ref,
     COALESCE(s.tracking_status, s.status)           AS status,
@@ -576,7 +576,7 @@ INSERT INTO public.connector_refund_facts (
 )
 SELECT
     c.workspace_id,
-    'SHOPIFY'::connector_vendor                     AS vendor,
+    'SHOPIFY'::TEXT                     AS vendor,
     r.shopify_order_id                              AS vendor_order_id,
     r.shopify_refund_id                             AS vendor_refund_id,
     r.shopify_refund_line_id                        AS vendor_refund_line_id,
