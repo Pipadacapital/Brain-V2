@@ -278,6 +278,36 @@ CREATE INDEX IF NOT EXISTS connector_shipment_facts_ws_idx
     ON public.connector_shipment_facts (workspace_id, shipped_at);
 
 -- ---------------------------------------------------------------------------
+-- 0c) STAGE legacy sources into local UNLOGGED tables (THE load pattern).
+--     A direct FDW join on the big tables (esp. the 3-way line-items join over
+--     ~347k rows) does per-row remote fetches and stalls on a slow link (12min+
+--     hang observed). Instead: pull each source table ONCE with a plain batched
+--     SELECT, then join LOCALLY below — turns the hang into ~9s end-to-end.
+--     fetch_size is bumped on the server so the pulls batch (default 100 crawls);
+--     idempotent add-or-set. The stg_ tables are dropped at the end of this file.
+--     The fact-load INSERTs below read FROM stg_*; the verification counts at the
+--     bottom intentionally still read legacy_src.* (count pushes down — cheap —
+--     and verifies loaded-vs-REAL-source, not vs the staged copy).
+-- ---------------------------------------------------------------------------
+DO $$ BEGIN
+  ALTER SERVER legacy_supa OPTIONS (ADD fetch_size '50000');
+EXCEPTION WHEN OTHERS THEN
+  BEGIN ALTER SERVER legacy_supa OPTIONS (SET fetch_size '50000'); EXCEPTION WHEN OTHERS THEN NULL; END;
+END $$;
+
+DROP TABLE IF EXISTS stg_shopify_connections;       CREATE UNLOGGED TABLE stg_shopify_connections       AS SELECT * FROM legacy_src.shopify_connections;
+DROP TABLE IF EXISTS stg_shopify_orders;            CREATE UNLOGGED TABLE stg_shopify_orders            AS SELECT * FROM legacy_src.shopify_orders;
+DROP TABLE IF EXISTS stg_shopify_line_items;        CREATE UNLOGGED TABLE stg_shopify_line_items        AS SELECT * FROM legacy_src.shopify_line_items;
+DROP TABLE IF EXISTS stg_shopify_products;          CREATE UNLOGGED TABLE stg_shopify_products          AS SELECT * FROM legacy_src.shopify_products;
+DROP TABLE IF EXISTS stg_shopify_refund_line_items; CREATE UNLOGGED TABLE stg_shopify_refund_line_items AS SELECT * FROM legacy_src.shopify_refund_line_items;
+DROP TABLE IF EXISTS stg_meta_ads_connections;      CREATE UNLOGGED TABLE stg_meta_ads_connections      AS SELECT * FROM legacy_src.meta_ads_connections;
+DROP TABLE IF EXISTS stg_meta_ads_daily_metrics;    CREATE UNLOGGED TABLE stg_meta_ads_daily_metrics    AS SELECT * FROM legacy_src.meta_ads_daily_metrics;
+DROP TABLE IF EXISTS stg_google_ads_connections;    CREATE UNLOGGED TABLE stg_google_ads_connections    AS SELECT * FROM legacy_src.google_ads_connections;
+DROP TABLE IF EXISTS stg_google_ads_daily_metrics;  CREATE UNLOGGED TABLE stg_google_ads_daily_metrics  AS SELECT * FROM legacy_src.google_ads_daily_metrics;
+DROP TABLE IF EXISTS stg_shiprocket_connections;    CREATE UNLOGGED TABLE stg_shiprocket_connections    AS SELECT * FROM legacy_src.shiprocket_connections;
+DROP TABLE IF EXISTS stg_shiprocket_shipments;      CREATE UNLOGGED TABLE stg_shiprocket_shipments      AS SELECT * FROM legacy_src.shiprocket_shipments;
+
+-- ---------------------------------------------------------------------------
 -- 1) connector_order_facts_hot
 -- Legacy source  : shopify_orders JOIN shopify_connections (for workspace_id)
 -- Money columns  : total_price, total_tax, total_discount, (shipping not stored
@@ -339,8 +369,8 @@ SELECT
     NULL::boolean                                   AS is_cod,
     'shopify'                                       AS order_type,
     0::bigint                                       AS total_refund_mu
-FROM legacy_src.shopify_orders o
-JOIN legacy_src.shopify_connections c ON c.id = o.connection_id
+FROM stg_shopify_orders o
+JOIN stg_shopify_connections c ON c.id = o.connection_id
 ON CONFLICT (workspace_id, vendor, vendor_order_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -377,9 +407,9 @@ SELECT
     NULL::integer                                   AS gst_slab_bp,
     NOW()                                           AS synced_at,
     li.product_shopify_id                           AS vendor_product_id
-FROM legacy_src.shopify_line_items li
-JOIN legacy_src.shopify_orders o    ON o.id = li.order_id
-JOIN legacy_src.shopify_connections c ON c.id = li.connection_id
+FROM stg_shopify_line_items li
+JOIN stg_shopify_orders o    ON o.id = li.order_id
+JOIN stg_shopify_connections c ON c.id = li.connection_id
 ON CONFLICT (workspace_id, vendor, vendor_order_id, vendor_line_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -421,8 +451,8 @@ SELECT
     p.handle,
     p.image_url,
     COALESCE(p.tags, '{}')                          AS tags
-FROM legacy_src.shopify_products p
-JOIN legacy_src.shopify_connections c ON c.id = p.connection_id
+FROM stg_shopify_products p
+JOIN stg_shopify_connections c ON c.id = p.connection_id
 ON CONFLICT (workspace_id, vendor, vendor_product_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -454,8 +484,8 @@ SELECT
     COALESCE(d.clicks, 0)::bigint,
     COALESCE(m.currency, 'INR')                    AS currency_code,
     NOW()                                           AS synced_at
-FROM legacy_src.meta_ads_daily_metrics d
-JOIN legacy_src.meta_ads_connections m ON m.id = d.connection_id
+FROM stg_meta_ads_daily_metrics d
+JOIN stg_meta_ads_connections m ON m.id = d.connection_id
 ON CONFLICT (workspace_id, vendor, campaign_id, spend_date) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -489,8 +519,8 @@ SELECT
     COALESCE(d.clicks, 0)::bigint,
     COALESCE(g.currency, 'INR')                    AS currency_code,
     NOW()                                           AS synced_at
-FROM legacy_src.google_ads_daily_metrics d
-JOIN legacy_src.google_ads_connections g ON g.id = d.connection_id
+FROM stg_google_ads_daily_metrics d
+JOIN stg_google_ads_connections g ON g.id = d.connection_id
 ON CONFLICT (workspace_id, vendor, campaign_id, spend_date) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -548,8 +578,8 @@ SELECT
     s.delivered_at,
     s.rto_initiated_at,
     COALESCE(s.synced_at, NOW())                   AS synced_at
-FROM legacy_src.shiprocket_shipments s
-JOIN legacy_src.shiprocket_connections sc ON sc.id = s.connection_id
+FROM stg_shiprocket_shipments s
+JOIN stg_shiprocket_connections sc ON sc.id = s.connection_id
 ON CONFLICT (workspace_id, vendor, vendor_shipment_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -587,8 +617,8 @@ SELECT
     r.processed_at,
     NOW()                                           AS synced_at,
     r.product_shopify_id                            AS vendor_product_id
-FROM legacy_src.shopify_refund_line_items r
-JOIN legacy_src.shopify_connections c ON c.id = r.connection_id
+FROM stg_shopify_refund_line_items r
+JOIN stg_shopify_connections c ON c.id = r.connection_id
 ON CONFLICT (workspace_id, vendor, vendor_refund_line_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -650,3 +680,15 @@ SELECT '=== Sugandhlok order count ===' AS section;
 SELECT count(*) AS sugandhlok_order_count
 FROM public.connector_order_facts_hot
 WHERE workspace_id = 'f165da80-e6d5-4c58-9aff-ec654b873bd7';
+
+-- ---------------------------------------------------------------------------
+-- 0c-cleanup) Drop the local staging tables — the facts are loaded; the stg_
+--             copies (incl. ~347k line-items) are no longer needed. A re-run
+--             re-stages them (DROP IF EXISTS + CREATE above), so this is safe.
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS
+    stg_shopify_connections, stg_shopify_orders, stg_shopify_line_items,
+    stg_shopify_products, stg_shopify_refund_line_items,
+    stg_meta_ads_connections, stg_meta_ads_daily_metrics,
+    stg_google_ads_connections, stg_google_ads_daily_metrics,
+    stg_shiprocket_connections, stg_shiprocket_shipments;
