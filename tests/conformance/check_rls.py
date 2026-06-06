@@ -21,12 +21,10 @@ from _lib import (
     strip_sql_comments,
 )
 
-# Brain-native OLTP migration DDL (excludes ClickHouse + legacy cutover runbooks).
+# Brain-native OLTP DDL — the consolidated bootstrap (single source of truth).
 _PG_GLOBS = (
-    "apps/core-service/migrations/local-dev/*.sql",
-    "apps/intelligence-service/migrations/postgres/*.sql",
-    "apps/ingestion-service/migrations/manual/raw/*.sql",
-    "apps/ingestion-service/migrations/manual/shop-map/*.sql",
+    "infra/bootstrap/bootstrap-pg.sql",
+    "infra/bootstrap/bootstrap-pg-ai.sql",
 )
 
 # table -> reason RLS is intentionally absent (documented exceptions).
@@ -94,24 +92,26 @@ _FOREIGN = {
     "core-service": ["ai.decision_log", "brand_fingerprint", "condition_outcome"],
 }
 
-# label -> (path, list of substrings that MUST be present)
+# Consolidated grant DDL: core/ingestion/analytics grants live in bootstrap-pg.sql;
+# intelligence (ai/memory) grants live in bootstrap-pg-ai.sql. label -> (path, needles).
 _GRANT_ARTIFACTS = {
-    "02-create-service-roles.sql": (
-        "apps/core-service/docker/initdb-dev/02-create-service-roles.sql",
-        ["svc_core", "svc_ingestion", "svc_intelligence", "svc_analytics_ro"],
+    "bootstrap-pg.sql (roles + core/ingestion grants)": (
+        "infra/bootstrap/bootstrap-pg.sql",
+        ["svc_core", "svc_ingestion", "svc_analytics_ro", "rls_app", "TO svc_core", "TO svc_ingestion"],
     ),
-    "26-grant-svc-roles.sql": (
-        "apps/core-service/migrations/local-dev/26-grant-svc-roles.sql", ["TO svc_core"],
+    "bootstrap-pg-ai.sql (intelligence grants)": (
+        "infra/bootstrap/bootstrap-pg-ai.sql", ["TO svc_intelligence"],
     ),
-    "grant-svc-ingestion.sql": (
-        "apps/ingestion-service/migrations/manual/raw/grant-svc-ingestion.sql", ["TO svc_ingestion"],
-    ),
-    "27-revoke-rls-app-overbroad.sql": (
-        "apps/core-service/migrations/local-dev/27-revoke-rls-app-overbroad.sql", ["rls_app"],
-    ),
-    "intelligence up.sql (ai/memory grants)": (
-        "apps/intelligence-service/migrations/postgres/up.sql", ["TO svc_intelligence"],
-    ),
+}
+
+# A per-table GRANT in the consolidated DDL: `GRANT ... ON [TABLE] public.<t> TO <role>`.
+_GRANT_LINE = re.compile(
+    r"GRANT\s+[\w, ]+?\s+ON\s+(?:TABLE\s+)?public\.(\w+)\s+TO\s+(\w+)", re.I
+)
+# Tables only the core store may be granted (PII / credentials / order facts).
+_CORE_ONLY = {
+    "customer_pii", "connector_credentials",
+    "connector_order_facts_hot", "connector_line_item_facts_hot",
 }
 
 
@@ -129,18 +129,15 @@ def check_c12() -> CheckResult:
             if n not in txt:
                 findings.append(f"{label}: missing expected `{n}`")
 
-    # (2) no mis-grant — a service's grant file must not name another's tables.
-    ing = ROOT / _GRANT_ARTIFACTS["grant-svc-ingestion.sql"][0]
-    if ing.exists():
-        it = strip_sql_comments(read(ing))
-        for core_tbl in ("customer_pii", "connector_credentials", "connector_order_facts"):
-            if re.search(rf"\b{core_tbl}\b", it):
-                findings.append(f"grant-svc-ingestion.sql grants CORE table `{core_tbl}` (mis-grant)")
-    core_g = ROOT / _GRANT_ARTIFACTS["26-grant-svc-roles.sql"][0]
-    if core_g.exists():
-        ct = strip_sql_comments(read(core_g))
-        if re.search(r"\braw_[a-z]", ct) or re.search(r"\bconnector_identity_map\b", ct) or re.search(r"\bconnector_cursor\b", ct):
-            findings.append("26-grant-svc-roles.sql grants an INGESTION table (raw_*/identity_map/cursor) to svc_core (mis-grant)")
+    # (2) no mis-grant — each per-table GRANT must respect store ownership.
+    pg = ROOT / "infra/bootstrap/bootstrap-pg.sql"
+    if pg.exists():
+        for tbl, role in _GRANT_LINE.findall(strip_sql_comments(read(pg))):
+            t, r = tbl.lower(), role.lower()
+            if r == "svc_ingestion" and t in _CORE_ONLY:
+                findings.append(f"svc_ingestion granted CORE table `{t}` (mis-grant)")
+            if r == "svc_core" and (t.startswith("raw_") or t in {"connector_identity_map", "connector_cursor"}):
+                findings.append(f"svc_core granted INGESTION table `{t}` (mis-grant)")
 
     # (3) no cross-service raw-SQL FROM/JOIN in service source.
     for svc, foreign in _FOREIGN.items():

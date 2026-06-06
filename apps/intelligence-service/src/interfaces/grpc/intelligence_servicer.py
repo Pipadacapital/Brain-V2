@@ -62,6 +62,7 @@ PII / NEVERLOG: workspace_id and user_id are logged at DEBUG level only.
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import pathlib
@@ -153,7 +154,12 @@ class IntelligenceServiceAdapter(intelligence_pb2_grpc.IntelligenceServiceServic
         # If a signals_provider is injected (real agent or test), use it.
         if self._signals_provider is not None:
             try:
-                domain_items = self._signals_provider(workspace_id, date_str)
+                # The provider chain is synchronous (sync gRPC client + blocking
+                # litellm.completion). Run it off the event loop so a slow LLM/DB
+                # call cannot stall every other in-flight gRPC request (P0).
+                domain_items = await asyncio.to_thread(
+                    self._signals_provider, workspace_id, date_str
+                )
             except Exception as exc:
                 logger.exception(
                     "GetMorningBrief: signals_provider failed workspace_id=%r date=%r",

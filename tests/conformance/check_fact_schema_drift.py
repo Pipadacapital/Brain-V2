@@ -51,23 +51,55 @@ _SQL_KEYWORDS = {
 }
 
 
-def declared_columns(ddl_files: list[str]) -> set[str]:
-    """Column identifiers declared across the given DDL files."""
+def _extract_table_block(content: str, table: str) -> str | None:
+    """Return the parenthesised column body of `CREATE TABLE|MV ... <table> ( ... )`.
+
+    Works for the consolidated bootstrap DDL (single source of truth): PG uses
+    `public.<table>`, ClickHouse uses `brain.<table>` with backtick-quoted cols.
+    Returns None if the table is not defined in this file.
+    """
+    pat = re.compile(
+        r'CREATE\s+(?:TABLE|MATERIALIZED\s+VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?'
+        r'(?:[`"]?\w+[`"]?\.)?[`"]?' + re.escape(table) + r'[`"]?\b',
+        re.IGNORECASE,
+    )
+    m = pat.search(content)
+    if not m:
+        return None
+    i = content.find('(', m.end())
+    if i < 0:
+        return None
+    depth = 0
+    for j in range(i, len(content)):
+        c = content[j]
+        if c == '(':
+            depth += 1
+        elif c == ')':
+            depth -= 1
+            if depth == 0:
+                return content[i + 1:j]
+    return None
+
+
+def declared_columns(ddl_files: list[str], table: str) -> set[str]:
+    """Column identifiers declared for a SPECIFIC table across the given DDL files.
+
+    Table-scoped (was file-scoped): the bootstrap is one consolidated file per
+    store, so we extract only the named table's CREATE block. This makes the
+    DDL→registry direction precise (no bleed-through from other tables).
+    """
     cols: set[str] = set()
-    # `col_name TYPE...` (CREATE column list, optionally backtick/quoted) or
-    # `ADD COLUMN [IF NOT EXISTS] col_name ...`.
     col_line = re.compile(r'^\s*[`"]?([a-z_][a-z0-9_]*)[`"]?\s+\S', re.IGNORECASE)
-    add_col = re.compile(r'ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"]?([a-z_][a-z0-9_]*)', re.IGNORECASE)
     for rel in ddl_files:
         path = REPO / rel
         if not path.exists():
             print(f"  ! DDL file not found: {rel}")
             continue
-        for line in path.read_text().splitlines():
-            m = add_col.search(line)
-            if m:
-                cols.add(m.group(1).lower())
-                continue
+        block = _extract_table_block(path.read_text(), table)
+        if block is None:
+            print(f"  ! table `{table}` not found in {rel}")
+            continue
+        for line in block.splitlines():
             m = col_line.match(line)
             if m:
                 kw = m.group(1).lower()
@@ -84,7 +116,7 @@ def main() -> int:
 
     for fact, stores in registry["facts"].items():
         for store, spec in stores.items():
-            declared = declared_columns(spec["ddl"])
+            declared = declared_columns(spec["ddl"], spec["table"])
             tag = f"{fact} [{store}:{spec['table']}]"
 
             # ---------------------------------------------------------------
@@ -123,9 +155,9 @@ def main() -> int:
             # because a DDL file may define multiple tables (e.g. 0007 has shipment +
             # refund + logistics). We report unregistered columns but only fail on
             # single-table DDL files.
-            is_single_table_ddl = len(spec["ddl"]) == 1 and _is_single_table_file(
-                REPO / spec["ddl"][0]
-            )
+            # declared_columns is now table-scoped (extracts only this table's
+            # CREATE block from the consolidated bootstrap), so D→R is always exact.
+            is_single_table_ddl = True
             unregistered_in_registry = [
                 c for c in declared
                 if c not in all_cols_set and c not in _SQL_KEYWORDS

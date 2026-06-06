@@ -63,6 +63,10 @@ _ANTHROPIC_API_BASE: str = os.environ.get(
     "ANTHROPIC_API_BASE", "https://api.anthropic.com"
 )
 
+# Hard timeout (seconds) on every LLM call. Without it a hung/slow upstream
+# stalls the gRPC handler indefinitely (P0 reliability). Env-tunable.
+_LITELLM_TIMEOUT_S: float = float(os.environ.get("LITELLM_TIMEOUT_S", "30"))
+
 # Layer-3 per-workspace monthly LLM spend cap in minor units (paise).
 # Default: 500,000 paise = ₹5,000/workspace/month.
 _DEFAULT_LAYER3_CAP_MU: int = int(
@@ -578,11 +582,16 @@ class GatewayClient:
             return self._litellm_caller(model=model, messages=messages, max_tokens=max_tokens)
 
         import litellm  # type: ignore[import-untyped]
+        # timeout: bound every call so a hung upstream cannot stall the handler
+        # indefinitely (P0). num_retries: LiteLLM's own bounded retry on transient
+        # 429/5xx — distinct from the 1-shot faithfulness correction loop above.
         response = litellm.completion(
             model=model,
             messages=messages,
             max_tokens=max_tokens,
             api_base=_ANTHROPIC_API_BASE if "anthropic" in model else None,
+            timeout=_LITELLM_TIMEOUT_S,
+            num_retries=2,
         )
         narration = response.choices[0].message.content or ""
         tokens_in = response.usage.prompt_tokens if response.usage else 0

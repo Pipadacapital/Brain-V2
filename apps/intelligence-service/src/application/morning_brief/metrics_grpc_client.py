@@ -116,6 +116,10 @@ class MetricRowView:
 # ---------------------------------------------------------------------------
 _MAX_PAGES = 10  # 10 × 90 rows = 900 daily rows; enough for years of daily data
 
+# Per-RPC deadline (seconds). Without it an unresponsive analytics-service stalls
+# the morning-brief pipeline indefinitely (P0 reliability). Env-tunable.
+_GRPC_TIMEOUT_S: float = float(os.environ.get("ANALYTICS_GRPC_TIMEOUT_S", "10"))
+
 
 # ---------------------------------------------------------------------------
 # MetricsGrpcClient
@@ -228,7 +232,7 @@ class MetricsGrpcClient:
                 cursor=cursor,
                 page_size=90,
             )
-            response = stub.QueryMetrics(request)
+            response = stub.QueryMetrics(request, timeout=_GRPC_TIMEOUT_S)
             pages_fetched += 1
 
             for proto_row in response.rows:

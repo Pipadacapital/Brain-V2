@@ -22,7 +22,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { trpc } from '@/infrastructure/trpc-client.js';
-import { formatMoney } from '@brain/lib-metrics';
+import { formatMoney, ratioToBasisPoints } from '@brain/lib-metrics';
 import { formatBpPercent, formatBpMultiple } from '@brain/lib-formatters';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
 
@@ -250,17 +250,15 @@ export function DashboardMetricsGrid({
 
   // --- Derived values ---
   // CM3 % = cm3_mu / net_revenue_mu * 100 (in bp, display-only)
+  // BigInt-safe (CF-C6-BIGINT-JSON-1): Number(bigint) loses precision above 2^53
+  // (~₹90Cr in paise). Use the registry ratioToBasisPoints BigInt path.
   const cm3Bp: number | null = (() => {
-    if (!pnl) return null;
-    const nr = Number(pnl.net_revenue_mu);
-    if (nr === 0) return null;
-    return Math.floor((Number(pnl.cm3_mu) / nr) * 10000);
+    if (!pnl || pnl.net_revenue_mu === 0n) return null;
+    return ratioToBasisPoints(pnl.cm3_mu, pnl.net_revenue_mu);
   })();
   const cm3BpPrev: number | null = (() => {
-    if (!pnlPrev) return null;
-    const nr = Number(pnlPrev.net_revenue_mu);
-    if (nr === 0) return null;
-    return Math.floor((Number(pnlPrev.cm3_mu) / nr) * 10000);
+    if (!pnlPrev || pnlPrev.net_revenue_mu === 0n) return null;
+    return ratioToBasisPoints(pnlPrev.cm3_mu, pnlPrev.net_revenue_mu);
   })();
 
   // Material margin = net_revenue − cogs (display-only; not a registry metric — label match)
@@ -269,18 +267,14 @@ export function DashboardMetricsGrid({
   const materialMarginPrevMu: bigint | null =
     pnlPrev ? pnlPrev.net_revenue_mu - pnlPrev.cogs_mu : null;
 
-  // Material margin % (bp) = materialMargin / net_revenue * 10000
+  // Material margin % (bp) = materialMargin / net_revenue * 10000 (BigInt-safe).
   const materialMarginBp: number | null = (() => {
-    if (materialMarginMu == null || !pnl) return null;
-    const nr = Number(pnl.net_revenue_mu);
-    if (nr === 0) return null;
-    return Math.floor((Number(materialMarginMu) / nr) * 10000);
+    if (materialMarginMu == null || !pnl || pnl.net_revenue_mu === 0n) return null;
+    return ratioToBasisPoints(materialMarginMu, pnl.net_revenue_mu);
   })();
   const materialMarginPrevBp: number | null = (() => {
-    if (materialMarginPrevMu == null || !pnlPrev) return null;
-    const nr = Number(pnlPrev.net_revenue_mu);
-    if (nr === 0) return null;
-    return Math.floor((Number(materialMarginPrevMu) / nr) * 10000);
+    if (materialMarginPrevMu == null || !pnlPrev || pnlPrev.net_revenue_mu === 0n) return null;
+    return ratioToBasisPoints(materialMarginPrevMu, pnlPrev.net_revenue_mu);
   })();
 
   // COD orders count from codPrepaid result

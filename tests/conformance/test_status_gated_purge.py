@@ -228,40 +228,25 @@ class TestMigrationFileAssertions:
     """Verify the migration SQL file contains the expected ruling-C gates."""
 
     def _read_migration_sql(self) -> str:
-        """Read the migration file content."""
+        """Read the status-gated-purge DDL from the consolidated bootstrap.
+
+        The per-migration file (31-status-gated-purge.sql) was retired when the
+        bootstrap became the single source of truth; the purge function +
+        procedure now live in infra/bootstrap/bootstrap-pg.sql.
+        """
         from pathlib import Path
         migration_path = (
-            Path(__file__).parents[2]
-            / "apps/core-service/migrations/local-dev/31-status-gated-purge.sql"
+            Path(__file__).parents[2] / "infra/bootstrap/bootstrap-pg.sql"
         )
         assert migration_path.exists(), (
-            f"Migration file not found: {migration_path}. "
-            "P0-A task 3 requires this file to exist."
+            f"Bootstrap DDL not found: {migration_path}."
         )
         return migration_path.read_text()
 
-    def _read_down_sql(self) -> str:
-        """Read the rollback file content."""
-        from pathlib import Path
-        down_path = (
-            Path(__file__).parents[2]
-            / "apps/core-service/migrations/local-dev/down-31-status-gated-purge.sql"
-        )
-        assert down_path.exists(), (
-            f"Rollback file not found: {down_path}. "
-            "P0-A slice requires every migration to have a down.sql."
-        )
-        return down_path.read_text()
-
     def test_migration_file_exists(self) -> None:
-        """31-status-gated-purge.sql must exist (P0-A task 3 deliverable)."""
+        """The bootstrap DDL must exist and carry the purge objects."""
         sql = self._read_migration_sql()
-        assert len(sql) > 100, "Migration file appears empty."
-
-    def test_down_sql_exists(self) -> None:
-        """down-31-status-gated-purge.sql must exist (reversibility requirement)."""
-        sql = self._read_down_sql()
-        assert 'DROP' in sql.upper(), "Rollback file must DROP the created objects."
+        assert len(sql) > 100, "Bootstrap DDL appears empty."
 
     def test_migration_has_purge_function(self) -> None:
         """Migration must CREATE the purge_closed_order_pii function."""

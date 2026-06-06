@@ -12,7 +12,7 @@ import re
 
 from _lib import CheckResult, Status, globs, read, rel, strip_sql_comments
 
-_DECISION_LOG_MIGRATION = "apps/intelligence-service/migrations/postgres/up.sql"
+_DECISION_LOG_MIGRATION = "infra/bootstrap/bootstrap-pg-ai.sql"
 
 
 def _decision_log_sql() -> tuple[str, str] | None:

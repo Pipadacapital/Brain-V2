@@ -47,6 +47,7 @@ import { webhookPlugin } from './route.webhook.js';
 import { registry as metricsRegistry } from '../infrastructure/metrics.js';
 import { DispatchingDataPlane } from '../infrastructure/dispatching-data-plane.js';
 import { InMemoryIdempotencyStore } from '../domain/idempotency.js';
+import { Redis } from 'ioredis';
 import type { IdentityContext } from '../application/trpc.js';
 import {
   createSupabaseJwtVerifier,
@@ -132,7 +133,14 @@ export function assertBootableRuntimeConfig(env: NodeJS.ProcessEnv = process.env
 // ---------------------------------------------------------------------------
 
 const dataPlane = new DispatchingDataPlane();
-const idempotencyStore = new InMemoryIdempotencyStore();
+// Redis-backed idempotency in any real deployment: dedup must survive a pod
+// restart AND be shared across horizontally-scaled gateway instances (P0 —
+// the in-process Map does neither). storeIdempotencyResult sets a 24h EX TTL,
+// which a real Redis honours. Falls back to the in-process store only when
+// REDIS_URL is unset (local dev / tests).
+const idempotencyStore = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL, { maxRetriesPerRequest: 3 })
+  : new InMemoryIdempotencyStore();
 
 // ---------------------------------------------------------------------------
 // tRPC router

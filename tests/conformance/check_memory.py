@@ -11,7 +11,7 @@ import re
 
 from _lib import CheckResult, Status, globs, read, rel, strip_sql_comments
 
-_DECISION_LOG_MIGRATION = "apps/intelligence-service/migrations/postgres/up.sql"
+_DECISION_LOG_MIGRATION = "infra/bootstrap/bootstrap-pg-ai.sql"
 _HNSW = re.compile(r"USING\s+hnsw\s*\(\s*\w+\s+(vector_\w+_ops)\s*\)", re.I)
 
 
@@ -29,7 +29,7 @@ def check_c13() -> CheckResult:
 def check_c14() -> CheckResult:
     # (a) exactly one HNSW opclass definition repo-wide.
     opclasses: list[str] = []
-    for path in globs("apps/*/migrations/**/*.sql"):
+    for path in globs("infra/bootstrap/bootstrap-pg-ai.sql"):
         for m in _HNSW.finditer(strip_sql_comments(read(path))):
             opclasses.append(f"{rel(path)}: {m.group(1)}")
     if len(opclasses) != 1:

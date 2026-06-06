@@ -20,11 +20,15 @@ _MONEY_NAME = re.compile(
 _FORBIDDEN_TYPE = re.compile(
     r"^(numeric|decimal|dec|real|double|float\d*|money|smallmoney)$", re.I
 )
-# A column definition line: leading identifier + a type token.
-_COL = re.compile(r"^\s*([a-z_][a-z0-9_]*)\s+([A-Za-z]+\d*)")
+# A column definition line: leading identifier (optionally backtick/quoted for
+# ClickHouse) + a type token.
+_COL = re.compile(r"^\s*[`\"]?([a-z_][a-z0-9_]*)[`\"]?\s+([A-Za-z]+\d*)")
 
+# Consolidated bootstrap DDL — the single source of truth (replaces per-migration files).
 _MIGRATION_GLOBS = (
-    "apps/*/migrations/**/*.sql",
+    "infra/bootstrap/bootstrap-pg.sql",
+    "infra/bootstrap/bootstrap-pg-ai.sql",
+    "infra/bootstrap/bootstrap-ch.sql",
 )
 
 
