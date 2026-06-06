@@ -16,21 +16,17 @@
 
 import type { PoolClient } from 'pg'
 import { withWorkspace } from '../../../infrastructure/db/workspace-context.js'
-import { boundedOffset } from '../../shared/pagination.js'
+import {
+  decodeCursor,
+  encodeCursor,
+  keysetPredicate,
+  type KeysetPage,
+} from '../../shared/pagination.js'
 
-// ── Common pagination shape ──────────────────────────────────────────────────
-export interface Paged<T> {
-  rows: T[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages: number
-  // C10: true when the requested page is beyond MAX_OFFSET — rows are empty and
-  // the caller should prompt the user to refine filters (deep-page guard).
-  capped?: boolean
-}
+// Keyset (seek) pagination: O(1) deep pages, no OFFSET cliff (conformance C10).
+// Each list seeks forward from an opaque cursor; the web layer keeps a cursor
+// stack for "Previous". `total` is the filtered count (drives "of N pages").
 
-function clampPage(p?: number): number { return Math.max(1, p ?? 1) }
 function clampSize(s?: number): number { return Math.min(100, Math.max(10, s ?? 20)) }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,17 +54,16 @@ export interface OrdersListOptions {
   search?: string                                  // matches order_number OR vendor_order_id
   status?: 'all' | 'paid' | 'pending' | 'refunded' | 'voided' | 'partially_refunded'
   cod?: 'all' | 'cod' | 'prepaid'
-  page?: number
+  cursor?: string                                  // keyset cursor (opaque); absent = first page
   pageSize?: number
 }
 
 export async function listOrders(
   workspaceId: string,
   opts: OrdersListOptions = {},
-): Promise<Paged<StoreOrderRow>> {
-  const page = clampPage(opts.page)
+): Promise<KeysetPage<StoreOrderRow>> {
   const pageSize = clampSize(opts.pageSize)
-  const { offset, capped } = boundedOffset(page, pageSize)
+  const cursor = decodeCursor(opts.cursor)
   const search = (opts.search ?? '').trim()
   const status = opts.status ?? 'all'
   const cod = opts.cod ?? 'all'
@@ -86,21 +81,22 @@ export async function listOrders(
     }
     if (cod === 'cod')      where.push(`is_cod = true`)
     if (cod === 'prepaid')  where.push(`is_cod = false`)
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
+    // total = filtered count (cursor-independent), so the UI can show "of N pages".
+    const cntWhere = where.length ? `WHERE ${where.join(' AND ')}` : ''
     const cnt = await tx.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM public.connector_order_facts ${whereSql}`,
+      `SELECT count(*)::text AS n FROM public.connector_order_facts ${cntWhere}`,
       args,
     )
     const total = Number(cnt.rows[0]?.n ?? '0')
 
-    // C10 deep-page guard: refuse pages past MAX_OFFSET — return an empty,
-    // "refine your filters" page instead of running an O(n) deep-OFFSET scan.
-    if (capped) {
-      return { rows: [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), capped: true }
-    }
+    // Seek predicate (appended after the filter binds) — ORDER BY processed_at
+    // DESC NULLS LAST, id DESC. processed_at::text preserves full precision so
+    // the cursor round-trips exactly (a Date would truncate to milliseconds).
+    if (cursor) where.push(keysetPredicate('processed_at', 'DESC', cursor, args, { valueCast: '::timestamptz' }))
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
-    args.push(pageSize, offset)
+    args.push(pageSize + 1)   // peek one extra row to decide nextCursor
     const rows = await tx.query<{
       id: string; vendor: string; vendor_order_id: string;
       order_number: string | null; financial_status: string | null;
@@ -110,22 +106,29 @@ export async function listOrders(
       customer_ref: string | null;
       delivery_pincode: string | null; delivery_city: string | null;
       is_cod: boolean | null; processed_at: Date; cancelled_at: Date | null;
+      _cursor_sort: string | null;
     }>(
       `SELECT id, vendor::text, vendor_order_id, order_number,
               financial_status, fulfillment_status, payment_method, currency_code,
               gross_sales_mu::text, total_discount_mu::text,
               total_tax_mu::text, shipping_mu::text,
               customer_ref, delivery_pincode, delivery_city,
-              is_cod, processed_at, cancelled_at
+              is_cod, processed_at, cancelled_at,
+              processed_at::text AS _cursor_sort
          FROM public.connector_order_facts
          ${whereSql}
-         ORDER BY processed_at DESC NULLS LAST
-         LIMIT $${args.length - 1} OFFSET $${args.length}`,
+         ORDER BY processed_at DESC NULLS LAST, id DESC
+         LIMIT $${args.length}`,
       args,
     )
 
+    const hasNext = rows.rows.length > pageSize
+    const pageRows = hasNext ? rows.rows.slice(0, pageSize) : rows.rows
+    const last = pageRows[pageRows.length - 1]
+    const nextCursor = hasNext && last ? encodeCursor({ v: last._cursor_sort, id: last.id }) : null
+
     return {
-      rows: rows.rows.map((r) => ({
+      rows: pageRows.map((r) => ({
         id: r.id,
         vendor: r.vendor,
         vendorOrderId: r.vendor_order_id,
@@ -144,8 +147,7 @@ export async function listOrders(
         processedAt: r.processed_at.toISOString(),
         cancelledAt: r.cancelled_at ? r.cancelled_at.toISOString() : null,
       })),
-      total, page, pageSize,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      total, pageSize, nextCursor,
     }
   })
 }
@@ -171,17 +173,16 @@ export interface StoreProductRow {
 export interface ProductsListOptions {
   search?: string
   status?: 'all' | 'ACTIVE' | 'DRAFT' | 'ARCHIVED'
-  page?: number
+  cursor?: string
   pageSize?: number
 }
 
 export async function listStoreProducts(
   workspaceId: string,
   opts: ProductsListOptions = {},
-): Promise<Paged<StoreProductRow>> {
-  const page = clampPage(opts.page)
+): Promise<KeysetPage<StoreProductRow>> {
   const pageSize = clampSize(opts.pageSize)
-  const { offset, capped } = boundedOffset(page, pageSize)
+  const cursor = decodeCursor(opts.cursor)
   const search = (opts.search ?? '').trim()
   const status = opts.status ?? 'all'
 
@@ -196,47 +197,52 @@ export async function listStoreProducts(
       args.push(status)
       where.push(`status = $${args.length}`)
     }
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
+    const cntWhere = where.length ? `WHERE ${where.join(' AND ')}` : ''
     const cnt = await tx.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM public.connector_product_facts ${whereSql}`,
+      `SELECT count(*)::text AS n FROM public.connector_product_facts ${cntWhere}`,
       args,
     )
     const total = Number(cnt.rows[0]?.n ?? '0')
 
-    // C10 deep-page guard: refuse pages past MAX_OFFSET — return an empty,
-    // "refine your filters" page instead of running an O(n) deep-OFFSET scan.
-    if (capped) {
-      return { rows: [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), capped: true }
-    }
+    // ORDER BY title ASC NULLS LAST, id ASC. The id tiebreaker also fixes a
+    // latent skip/dup bug: title is not unique, so the old title-only sort was
+    // non-deterministic across pages.
+    if (cursor) where.push(keysetPredicate('title', 'ASC', cursor, args))
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
 
-    args.push(pageSize, offset)
+    args.push(pageSize + 1)
     const rows = await tx.query<{
       id: string; vendor: string; vendor_product_id: string;
       title: string | null; handle: string | null; image_url: string | null;
       status: string | null; product_type: string | null;
       inventory_qty: number | null; cost_mu: string; mrp_mu: string;
-      synced_at: Date;
+      synced_at: Date; _cursor_sort: string | null;
     }>(
       `SELECT id, vendor::text, vendor_product_id, title, handle, image_url,
-              status, product_type, inventory_qty, cost_mu::text, mrp_mu::text, synced_at
+              status, product_type, inventory_qty, cost_mu::text, mrp_mu::text, synced_at,
+              title AS _cursor_sort
          FROM public.connector_product_facts
          ${whereSql}
-         ORDER BY title NULLS LAST
-         LIMIT $${args.length - 1} OFFSET $${args.length}`,
+         ORDER BY title ASC NULLS LAST, id ASC
+         LIMIT $${args.length}`,
       args,
     )
 
+    const hasNext = rows.rows.length > pageSize
+    const pageRows = hasNext ? rows.rows.slice(0, pageSize) : rows.rows
+    const last = pageRows[pageRows.length - 1]
+    const nextCursor = hasNext && last ? encodeCursor({ v: last._cursor_sort, id: last.id }) : null
+
     return {
-      rows: rows.rows.map((r) => ({
+      rows: pageRows.map((r) => ({
         id: r.id, vendor: r.vendor, vendorProductId: r.vendor_product_id,
         title: r.title ?? '(untitled)', handle: r.handle ?? '', imageUrl: r.image_url,
         status: r.status ?? '', productType: r.product_type, inventoryQty: r.inventory_qty,
         costMu: BigInt(r.cost_mu ?? '0'), mrpMu: BigInt(r.mrp_mu ?? '0'),
         syncedAt: r.synced_at.toISOString(),
       })),
-      total, page, pageSize,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      total, pageSize, nextCursor,
     }
   })
 }
@@ -264,17 +270,16 @@ export interface CustomersListOptions {
   search?: string                                  // matches vendor_customer_id or customer_ref prefix
   minOrders?: number
   consent?: 'all' | 'opted_in' | 'opted_out' | 'unknown'
-  page?: number
+  cursor?: string
   pageSize?: number
 }
 
 export async function listStoreCustomers(
   workspaceId: string,
   opts: CustomersListOptions = {},
-): Promise<Paged<StoreCustomerRow>> {
-  const page = clampPage(opts.page)
+): Promise<KeysetPage<StoreCustomerRow>> {
   const pageSize = clampSize(opts.pageSize)
-  const { offset, capped } = boundedOffset(page, pageSize)
+  const cursor = decodeCursor(opts.cursor)
   const search = (opts.search ?? '').trim()
   const minOrders = opts.minOrders ?? 0
   const consent = opts.consent ?? 'all'
@@ -294,21 +299,18 @@ export async function listStoreCustomers(
       args.push(consent)
       where.push(`consent_status = $${args.length}::customer_consent_status`)
     }
-    const whereSql = `WHERE ${where.join(' AND ')}`
 
     const cnt = await tx.query<{ n: string }>(
-      `SELECT count(*)::text AS n FROM public.customer_pii ${whereSql}`,
+      `SELECT count(*)::text AS n FROM public.customer_pii WHERE ${where.join(' AND ')}`,
       args,
     )
     const total = Number(cnt.rows[0]?.n ?? '0')
 
-    // C10 deep-page guard: refuse pages past MAX_OFFSET — return an empty,
-    // "refine your filters" page instead of running an O(n) deep-OFFSET scan.
-    if (capped) {
-      return { rows: [], total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), capped: true }
-    }
+    // ORDER BY last_seen_at DESC NULLS LAST, id DESC.
+    if (cursor) where.push(keysetPredicate('last_seen_at', 'DESC', cursor, args, { valueCast: '::timestamptz' }))
+    const whereSql = `WHERE ${where.join(' AND ')}`
 
-    args.push(pageSize, offset)
+    args.push(pageSize + 1)
     const rows = await tx.query<{
       id: string; customer_ref: string;
       source_vendor: string; vendor_customer_id: string;
@@ -316,6 +318,7 @@ export async function listStoreCustomers(
       first_seen_at: Date | null; last_seen_at: Date | null;
       consent_status: string;
       has_email: boolean; has_name: boolean; has_phone: boolean;
+      _cursor_sort: string | null;
     }>(
       `SELECT id, customer_ref,
               source_vendor::text, vendor_customer_id,
@@ -323,16 +326,22 @@ export async function listStoreCustomers(
               first_seen_at, last_seen_at, consent_status::text,
               (email_ct IS NOT NULL)     AS has_email,
               (full_name_ct IS NOT NULL) AS has_name,
-              (phone_ct IS NOT NULL)     AS has_phone
+              (phone_ct IS NOT NULL)     AS has_phone,
+              last_seen_at::text AS _cursor_sort
          FROM public.customer_pii
          ${whereSql}
-         ORDER BY last_seen_at DESC NULLS LAST
-         LIMIT $${args.length - 1} OFFSET $${args.length}`,
+         ORDER BY last_seen_at DESC NULLS LAST, id DESC
+         LIMIT $${args.length}`,
       args,
     )
 
+    const hasNext = rows.rows.length > pageSize
+    const pageRows = hasNext ? rows.rows.slice(0, pageSize) : rows.rows
+    const last = pageRows[pageRows.length - 1]
+    const nextCursor = hasNext && last ? encodeCursor({ v: last._cursor_sort, id: last.id }) : null
+
     return {
-      rows: rows.rows.map((r) => ({
+      rows: pageRows.map((r) => ({
         id: r.id,
         customerRef: r.customer_ref,
         vendor: r.source_vendor,
@@ -347,8 +356,7 @@ export async function listStoreCustomers(
         hasName: r.has_name,
         hasPhone: r.has_phone,
       })),
-      total, page, pageSize,
-      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      total, pageSize, nextCursor,
     }
   })
 }

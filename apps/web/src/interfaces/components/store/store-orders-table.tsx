@@ -6,7 +6,7 @@
 // Fulfillment / COD / Date. Search + status + COD filters; URL-synced.
 
 import { useEffect, useState } from 'react';
-import { useQueryState, parseAsString, parseAsInteger, parseAsStringEnum } from 'nuqs';
+import { useQueryState, parseAsString, parseAsStringEnum } from 'nuqs';
 import { Loader2, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { formatMoney } from '@brain/lib-metrics';
 import { useAppSelector } from '@/domain/store/hooks.js';
@@ -28,17 +28,20 @@ export function StoreOrdersTable() {
   const [search, setSearch] = useQueryState('q',      parseAsString.withDefault(''));
   const [status, setStatus] = useQueryState('status', parseAsStringEnum<typeof STATUS[number]>([...STATUS]).withDefault('all'));
   const [cod, setCod]       = useQueryState('cod',    parseAsStringEnum<typeof COD[number]>([...COD]).withDefault('all'));
-  const [page, setPage]     = useQueryState('opage',  parseAsInteger.withDefault(1));
+  // Keyset cursor stack: [null] = first page; Next pushes the server's nextCursor, Prev pops.
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const cursor = cursorStack[cursorStack.length - 1] ?? undefined;
   const [searchInput, setSearchInput] = useState(search);
 
   useEffect(() => {
-    const t = setTimeout(() => { if (searchInput !== search) { setSearch(searchInput || null); setPage(1); } }, 350);
+    const t = setTimeout(() => { if (searchInput !== search) { setSearch(searchInput || null); setCursorStack([null]); } }, 350);
     return () => clearTimeout(t);
   }, [searchInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enabled = Boolean(isAuthenticated && workspaceId);
+  const PAGE_SIZE = 25;
   const { data, isLoading, error } = trpc.store.orders.useQuery(
-    { search: search || undefined, status, cod, page, pageSize: 25 },
+    { search: search || undefined, status, cod, cursor, pageSize: PAGE_SIZE },
     { enabled },
   );
 
@@ -46,7 +49,9 @@ export function StoreOrdersTable() {
 
   const total = data?.total ?? 0;
   const rows  = data?.rows ?? [];
-  const totalPages = data?.totalPages ?? 1;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageNum = cursorStack.length;
+  const nextCursor = data?.nextCursor ?? null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -62,14 +67,14 @@ export function StoreOrdersTable() {
         </div>
         <select
           value={status}
-          onChange={(e) => { setStatus(e.target.value as typeof STATUS[number]); setPage(1); }}
+          onChange={(e) => { setStatus(e.target.value as typeof STATUS[number]); setCursorStack([null]); }}
           className={cn(INPUT_CLS, 'w-44')}
         >
           {STATUS.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
         </select>
         <select
           value={cod}
-          onChange={(e) => { setCod(e.target.value as typeof COD[number]); setPage(1); }}
+          onChange={(e) => { setCod(e.target.value as typeof COD[number]); setCursorStack([null]); }}
           className={cn(INPUT_CLS, 'w-32')}
         >
           {COD.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -129,14 +134,14 @@ export function StoreOrdersTable() {
         </table>
       </div>
 
-      {totalPages > 1 && (
+      {(nextCursor || pageNum > 1) && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p>
+          <p className="text-sm text-muted-foreground">Page {pageNum} of {totalPages}</p>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+            <Button variant="outline" size="sm" disabled={pageNum <= 1} onClick={() => setCursorStack((st) => st.slice(0, -1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+            <Button variant="outline" size="sm" disabled={!nextCursor} onClick={() => setCursorStack((st) => [...st, nextCursor])}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>

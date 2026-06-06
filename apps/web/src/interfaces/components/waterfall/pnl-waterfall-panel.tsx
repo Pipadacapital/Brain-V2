@@ -6,10 +6,18 @@
 // CF-C6-AS-OF-STAMP-1: data_epoch bound to waterfall display.
 // CF-C6-BIGINT-JSON-1: step value_mu / cumulative_mu arrive as bigint.
 
+import dynamic from 'next/dynamic';
 import { trpc } from '@/infrastructure/trpc-client.js';
-import { CmWaterfallChart } from './cm-waterfall-chart.js';
 import { StalenessLabel } from '@/interfaces/components/shared/staleness-label.js';
 import { ErrorDisplay } from '@/interfaces/components/shared/error-display.js';
+
+// Code-split the visx chart (@visx/axis+group+scale+shape+tooltip) out of the
+// initial bundle — it loads only when this panel actually renders. ssr:false:
+// the chart is client-only (SVG sizing needs the DOM).
+const CmWaterfallChart = dynamic(
+  () => import('./cm-waterfall-chart.js').then((m) => m.CmWaterfallChart),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse rounded-md bg-muted/40" /> },
+);
 
 interface PnlWaterfallPanelProps {
   workspaceId: string;

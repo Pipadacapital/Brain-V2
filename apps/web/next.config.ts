@@ -9,6 +9,10 @@ const nextConfig: NextConfig = {
   // App Router is default in Next.js 16.
   experimental: {
     // Turbopack is default in Next 16 (--turbopack flag in dev).
+    // Bundle-cost lever: rewrite barrel imports from these heavy packages into
+    // direct deep imports so only what's used is bundled (recharts + the icon
+    // set are the largest contributors to the analytics route bundles).
+    optimizePackageImports: ['recharts', 'lucide-react'],
   },
   // LOCAL-HARNESS: @brain/lib-metrics + @brain/api-gateway are aliased to raw TS
   // source that uses NodeNext-style ".js" import specifiers. webpack's extensionAlias
