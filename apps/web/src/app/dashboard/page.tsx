@@ -13,32 +13,9 @@
 
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/infrastructure/supabase/server.js';
+import { fetchActiveWorkspaceSlug } from '@/infrastructure/active-workspace.js';
 
 const IS_LOCAL_HARNESS = process.env.NEXT_PUBLIC_BRAIN_LOCAL_HARNESS === 'true';
-
-/** Fetch the user's active workspace slug from the gateway using the session token. */
-async function fetchActiveWorkspaceSlug(accessToken: string): Promise<string | null> {
-  try {
-    const gatewayUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-    // auth.session returns workspaceId + workspaceRole; we also need the slug from workspace.list
-    const url = `${gatewayUrl}/trpc/workspace.list?batch=1&input=${encodeURIComponent('{"0":{}}')}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { authorization: `Bearer ${accessToken}` },
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as Array<{
-      result?: { data?: { json?: { workspaces?: Array<{ slug?: string; isDefault?: boolean }> } } };
-    }>;
-    const workspaces = body?.[0]?.result?.data?.json?.workspaces;
-    if (!Array.isArray(workspaces) || workspaces.length === 0) return null;
-    // Prefer the first workspace (the default/active one as determined by the gateway)
-    return workspaces[0]?.slug ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export default async function DashboardRedirectPage() {
   // Local harness: no Supabase — redirect to a hardcoded dev slug.
