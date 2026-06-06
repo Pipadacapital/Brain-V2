@@ -37,7 +37,10 @@ services:
       - -c
       - row_security=on
     volumes:
-      - ./apps/core-service/docker/initdb-dev:/docker-entrypoint-initdb.d:ro
+      # Single source of truth: auto-apply the consolidated PG bootstrap (roles +
+      # full schema + RLS) on a FRESH volume. On an existing volume initdb.d is a
+      # no-op; scripts/bootstrap-db.sh (make up) re-checks idempotently.
+      - ./infra/bootstrap/bootstrap-pg.sql:/docker-entrypoint-initdb.d/01-bootstrap-pg.sql:ro
       - brain-pgdata-dev:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d brain_dev"]
@@ -66,6 +69,9 @@ services:
         soft: 262144
         hard: 262144
     volumes:
+      # Auto-apply the consolidated ClickHouse bootstrap (brain db + facts + MV)
+      # on a fresh volume; idempotent (IF NOT EXISTS) on an existing one.
+      - ./infra/bootstrap/bootstrap-ch.sql:/docker-entrypoint-initdb.d/01-bootstrap-ch.sql:ro
       - brain-chdata-dev:/var/lib/clickhouse
     healthcheck:
       # ClickHouse alpine includes wget. Use explicit IPv4 (CH only binds v4)

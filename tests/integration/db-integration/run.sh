@@ -19,8 +19,8 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 cd "$ROOT"
 PGC="brain-it-pg-$$"; CHC="brain-it-ch-$$"
 PG_PORT=5499
-INITDB="$ROOT/apps/core-service/docker/initdb-dev"
-RAW_DDL="$ROOT/apps/ingestion-service/migrations/manual/raw/step-a-enable-create.sql"
+BOOTSTRAP_PG="$ROOT/infra/bootstrap/bootstrap-pg.sql"
+BOOTSTRAP_CH="$ROOT/infra/bootstrap/bootstrap-ch.sql"
 
 cleanup(){ docker rm -f "$PGC" "$CHC" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -36,17 +36,9 @@ for i in $(seq 1 60); do docker exec "$CHC" clickhouse-client --user brain_app -
 
 PSQL_SU="docker exec -i $PGC psql -U postgres -d brain_dev -v ON_ERROR_STOP=1"
 
-echo "== applying initdb roles (rls_app + svc_*) =="
-$PSQL_SU < "$INITDB/01-create-rls-app-role.sql"   >/dev/null
-$PSQL_SU < "$INITDB/02-create-service-roles.sql"  >/dev/null
-
-echo "== applying schema migrations via the tracked migrator =="
-PSQL="docker exec -i $PGC psql -U postgres -d brain_dev" \
-CHCL="docker exec -i $CHC clickhouse-client --user brain_app --password brain_app_pw" \
-  bash "$ROOT/scripts/migrate.sh" up >/dev/null
-
-echo "== applying raw landing DDL (rls_app auto-granted via default privileges) =="
-$PSQL_SU < "$RAW_DDL" >/dev/null
+echo "== bootstrapping full schema (single source of truth) =="
+$PSQL_SU < "$BOOTSTRAP_PG" >/dev/null
+docker exec -i "$CHC" clickhouse-client --user brain_app --password brain_app_pw -n < "$BOOTSTRAP_CH" >/dev/null
 
 echo "== running ingestion integration tests =="
 cd "$ROOT/apps/ingestion-service"

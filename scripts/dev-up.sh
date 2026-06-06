@@ -45,29 +45,15 @@ for _ in $(seq 1 60); do
 done
 echo "  postgres=$pg clickhouse=$ch"
 
-# 3. Apply migrations via the tracked migrator (scripts/migrate.sh). It keeps a
-#    per-store ledger and applies ONLY un-applied files in order — so a migration
-#    added later actually runs (the old marker-probe here skipped EVERY migration
-#    once one table existed). Idempotent: re-run is a no-op. An existing pre-ledger
-#    volume is auto-adopted at head. Held/runbook-gated files (`-- migrate: skip`)
-#    are not auto-applied.
-say "Applying schema migrations (tracked migrator)"
-PSQL="$PG" CHCL="$CH" bash scripts/migrate.sh up
-echo "  NOTE: schema only — no rows. Real-data load is the Founder-gated tools/migrate-legacy step;"
+# 3. Bootstrap the ENTIRE schema (single source of truth). Sentinel-gated +
+#    idempotent: creates roles + all PG/CH tables/indexes/RLS only when absent,
+#    no-op on an already-initialised volume. Replaces the retired migrator +
+#    per-store seed scripts. The optional ai/memory schema is applied only where
+#    pgvector is available (not the local dev image).
+say "Bootstrapping schema (infra/bootstrap via scripts/bootstrap-db.sh)"
+PSQL="$PG" CHCL="$CH" bash scripts/bootstrap-db.sh
+echo "  NOTE: schema only — no rows. Connectors + webhooks populate data going forward;"
 echo "        for a demo UI set BRAIN_GATEWAY_LOCAL_HARNESS=true on the gateway."
-
-# 3.5 LOCAL-ONLY real-time webhook fixtures (raw_* tables + grants + identity-map
-#     seed). Idempotent. Lets the local Shopify webhook path resolve out of the
-#     box; prod applies these via the gated Stage-8 runbook, never here.
-say "Applying local real-time webhook fixtures"
-PSQL="$PG" bash scripts/seed-local-realtime.sh
-
-# 3.6 LOCAL-ONLY metric-engine bring-up (workspace_daily_metrics DDL + MV + the
-#     daily rollup from connector facts). Lets query_metrics / the Morning Brief
-#     read real metrics; no-op-safe with no migrated data. Prod uses the gated
-#     Stage-8 runbook + a real scheduler, never here.
-say "Applying local metric-engine (DDL + daily recompute)"
-CH="$CH" bash scripts/seed-local-metric-engine.sh
 
 # 4. Build + start the FULL app: api-gateway + web AND the profile-gated
 #    services (ingestion + analytics + intelligence). `--profile data` with no

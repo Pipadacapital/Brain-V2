@@ -1,11 +1,15 @@
--- up.sql — ai.* + memory.* schema for Child 5 (intelligence-service).
--- CF-C5-DECISION-LOG-1 + CF-C5-RESIDENCY-1 + CF-C5-MEMORY-1
--- RLS: every table gets a fail-closed workspace_id policy (Child-1 pattern).
--- Money: ALL monetary fields are BIGINT minor units — NEVER NUMERIC/float.
--- ap-south-1: run this against the Brain Supabase instance (ap-south-1 region).
+-- =============================================================================
+-- Brain — PostgreSQL bootstrap: AI + Memory schema (OPTIONAL / pgvector-gated).
 --
--- Reversible: down.sql drops in reverse FK order.
--- Idempotent: CREATE TABLE IF NOT EXISTS; CREATE INDEX IF NOT EXISTS.
+-- The Decision Log (ai.*) + Memory Layer (memory.brand_fingerprint, pgvector)
+-- "moat" tables. Kept SEPARATE from bootstrap-pg.sql because memory.* requires
+-- the `vector` extension, which the local dev Postgres image does NOT ship.
+-- scripts/bootstrap-db.sh applies this ONLY when `vector` is available
+-- (e.g. ap-south-1 Supabase). Idempotent (IF NOT EXISTS / DROP POLICY IF EXISTS).
+--
+-- Source of truth for the ai/memory schema (replaces the retired
+-- apps/intelligence-service/migrations/postgres/up.sql).
+-- =============================================================================
 
 BEGIN;
 

@@ -28,7 +28,7 @@ def check_c2() -> CheckResult:
     violations: list[str] = []
     tables = 0
     # Only real ClickHouse table DDL; the divop template is doc-only.
-    for path in globs("apps/analytics-service/migrations/clickhouse/*.sql"):
+    for path in globs("infra/bootstrap/bootstrap-ch.sql"):
         if path.name.startswith("_"):
             continue
         sql = strip_sql_comments(read(path))
@@ -75,7 +75,7 @@ def check_mv_double_fire_guard() -> CheckResult:
     }
     mv_sources: list[str] = []  # (mv_name, source_table, file)
 
-    for path in globs("apps/analytics-service/migrations/clickhouse/*.sql"):
+    for path in globs("infra/bootstrap/bootstrap-ch.sql"):
         if path.name.startswith("_") or path.name.startswith("down"):
             continue
         sql = strip_sql_comments(read(path))

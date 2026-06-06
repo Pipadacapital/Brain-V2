@@ -23,621 +23,477 @@ facts:
   connector_order_facts:
     pg:
       ddl:
-        - apps/core-service/migrations/local-dev/05-schema-connector-facts.sql
-        - apps/core-service/migrations/local-dev/10-schema-variants-and-extensions.sql
+      - infra/bootstrap/bootstrap-pg.sql
       table: connector_order_facts_hot
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - gross_sales_mu
-        - total_discount_mu
-        - total_tax_mu
-        - shipping_mu
-        - total_refund_mu
-        - customer_ref
-        - payment_method
-        - is_cod
-        - financial_status
-        - cancelled_at
-        - processed_at
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - gross_sales_mu
+      - total_discount_mu
+      - total_tax_mu
+      - shipping_mu
+      - total_refund_mu
+      - customer_ref
+      - payment_method
+      - is_cod
+      - financial_status
+      - cancelled_at
+      - processed_at
       all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - order_number
-        - financial_status
-        - fulfillment_status
-        - payment_method
-        - currency_code
-        - gross_sales_mu
-        - total_discount_mu
-        - total_tax_mu
-        - shipping_mu
-        - customer_ref
-        - is_new_customer
-        - delivery_pincode
-        - delivery_city
-        - processed_at
-        - cancelled_at
-        - synced_at
-        - billing_pincode
-        - is_cod
-        - order_type
-        - total_refund_mu
+      - id
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - order_number
+      - financial_status
+      - fulfillment_status
+      - payment_method
+      - currency_code
+      - gross_sales_mu
+      - total_discount_mu
+      - total_tax_mu
+      - shipping_mu
+      - customer_ref
+      - is_new_customer
+      - delivery_pincode
+      - delivery_city
+      - processed_at
+      - cancelled_at
+      - synced_at
+      - billing_pincode
+      - is_cod
+      - order_type
+      - total_refund_mu
+      - raw_event_id
+      - provenance
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0003_connector_order_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_order_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - gross_sales_mu
-        - discount_mu
-        - tax_mu
-        - shipping_mu
-        - net_sales_mu
-        - total_refund_mu
-        - customer_ref
-        - payment_method
-        - is_cod
-        - financial_status
-        - cancelled_at
-        - order_date
-        - version
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - gross_sales_mu
+      - discount_mu
+      - tax_mu
+      - shipping_mu
+      - net_sales_mu
+      - total_refund_mu
+      - customer_ref
+      - payment_method
+      - is_cod
+      - financial_status
+      - cancelled_at
+      - order_date
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - order_date
-        - placed_at
-        - customer_ref
-        - delivery_pincode
-        - delivery_city
-        - gross_sales_mu
-        - discount_mu
-        - tax_mu
-        - shipping_mu
-        - net_sales_mu
-        - total_refund_mu
-        - currency_code
-        - payment_method
-        - is_cod
-        - order_type
-        - financial_status
-        - fulfillment_status
-        - cancelled_at
-        - tags
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - order_date
+      - placed_at
+      - customer_ref
+      - delivery_pincode
+      - delivery_city
+      - gross_sales_mu
+      - discount_mu
+      - tax_mu
+      - shipping_mu
+      - net_sales_mu
+      - total_refund_mu
+      - currency_code
+      - payment_method
+      - is_cod
+      - order_type
+      - financial_status
+      - fulfillment_status
+      - cancelled_at
+      - tags
+      - version
+      - ingested_at
+      - raw_event_id
+      - provenance
   connector_line_item_facts:
     pg:
       ddl:
-        - apps/core-service/migrations/local-dev/05-schema-connector-facts.sql
-        - apps/core-service/migrations/local-dev/29-line-item-vendor-product-id.sql
+      - infra/bootstrap/bootstrap-pg.sql
       table: connector_line_item_facts_hot
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - vendor_line_id
-        - vendor_product_id
-        - sku
-        - quantity
-        - unit_price_mu
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - vendor_line_id
+      - vendor_product_id
+      - sku
+      - quantity
+      - unit_price_mu
       all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - vendor_line_id
-        - sku
-        - title
-        - quantity
-        - unit_price_mu
-        - gst_slab_bp
-        - synced_at
-        - vendor_product_id
+      - id
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - vendor_line_id
+      - sku
+      - title
+      - quantity
+      - unit_price_mu
+      - gst_slab_bp
+      - synced_at
+      - vendor_product_id
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0004_connector_line_item_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_line_item_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - vendor_line_id
-        - vendor_product_id
-        - sku
-        - quantity
-        - price_mu
-        - line_total_mu
-        - order_date
-        - version
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - vendor_line_id
+      - vendor_product_id
+      - sku
+      - quantity
+      - price_mu
+      - line_total_mu
+      - order_date
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - vendor_line_id
-        - vendor_product_id
-        - vendor_variant_id
-        - sku
-        - title
-        - quantity
-        - price_mu
-        - line_total_mu
-        - discount_mu
-        - tax_mu
-        - cogs_mu
-        - currency_code
-        - order_date
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - vendor_line_id
+      - vendor_product_id
+      - vendor_variant_id
+      - sku
+      - title
+      - quantity
+      - price_mu
+      - line_total_mu
+      - discount_mu
+      - tax_mu
+      - cogs_mu
+      - currency_code
+      - order_date
+      - version
+      - ingested_at
+      - raw_event_id
+      - provenance
   connector_ad_spend_facts:
     pg:
       ddl:
-        - apps/core-service/migrations/local-dev/05-schema-connector-facts.sql
+      - infra/bootstrap/bootstrap-pg.sql
       table: connector_ad_spend_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - campaign_id
-        - spend_date
-        - spend_mu
-        - impressions
-        - clicks
+      - workspace_id
+      - vendor
+      - campaign_id
+      - spend_date
+      - spend_mu
+      - impressions
+      - clicks
       all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - campaign_id
-        - campaign_name
-        - spend_date
-        - spend_mu
-        - impressions
-        - clicks
-        - currency_code
-        - synced_at
+      - id
+      - workspace_id
+      - vendor
+      - campaign_id
+      - campaign_name
+      - spend_date
+      - spend_mu
+      - impressions
+      - clicks
+      - currency_code
+      - synced_at
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0006_connector_ad_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_ad_spend_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - campaign_id
-        - date
-        - spend_mu
-        - impressions
-        - clicks
-        - conversions
-        - revenue_mu
-        - version
+      - workspace_id
+      - vendor
+      - campaign_id
+      - date
+      - spend_mu
+      - impressions
+      - clicks
+      - conversions
+      - revenue_mu
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - ad_account_id
-        - campaign_id
-        - campaign_name
-        - date
-        - impressions
-        - clicks
-        - spend_mu
-        - conversions
-        - revenue_mu
-        - currency_code
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - ad_account_id
+      - campaign_id
+      - campaign_name
+      - date
+      - impressions
+      - clicks
+      - spend_mu
+      - conversions
+      - revenue_mu
+      - currency_code
+      - version
+      - ingested_at
+      - raw_event_id
+      - provenance
   connector_shipment_facts:
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0007_connector_logistics_facts.sql
-        - apps/analytics-service/migrations/clickhouse/0011_shipment_cod_payment_columns.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_shipment_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_shipment_id
-        - vendor_order_id
-        - status
-        - courier_name
-        - delivery_pincode
-        - is_rto
-        - is_cod
-        - payment_method
-        - date
-        - version
+      - workspace_id
+      - vendor
+      - vendor_shipment_id
+      - vendor_order_id
+      - status
+      - courier_name
+      - delivery_pincode
+      - is_rto
+      - is_cod
+      - payment_method
+      - date
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - vendor_shipment_id
-        - vendor_order_id
-        - status
-        - courier_name
-        - delivery_pincode
-        - is_rto
-        - shipped_at
-        - delivered_at
-        - rto_at
-        - date
-        - version
-        - ingested_at
-        - is_cod
-        - payment_method
-        - delivery_city
-        - delivery_state
-
+      - workspace_id
+      - vendor
+      - vendor_shipment_id
+      - vendor_order_id
+      - status
+      - courier_name
+      - delivery_pincode
+      - is_rto
+      - shipped_at
+      - delivered_at
+      - rto_at
+      - date
+      - version
+      - ingested_at
+      - is_cod
+      - payment_method
+      - delivery_city
+      - delivery_state
   connector_product_facts:
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0005_connector_product_and_variant_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_product_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_product_id
-        - cost_mu
-        - version
+      - workspace_id
+      - vendor
+      - vendor_product_id
+      - cost_mu
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - vendor_product_id
-        - sku
-        - title
-        - handle
-        - image_url
-        - cost_mu
-        - mrp_mu
-        - inventory_qty
-        - tags
-        - currency_code
-        - synced_date
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - vendor_product_id
+      - sku
+      - title
+      - handle
+      - image_url
+      - cost_mu
+      - mrp_mu
+      - inventory_qty
+      - tags
+      - currency_code
+      - synced_date
+      - version
+      - ingested_at
   connector_refund_facts:
     pg:
       ddl:
-        - apps/core-service/migrations/local-dev/05a-schema-connector-refund-facts.sql
-        - apps/core-service/migrations/local-dev/10-schema-variants-and-extensions.sql
+      - infra/bootstrap/bootstrap-pg.sql
       table: connector_refund_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_refund_id
-        - vendor_refund_line_id
-        - vendor_order_id
-        - subtotal_mu
-      # Note: PG uses subtotal_mu; CH uses refund_amount_mu (ruling F canonical name).
+      - workspace_id
+      - vendor
+      - vendor_refund_id
+      - vendor_refund_line_id
+      - vendor_order_id
+      - subtotal_mu
       all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - vendor_order_id
-        - vendor_refund_id
-        - vendor_refund_line_id
-        - sku
-        - quantity
-        - subtotal_mu
-        - tax_mu
-        - processed_at
-        - synced_at
-        - vendor_product_id
+      - id
+      - workspace_id
+      - vendor
+      - vendor_order_id
+      - vendor_refund_id
+      - vendor_refund_line_id
+      - sku
+      - quantity
+      - subtotal_mu
+      - tax_mu
+      - processed_at
+      - synced_at
+      - vendor_product_id
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0007_connector_logistics_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_refund_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_refund_id
-        - vendor_refund_line_id
-        - vendor_order_id
-        - refund_amount_mu
-        - date
-        - version
-      # CH canonical column name is refund_amount_mu (not subtotal_mu — ruling F).
+      - workspace_id
+      - vendor
+      - vendor_refund_id
+      - vendor_refund_line_id
+      - vendor_order_id
+      - refund_amount_mu
+      - date
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - vendor_refund_id
-        - vendor_refund_line_id
-        - vendor_order_id
-        - vendor_product_id
-        - sku
-        - quantity
-        - refund_amount_mu
-        - tax_mu
-        - currency_code
-        - date
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - vendor_refund_id
+      - vendor_refund_line_id
+      - vendor_order_id
+      - vendor_product_id
+      - sku
+      - quantity
+      - refund_amount_mu
+      - tax_mu
+      - currency_code
+      - date
+      - version
+      - ingested_at
   connector_variant_facts:
-    pg:
-      ddl:
-        - apps/core-service/migrations/local-dev/10-schema-variants-and-extensions.sql
-      table: connector_variant_facts
-      must_columns:
-        - workspace_id
-        - vendor
-        - vendor_variant_id
-        - vendor_product_id
-      all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - vendor_variant_id
-        - vendor_product_id
-        - sku
-        - title
-        - price_mu
-        - compare_at_price_mu
-        - inventory_qty
-        - synced_at
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0005_connector_product_and_variant_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_variant_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_variant_id
-        - vendor_product_id
-        - version
+      - workspace_id
+      - vendor
+      - vendor_variant_id
+      - vendor_product_id
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - vendor_variant_id
-        - vendor_product_id
-        - sku
-        - title
-        - price_mu
-        - compare_at_price_mu
-        - inventory_qty
-        - synced_date
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - vendor_variant_id
+      - vendor_product_id
+      - sku
+      - title
+      - price_mu
+      - compare_at_price_mu
+      - inventory_qty
+      - synced_date
+      - version
+      - ingested_at
   connector_email_send_facts:
-    pg:
-      ddl:
-        - apps/core-service/migrations/local-dev/12-schema-email-and-ad-detail.sql
-      table: connector_email_send_facts
-      must_columns:
-        - workspace_id
-        - vendor
-        - vendor_resource_id
-        - source_type
-        - send_date
-        - revenue_mu
-      all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - source_type
-        - vendor_resource_id
-        - name
-        - channel
-        - send_date
-        - delivered
-        - unique_opens
-        - unique_clicks
-        - orders
-        - revenue_mu
-        - currency_code
-        - unsubscribes
-        - spam_complaints
-        - synced_at
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0008_connector_email_send_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_email_send_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_resource_id
-        - source_type
-        - send_date
-        - revenue_mu
-        - version
+      - workspace_id
+      - vendor
+      - vendor_resource_id
+      - source_type
+      - send_date
+      - revenue_mu
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - source_type
-        - vendor_resource_id
-        - name
-        - channel
-        - send_date
-        - delivered
-        - unique_opens
-        - unique_clicks
-        - orders
-        - revenue_mu
-        - currency_code
-        - unsubscribes
-        - spam_complaints
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - source_type
+      - vendor_resource_id
+      - name
+      - channel
+      - send_date
+      - delivered
+      - unique_opens
+      - unique_clicks
+      - orders
+      - revenue_mu
+      - currency_code
+      - unsubscribes
+      - spam_complaints
+      - version
+      - ingested_at
   connector_logistics_order_facts:
-    pg:
-      ddl:
-        - apps/core-service/migrations/local-dev/14-schema-logistics-order.sql
-      table: connector_logistics_order_facts
-      must_columns:
-        - workspace_id
-        - vendor
-        - vendor_logistics_order_id
-        - channel_order_id
-        - status
-      all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - vendor_logistics_order_id
-        - channel_order_id
-        - channel_name
-        - channel_id
-        - status
-        - status_code
-        - payment_method
-        - total_mu
-        - currency_code
-        - order_date
-        - synced_at
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0007_connector_logistics_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_logistics_order_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - vendor_logistics_order_id
-        - channel_order_id
-        - status
-        - order_date
-        - version
+      - workspace_id
+      - vendor
+      - vendor_logistics_order_id
+      - channel_order_id
+      - status
+      - order_date
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - vendor_logistics_order_id
-        - channel_order_id
-        - channel_name
-        - status
-        - payment_method
-        - total_mu
-        - currency_code
-        - order_date
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - vendor_logistics_order_id
+      - channel_order_id
+      - channel_name
+      - status
+      - payment_method
+      - total_mu
+      - currency_code
+      - order_date
+      - version
+      - ingested_at
   connector_ad_creative_facts:
-    pg:
-      ddl:
-        - apps/core-service/migrations/local-dev/12-schema-email-and-ad-detail.sql
-      table: connector_ad_creative_facts
-      must_columns:
-        - workspace_id
-        - vendor
-        - ad_id
-        - ad_account_id
-        - campaign_id
-        - date
-        - spend_mu
-      all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - ad_account_id
-        - ad_id
-        - ad_name
-        - campaign_id
-        - campaign_name
-        - adset_id
-        - adset_name
-        - date
-        - impressions
-        - clicks
-        - spend_mu
-        - video_3s_views
-        - video_thruplay
-        - avg_watch_sec_x100
-        - video_p25
-        - video_p50
-        - video_p75
-        - video_p95
-        - conversions
-        - revenue_mu
-        - currency_code
-        - synced_at
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0006_connector_ad_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_ad_creative_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - ad_id
-        - ad_account_id
-        - campaign_id
-        - date
-        - spend_mu
-        - version
+      - workspace_id
+      - vendor
+      - ad_id
+      - ad_account_id
+      - campaign_id
+      - date
+      - spend_mu
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - ad_account_id
-        - ad_id
-        - ad_name
-        - campaign_id
-        - adset_id
-        - date
-        - impressions
-        - clicks
-        - spend_mu
-        - video_thruplay
-        - avg_watch_sec_x100
-        - video_p25
-        - video_p50
-        - video_p75
-        - video_p95
-        - conversions
-        - revenue_mu
-        - currency_code
-        - version
-        - ingested_at
-
+      - workspace_id
+      - vendor
+      - ad_account_id
+      - ad_id
+      - ad_name
+      - campaign_id
+      - adset_id
+      - date
+      - impressions
+      - clicks
+      - spend_mu
+      - video_thruplay
+      - avg_watch_sec_x100
+      - video_p25
+      - video_p50
+      - video_p75
+      - video_p95
+      - conversions
+      - revenue_mu
+      - currency_code
+      - version
+      - ingested_at
   connector_ad_funnel_facts:
-    pg:
-      ddl:
-        - apps/core-service/migrations/local-dev/12-schema-email-and-ad-detail.sql
-      table: connector_ad_funnel_facts
-      must_columns:
-        - workspace_id
-        - vendor
-        - customer_id
-        - campaign_id
-        - date
-        - stage
-      all_columns:
-        - id
-        - workspace_id
-        - vendor
-        - customer_id
-        - campaign_id
-        - date
-        - stage
-        - conversions_x1000
-        - conversion_value_mu
-        - currency_code
-        - synced_at
     ch:
       ddl:
-        - apps/analytics-service/migrations/clickhouse/0006_connector_ad_facts.sql
+      - infra/bootstrap/bootstrap-ch.sql
       table: connector_ad_funnel_facts
       must_columns:
-        - workspace_id
-        - vendor
-        - customer_id
-        - campaign_id
-        - date
-        - stage
-        - version
+      - workspace_id
+      - vendor
+      - customer_id
+      - campaign_id
+      - date
+      - stage
+      - version
       all_columns:
-        - workspace_id
-        - vendor
-        - customer_id
-        - campaign_id
-        - date
-        - stage
-        - conversions_x1000
-        - conversion_value_mu
-        - currency_code
-        - version
-        - ingested_at
+      - workspace_id
+      - vendor
+      - customer_id
+      - campaign_id
+      - date
+      - stage
+      - conversions_x1000
+      - conversion_value_mu
+      - currency_code
+      - version
+      - ingested_at

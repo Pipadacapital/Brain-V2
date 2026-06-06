@@ -20,8 +20,9 @@ After the one-time prerequisite below (`.env.docker`):
 ```bash
 make up          # or: ./scripts/dev-up.sh
 ```
-Idempotent — it ensures the data volumes exist, starts the DBs, applies the schema
-migrations **only on a fresh DB**, builds + starts the app, and waits for `/ready`.
+Idempotent — it ensures the data volumes exist, starts the DBs, bootstraps the
+schema **only if it doesn't already exist** (`scripts/bootstrap-db.sh`), builds +
+starts the app, and waits for `/ready`.
 Other shortcuts: `make down`, `make logs` (`make logs S=web`), `make ps`, `make ready`.
 
 The manual equivalents are documented below if you want to run the steps yourself.
@@ -55,32 +56,29 @@ docker compose --env-file .env.docker up -d --build
 docker volume create core-service_brain-pgdata-dev
 docker volume create analytics-service_brain-chdata-dev
 
-# 2. Bring up just the databases first (initdb only creates the rls_app /
-#    per-service roles — it does NOT build the schema)
+# 2. Bring up the databases. On a FRESH volume the compose mounts auto-apply the
+#    consolidated bootstrap (infra/bootstrap/bootstrap-pg.sql + bootstrap-ch.sql)
+#    via each image's docker-entrypoint-initdb.d — roles + full schema + RLS.
 docker compose --env-file .env.docker up -d postgres-dev clickhouse-dev
 
-# 3. Apply the Postgres schema migrations IN ORDER (postgres superuser),
-#    skipping any *down*/rollback files:
-for f in $(ls apps/core-service/migrations/local-dev/[0-9]*.sql | grep -v down | sort); do
-  echo "applying $f"; docker exec -i brain-postgres-dev psql -U postgres -d brain_dev -v ON_ERROR_STOP=1 < "$f" || break
-done
+# 3. (Belt-and-suspenders) ensure the schema exists — idempotent, sentinel-gated.
+#    Safe no-op if the volume was already bootstrapped. This is the single
+#    schema-creation path (the per-migration pipeline has been retired).
+bash scripts/bootstrap-db.sh
 
-# 4. Apply the ClickHouse fact migrations (0003 → 0011; skip 0001/0002 — the
-#    legacy MV uses toDaysInMonth which CH 24.8 lacks):
-for f in $(ls apps/analytics-service/migrations/clickhouse/000[3-9]*.sql apps/analytics-service/migrations/clickhouse/001[0-1]*.sql | sort); do
-  echo "applying $f"; docker exec -i brain-clickhouse-dev clickhouse-client --user brain_app --password brain_app_pw --multiquery < "$f" || break
-done
-
-# 5. Bring up the app
+# 4. Bring up the app
 docker compose --env-file .env.docker up -d --build api-gateway web
 ```
 
+> **Schema source of truth:** `infra/bootstrap/bootstrap-pg.sql` (OLTP) +
+> `infra/bootstrap/bootstrap-ch.sql` (OLAP), applied by `scripts/bootstrap-db.sh`
+> (run automatically by `make up`). The optional Decision-Log / Memory-Layer
+> schema (`bootstrap-pg-ai.sql`) is applied only where pgvector is available.
+>
 > **Data note:** a fresh DB has the *schema* but no rows — the app shows honest-empty
-> workspaces. Loading the real legacy data is a separate, Founder-gated step (needs the
-> live Supabase pooler credentials + the FDW + the scripts in `tools/migrate-legacy/`:
-> `*-backfill.sql`, `config-tables-backfill.sql`; clean up afterwards with
-> `teardown-staging.sql`). For UI exploration without real data, set
-> `BRAIN_GATEWAY_LOCAL_HARNESS=true` on the gateway to serve the in-memory demo plane.
+> workspaces. Data is populated going forward by the connectors + webhooks. For UI
+> exploration without real data, set `BRAIN_GATEWAY_LOCAL_HARNESS=true` on the gateway
+> to serve the in-memory demo plane.
 
 ### Verify it's up
 ```bash
