@@ -25,6 +25,7 @@ PSQL="${PSQL:-docker exec -i brain-postgres-dev psql -U postgres -d brain_dev}"
 CHCL="${CHCL:-docker exec -i brain-clickhouse-dev clickhouse-client}"
 
 PG_SQL="infra/bootstrap/bootstrap-pg.sql"
+PG_SEED_SQL="infra/bootstrap/bootstrap-pg-seed.sql"
 PG_AI_SQL="infra/bootstrap/bootstrap-pg-ai.sql"
 CH_SQL="infra/bootstrap/bootstrap-ch.sql"
 
@@ -39,6 +40,15 @@ else
   $PSQL -v ON_ERROR_STOP=1 -q -f - < "$PG_SQL"
   echo "  Postgres schema created."
 fi
+
+# Registry SEED (reference data, not user data). The schema-only bootstrap carries
+# no rows, but connector_definitions + connector_vendors MUST be populated or the
+# app can't resolve connectors (connectors.initiate reads oauth_config; vendor
+# columns FK to connector_vendors). Idempotent (ON CONFLICT) — always applied so
+# DBs that predate the seed get it too.
+say "Seeding connector registry → $PG_SEED_SQL"
+$PSQL -v ON_ERROR_STOP=1 -q -f - < "$PG_SEED_SQL"
+echo "  registry seeded (connector_definitions + connector_vendors)."
 
 # --- Postgres: AI + Memory schema (OPTIONAL, pgvector-gated) -------------------
 # memory.brand_fingerprint needs the `vector` extension. The local dev image does

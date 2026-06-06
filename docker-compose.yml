@@ -41,6 +41,9 @@ services:
       # full schema + RLS) on a FRESH volume. On an existing volume initdb.d is a
       # no-op; scripts/bootstrap-db.sh (make up) re-checks idempotently.
       - ./infra/bootstrap/bootstrap-pg.sql:/docker-entrypoint-initdb.d/01-bootstrap-pg.sql:ro
+      # 02 (after schema): seed the connector registry (reference data — required
+      # for connectors to resolve; the schema-only dump carries no rows).
+      - ./infra/bootstrap/bootstrap-pg-seed.sql:/docker-entrypoint-initdb.d/02-bootstrap-pg-seed.sql:ro
       - brain-pgdata-dev:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d brain_dev"]
