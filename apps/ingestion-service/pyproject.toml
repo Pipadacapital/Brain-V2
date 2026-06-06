@@ -4,6 +4,8 @@ version = "0.0.0"
 requires-python = ">=3.13,<3.14"
 description = "Shopify/Unicommerce/MoEngage connector ingestion pipeline. Phase 0-1 deployable. uv workspace member."
 dependencies = [
+  # Shared structured JSON logger + correlation (pylibs/brain_logger).
+  "brain-logger",
   "psycopg[binary,pool]>=3.3.4",
   "aiokafka>=0.14.0",
   "httpx>=0.28.1",
@@ -20,6 +22,10 @@ dependencies = [
   "grpcio>=1.68.0,<2.0.0",
   "grpcio-health-checking>=1.68.0,<2.0.0",
 ]
+
+# brain-logger is a uv workspace member — resolve from the workspace, not PyPI.
+[tool.uv.sources]
+brain-logger = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

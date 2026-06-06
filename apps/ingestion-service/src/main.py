@@ -32,6 +32,8 @@ import logging
 import os
 import sys
 
+from brain_logger import configure_logging
+
 from src.bootstrap.startup_gates import (
     ResidencyAssertionError,
     WorkspaceNotAllowedError,
@@ -45,11 +47,7 @@ _log = logging.getLogger("ingestion.main")
 def _configure_logging() -> None:
     # Structured JSON-ish line to stdout; compose/k8s log drivers capture it.
     # NEVERLOG-1: ids + outcome only — never PII / payloads.
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
-        stream=sys.stdout,
-    )
+    configure_logging("brain-ingestion-service", os.environ.get("LOG_LEVEL", "INFO"))
 
 
 async def _serve() -> None:
