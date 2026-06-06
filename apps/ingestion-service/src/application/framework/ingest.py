@@ -323,16 +323,26 @@ async def _upsert_event(
             f"request_id={request_id!r}. warehouse-epic S4 LOW-1 gate."
         )
 
-    # Defense-in-depth column allowlist (bandit B608 / L1)
+    # SQLi defense-in-depth (bandit B608 / L1). The table name comes from the
+    # fixed _RAW_TABLE_MAP (_table_for raises on anything else) and EVERY column
+    # name interpolated below must be in this per-table allowlist — so the f-string
+    # below only ever interpolates known, constant identifiers, never caller input.
+    # MANDATORY (fail-closed): a table with no allowlist entry is REJECTED rather
+    # than allowed to interpolate unvalidated identifiers.
     allowed = _ALLOWED_COLUMNS.get(table)
-    if allowed is not None:
-        disallowed = [c for c in cols if c not in allowed]
-        if disallowed:
-            raise ValueError(
-                f"[_upsert_event] Column(s) {disallowed!r} not in allowlist for "
-                f"table {table!r}. request_id={request_id!r}. "
-                f"CF-C3-SINGLE-PRIMITIVE-1 defense-in-depth gate."
-            )
+    if allowed is None:
+        raise ValueError(
+            f"[_upsert_event] No column allowlist for table {table!r} — refusing to "
+            f"interpolate unvalidated identifiers (SQLi defense-in-depth). Add an "
+            f"_ALLOWED_COLUMNS entry for it. request_id={request_id!r}."
+        )
+    disallowed = [c for c in cols if c not in allowed]
+    if disallowed:
+        raise ValueError(
+            f"[_upsert_event] Column(s) {disallowed!r} not in allowlist for "
+            f"table {table!r}. request_id={request_id!r}. "
+            f"CF-C3-SINGLE-PRIMITIVE-1 defense-in-depth gate."
+        )
 
     col_names = list(cols.keys())
     placeholders = ["%s" for _ in col_names]
