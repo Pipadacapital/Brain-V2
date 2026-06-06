@@ -148,4 +148,6 @@ WORKDIR /workspace/apps/web
 # Invoke next directly via node — bypasses pnpm's deps-status-check on every
 # start (which fails when workspace symlink targets shifted between build and
 # runtime). The .next/ bundle is already built; this is a pure runtime spawn.
+# Container hardening: run as the built-in non-root `node` user (uid 1000).
+USER node
 CMD ["node", "node_modules/next/dist/bin/next", "start", "-p", "3000"]

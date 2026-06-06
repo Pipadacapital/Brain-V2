@@ -100,4 +100,6 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
 
 # tsx is the runtime — same as `pnpm dev`. No tsc emit needed (Stage-0).
 WORKDIR /workspace/apps/api-gateway
+# Container hardening: run as the built-in non-root `node` user (uid 1000).
+USER node
 CMD ["pnpm", "exec", "tsx", "src/interfaces/server.ts"]

@@ -50,4 +50,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
   CMD python -c "import grpc; from grpc_health.v1 import health_pb2, health_pb2_grpc; health_pb2_grpc.HealthStub(grpc.insecure_channel('127.0.0.1:50051')).Check(health_pb2.HealthCheckRequest(), timeout=2)" || exit 1
 
 # `python` resolves to /workspace/.venv/bin/python (PATH); deps resolved in Layer 1.
+# Container hardening: run as a non-root user.
+RUN useradd --create-home --uid 1001 appuser
+USER appuser
 CMD ["python", "-m", "src.main"]

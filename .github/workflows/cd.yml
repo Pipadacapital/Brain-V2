@@ -1,0 +1,105 @@
+# =============================================================================
+# Brain CD — build service images → push to ECR → deploy. (audit P1: "no CD")
+#
+# GATED + INERT until provisioned. The whole workflow is a no-op until the repo
+# variable CD_ENABLED is set to "true" — because it requires AWS infra that does
+# not exist yet (an ECR registry, a GitHub-OIDC deploy role, and a deploy target).
+# Until then this exists as the structurally-correct CD path, not a live one.
+#
+# To turn it on (see docs/cd-pipeline-bringup.md):
+#   1. Provision ECR repos (one per service) + the GitHub-OIDC IAM role.
+#   2. Set repo VARIABLES: CD_ENABLED=true, AWS_DEPLOY_ROLE_ARN, ECR_REGISTRY,
+#      AWS_REGION (default ap-south-1 — India residency).
+#   3. Wire the deploy step to the real target (ArgoCD image bump / EKS / ECS).
+#
+# Build+push (below) is REAL once enabled. The deploy step is a documented
+# placeholder until the cluster exists — it never silently "succeeds" a deploy.
+# =============================================================================
+name: CD
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write    # OIDC federation → AWS (no long-lived keys)
+  contents: read
+
+jobs:
+  preflight:
+    name: CD preflight (gate)
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.gate.outputs.enabled }}
+    steps:
+      - id: gate
+        run: |
+          if [ "${{ vars.CD_ENABLED }}" != "true" ]; then
+            echo "::notice::CD disabled (CD_ENABLED != true). Provision ECR + OIDC role + a deploy target, then set CD_ENABLED=true. See docs/cd-pipeline-bringup.md."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          missing=
+          [ -n "${{ vars.AWS_DEPLOY_ROLE_ARN }}" ] || missing="$missing AWS_DEPLOY_ROLE_ARN"
+          [ -n "${{ vars.ECR_REGISTRY }}" ]        || missing="$missing ECR_REGISTRY"
+          if [ -n "$missing" ]; then
+            echo "::error::CD_ENABLED=true but required vars are unset:$missing"
+            exit 1
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+  build-push:
+    name: Build + push image (${{ matrix.service }})
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [web, api-gateway, ingestion-service, analytics-service, intelligence-service]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build + push (tag by commit SHA + latest)
+        env:
+          REGISTRY: ${{ vars.ECR_REGISTRY }}
+          SVC: ${{ matrix.service }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Build context is the repo root (the Dockerfiles COPY pyproject.toml,
+          # pylibs/, and the app source from there); -f selects the service Dockerfile.
+          docker build -f "apps/${SVC}/Dockerfile" \
+            -t "${REGISTRY}/brain-${SVC}:${SHA}" \
+            -t "${REGISTRY}/brain-${SVC}:latest" .
+          docker push "${REGISTRY}/brain-${SVC}:${SHA}"
+          docker push "${REGISTRY}/brain-${SVC}:latest"
+
+  deploy:
+    name: Deploy (gated; placeholder until cluster exists)
+    needs: build-push
+    if: needs.preflight.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    environment: production    # GitHub Environment protection = manual approval gate
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy images @ ${{ github.sha }}
+        run: |
+          echo "::warning::DEPLOY STEP IS A PLACEHOLDER. Images for ${{ github.sha }} were"
+          echo "built + pushed to ECR. Wire ONE deploy mechanism for the real target:"
+          echo "  - GitOps (intended): bump the image tag in the k8s manifests repo →"
+          echo "    ArgoCD auto-syncs (auto-rollback on failed health → previous ReplicaSet)."
+          echo "  - EKS direct: kubectl set image deploy/<svc> <svc>=\$ECR/brain-<svc>:${{ github.sha }}"
+          echo "  - ECS: aws ecs update-service --force-new-deployment (rollback = prior task-def)."
+          echo "Failing on purpose so a 'deploy' is never silently reported as done."
+          exit 1

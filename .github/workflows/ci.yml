@@ -142,6 +142,37 @@ jobs:
       - name: web vitest
         run: pnpm --filter @brain/web exec vitest run
 
+  # Web production build + bundle-size budget gate. Closes the "web build excluded
+  # from CI" gap (a type error or build break in apps/web could previously merge
+  # green) AND guards bundle regressions (a duplicated heavy dep / new large import
+  # landing on the routes). Uses `--webpack` (the app relies on next.config's
+  # extensionAlias for the @brain/* raw-TS-source aliases; Turbopack lacks it) and
+  # placeholder NEXT_PUBLIC_* (build only needs them present, not valid).
+  web-build:
+    name: Web build + bundle budget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable && corepack prepare pnpm@11.0.9 --activate
+      - name: Install JS deps (frozen)
+        run: pnpm install --frozen-lockfile
+        env:
+          PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: "true"
+      - name: next build (webpack) + bundle-size budget
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "placeholder-anon-key"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
+          NEXT_PUBLIC_API_URL: "http://localhost:3001"
+          WEB_BUNDLE_BUDGET_KB: "3300"
+        run: |
+          pnpm exec next build --webpack
+          node scripts/bundle-budget.mjs
+
   # Tenant-isolation negative tests (advisor review P1-14). Both harnesses spin
   # their OWN disposable postgres:16-alpine via `docker run` (the ubuntu-latest
   # runner has Docker), apply the REAL service-role file, and assert the deny
