@@ -29,6 +29,8 @@ import logging
 import os
 import sys
 
+from brain_logger import configure_logging
+
 from src.bootstrap.analytics_service_startup import run_startup_assertions
 from src.interfaces.grpc.health_server import start_analytics_grpc_server
 
@@ -36,11 +38,7 @@ _log = logging.getLogger("analytics.main")
 
 
 def _configure_logging() -> None:
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
-        stream=sys.stdout,
-    )
+    configure_logging("brain-analytics-service", os.environ.get("LOG_LEVEL", "INFO"))
 
 
 async def _serve() -> None:

@@ -26,18 +26,17 @@ import logging
 import os
 import sys
 
+from brain_logger import configure_logging
+
 from bootstrap import run_startup_assertions
+from bootstrap.telemetry import configure_telemetry
 from interfaces.grpc.health_server import start_intelligence_grpc_server
 
 _log = logging.getLogger("intelligence.main")
 
 
 def _configure_logging() -> None:
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format='{"ts":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}',
-        stream=sys.stdout,
-    )
+    configure_logging("brain-intelligence-service", os.environ.get("LOG_LEVEL", "INFO"))
 
 
 async def _serve() -> None:
@@ -46,6 +45,9 @@ async def _serve() -> None:
 
 def main() -> int:
     _configure_logging()
+    # Activate OTel sinks (no-op unless OTEL_EXPORTER_OTLP_ENDPOINT is set) so the
+    # cost-router meters + gateway tracer stop being silent no-ops in production.
+    configure_telemetry("brain-intelligence-service")
     # Gate 1 — fail-closed startup (India residency). Raises EnvironmentError on
     # a POSTGRES_REGION violation → clean non-zero exit.
     try:

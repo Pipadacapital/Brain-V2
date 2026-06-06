@@ -6,6 +6,8 @@ description = "AI/ML inference layer, frontier-LLM gateway routing, Decision-Log
 dependencies = [
   # Cost router + paradigm gate (Track V1 — built in pylibs/brain_cost_router)
   "brain-cost-router",
+  # Shared structured JSON logger + correlation (pylibs/brain_logger).
+  "brain-logger",
   # Data validation + typed contracts (WriteToolCall, InsightItem, etc.)
   "pydantic>=2.12.5",
   # Model-agnostic LLM gateway (resolves small_llm/frontier_llm tiers)
@@ -13,6 +15,9 @@ dependencies = [
   # OTel metrics (paradigm_distribution counter sink)
   "opentelemetry-api>=1.42.1",
   "opentelemetry-sdk>=1.42.1",
+  # OTLP exporter — wires the meters/tracer to a collector when
+  # OTEL_EXPORTER_OTLP_ENDPOINT is set (bootstrap/telemetry.py).
+  "opentelemetry-exporter-otlp-proto-grpc>=1.42.1",
   # Internal gRPC server transport (health surface in PA-2b; IntelligenceService servicer later).
   "grpcio>=1.68.0,<2.0.0",
   "grpcio-health-checking>=1.68.0,<2.0.0",
@@ -25,6 +30,7 @@ dependencies = [
 # ephemeral venv; slice-2 fixes it at the toolchain root per the brief.
 [tool.uv.sources]
 brain-cost-router = { workspace = true }
+brain-logger = { workspace = true }
 
 # grpcio-tools: generates _pb2.py + _pb2_grpc.py stubs from .proto files (ADR-0001 Step 0).
 # Run: uv run --with grpcio-tools python -m grpc_tools.protoc ... to regenerate.
