@@ -8,7 +8,6 @@ export {
   listOrders,
   listStoreProducts,
   listStoreCustomers,
-  type Paged,
   type StoreOrderRow,
   type StoreProductRow,
   type StoreCustomerRow,

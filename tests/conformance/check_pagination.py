@@ -19,17 +19,16 @@ _OFFSET = re.compile(r"\bOFFSET\s+(\$|\d|:)|\.offset\s*\(", re.I)
 _COMMENT = re.compile(r"^\s*(//|--|\*|#)")
 _BAN_TALK = re.compile(r"BANNED|no\s+OFFSET|CF-API-CURSOR|cursor pagination", re.I)
 
-# Time-boxed exception: repo-relative path -> justification. Each file bounds
-# OFFSET <= MAX_OFFSET in code (deep pages return an empty "refine filters" page),
-# so the unbounded cliff is removed today; full keyset conversion is tracked by
-# req-keyset-pagination-admin-tables (expires before Scale-tier onboarding).
+# Ratified exception: repo-relative path -> justification. The store-browser
+# tables (orders/products/customers) were converted to keyset pagination and are
+# NO LONGER here. The COGS editor keeps a bounded OFFSET (MAX_OFFSET) as a
+# RATIFIED permanent exception (Founder-signed, Mixed-model decision): bounded SKU
+# count, page-number UI retained, deep pages return an empty "refine filters" page.
 _ALLOWLIST = {
-    "apps/core-service/src/application/contexts/store-browser/store-browser-use-cases.ts":
-        "admin browse tables (orders/products/customers); OFFSET bounded by MAX_OFFSET",
     "apps/core-service/src/application/contexts/product-cogs/product-cogs-use-cases.ts":
-        "COGS editor admin table; OFFSET bounded by MAX_OFFSET",
+        "COGS editor admin table; bounded OFFSET (MAX_OFFSET) — ratified permanent exception",
 }
-_EXPIRES_WITH = "req-keyset-pagination-admin-tables (gated before Scale-tier onboarding)"
+_EXPIRES_WITH = "ratified (Mixed-model: keyset for store-browser; bounded cap for COGS)"
 
 
 def check_c10() -> CheckResult:

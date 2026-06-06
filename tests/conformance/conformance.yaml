@@ -68,15 +68,13 @@ checks:
     kind: static
     blocking: true
     impl: check_pagination.py
-    status: "GREEN — 2 admin-table files (4 paginated queries) are a time-boxed allowlisted
-      exception; each bounds OFFSET <= MAX_OFFSET (boundedOffset) so the cliff is removed today.
-      OFFSET in any NON-allowlisted file still fails (non-vacuous)."
+    status: "GREEN — store-browser (orders/products/customers) converted to keyset/seek
+      pagination (O(1) deep pages, no OFFSET). The COGS editor keeps a bounded OFFSET as a
+      RATIFIED permanent exception. OFFSET in any NON-allowlisted file still fails (non-vacuous)."
     allowlist:
-      apps/core-service/src/application/contexts/store-browser/store-browser-use-cases.ts:
-        "admin browse tables (orders/products/customers); OFFSET bounded by MAX_OFFSET"
       apps/core-service/src/application/contexts/product-cogs/product-cogs-use-cases.ts:
-        "COGS editor admin table; OFFSET bounded by MAX_OFFSET"
-    expires_with: "req-keyset-pagination-admin-tables (gated before Scale-tier onboarding)"
+        "COGS editor admin table; bounded OFFSET (MAX_OFFSET) — ratified permanent exception"
+    expires_with: "ratified (Mixed-model: keyset for store-browser; bounded cap for COGS)"
   - id: C11
     invariant: "DDD layering — no controllers/models/managers/helpers dirs"
     kind: static

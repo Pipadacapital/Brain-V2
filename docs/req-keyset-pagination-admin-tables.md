@@ -1,6 +1,15 @@
 # req-keyset-pagination-admin-tables
 
-**Opened:** 2026-06-01 · **Owner:** TBD (Vikram, backend) · **Gate:** before Scale-tier onboarding
+> **STATUS: RESOLVED (2026-06-06) — Mixed model (Founder-signed).**
+> Store browse tables (orders/products/customers) converted to **keyset/seek**
+> pagination (forward cursor + web cursor-stack for Prev/Next; composite
+> `(sort, id)` cursor with full-precision timestamps; validated against the real
+> 83k-order dataset — keyset page N == OFFSET page N exactly). The **COGS editor**
+> keeps a **bounded OFFSET (MAX_OFFSET)** as a ratified permanent exception
+> (bounded SKU count; page-number UI retained). The C10 allowlist now contains
+> only `product-cogs`; conformance C10 stays GREEN.
+
+**Opened:** 2026-06-01 · **Owner:** Vikram (backend) · **Gate:** before Scale-tier onboarding
 **Origin:** conformance C10 disposition (Rohan, signed on Founder's behalf) — see
 `docs/architecture-conformance-audit-2026-06-01.md` and `tests/conformance/`.
 

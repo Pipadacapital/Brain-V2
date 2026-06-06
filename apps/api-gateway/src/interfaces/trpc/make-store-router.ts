@@ -133,7 +133,7 @@ export function makeStoreRouter(
           search:    z.string().max(200).optional(),
           status:    z.enum(['all', 'paid', 'pending', 'refunded', 'voided', 'partially_refunded']).optional(),
           cod:       z.enum(['all', 'cod', 'prepaid']).optional(),
-          page:      z.number().int().min(1).optional(),
+          cursor:    z.string().max(512).optional(),   // keyset cursor (opaque)
           pageSize:  z.number().int().min(10).max(100).optional(),
         }),
       )
@@ -147,7 +147,7 @@ export function makeStoreRouter(
         const r = await listOrders(ctx.workspaceId, input);
         return {
           rows: r.rows.map((row) => ({ ...row, totalMu: row.totalMu.toString() })),
-          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          total: r.total, pageSize: r.pageSize, nextCursor: r.nextCursor,
           request_id: ctx.requestId,
         };
       }),
@@ -157,7 +157,7 @@ export function makeStoreRouter(
         z.object({
           search:    z.string().max(200).optional(),
           status:    z.enum(['all', 'ACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
-          page:      z.number().int().min(1).optional(),
+          cursor:    z.string().max(512).optional(),
           pageSize:  z.number().int().min(10).max(100).optional(),
         }),
       )
@@ -173,7 +173,7 @@ export function makeStoreRouter(
           rows: r.rows.map((row) => ({
             ...row, costMu: row.costMu.toString(), mrpMu: row.mrpMu.toString(),
           })),
-          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          total: r.total, pageSize: r.pageSize, nextCursor: r.nextCursor,
           request_id: ctx.requestId,
         };
       }),
@@ -184,7 +184,7 @@ export function makeStoreRouter(
           search:    z.string().max(200).optional(),
           minOrders: z.number().int().min(0).optional(),
           consent:   z.enum(['all', 'opted_in', 'opted_out', 'unknown']).optional(),
-          page:      z.number().int().min(1).optional(),
+          cursor:    z.string().max(512).optional(),
           pageSize:  z.number().int().min(10).max(100).optional(),
         }),
       )
@@ -198,7 +198,7 @@ export function makeStoreRouter(
         const r = await listStoreCustomers(ctx.workspaceId, input);
         return {
           rows: r.rows.map((row) => ({ ...row, lifetimeSpentMu: row.lifetimeSpentMu.toString() })),
-          total: r.total, page: r.page, pageSize: r.pageSize, totalPages: r.totalPages,
+          total: r.total, pageSize: r.pageSize, nextCursor: r.nextCursor,
           request_id: ctx.requestId,
         };
       }),

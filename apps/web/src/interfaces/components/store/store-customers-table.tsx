@@ -29,17 +29,20 @@ export function StoreCustomersTable() {
   const [search, setSearch]       = useQueryState('q',     parseAsString.withDefault(''));
   const [minOrders, setMinOrders] = useQueryState('min',   parseAsInteger.withDefault(0));
   const [consent, setConsent]     = useQueryState('csnt',  parseAsStringEnum<typeof CONSENT[number]>([...CONSENT]).withDefault('all'));
-  const [page, setPage]           = useQueryState('cpage', parseAsInteger.withDefault(1));
+  // Keyset cursor stack: [null] = first page; Next pushes the server's nextCursor, Prev pops.
+  const [cursorStack, setCursorStack] = useState<(string | null)[]>([null]);
+  const cursor = cursorStack[cursorStack.length - 1] ?? undefined;
   const [searchInput, setSearchInput] = useState(search);
 
   useEffect(() => {
-    const t = setTimeout(() => { if (searchInput !== search) { setSearch(searchInput || null); setPage(1); } }, 350);
+    const t = setTimeout(() => { if (searchInput !== search) { setSearch(searchInput || null); setCursorStack([null]); } }, 350);
     return () => clearTimeout(t);
   }, [searchInput]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enabled = Boolean(isAuthenticated && workspaceId);
+  const PAGE_SIZE = 25;
   const { data, isLoading, error } = trpc.store.customers.useQuery(
-    { search: search || undefined, minOrders: minOrders > 0 ? minOrders : undefined, consent, page, pageSize: 25 },
+    { search: search || undefined, minOrders: minOrders > 0 ? minOrders : undefined, consent, cursor, pageSize: PAGE_SIZE },
     { enabled },
   );
 
@@ -47,7 +50,9 @@ export function StoreCustomersTable() {
 
   const total = data?.total ?? 0;
   const rows  = data?.rows ?? [];
-  const totalPages = data?.totalPages ?? 1;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageNum = cursorStack.length;            // 1-based: stack depth
+  const nextCursor = data?.nextCursor ?? null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -64,13 +69,13 @@ export function StoreCustomersTable() {
           Min orders
           <input
             type="number" min={0} value={minOrders}
-            onChange={(e) => { setMinOrders(Number(e.target.value) || 0); setPage(1); }}
+            onChange={(e) => { setMinOrders(Number(e.target.value) || 0); setCursorStack([null]); }}
             className={cn(INPUT_CLS, 'w-20')}
           />
         </label>
         <select
           value={consent}
-          onChange={(e) => { setConsent(e.target.value as typeof CONSENT[number]); setPage(1); }}
+          onChange={(e) => { setConsent(e.target.value as typeof CONSENT[number]); setCursorStack([null]); }}
           className={cn(INPUT_CLS, 'w-36')}
         >
           {CONSENT.map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
@@ -139,14 +144,14 @@ export function StoreCustomersTable() {
         </table>
       </div>
 
-      {totalPages > 1 && (
+      {(nextCursor || pageNum > 1) && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">Page {page} of {totalPages}</p>
+          <p className="text-sm text-muted-foreground">Page {pageNum} of {totalPages}</p>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+            <Button variant="outline" size="sm" disabled={pageNum <= 1} onClick={() => setCursorStack((s) => s.slice(0, -1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+            <Button variant="outline" size="sm" disabled={!nextCursor} onClick={() => setCursorStack((s) => [...s, nextCursor])}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
